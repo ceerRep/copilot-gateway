@@ -2060,7 +2060,7 @@ export function renderSettingsTab() {
                       x-model="gatewayConfig.codexAutoReviewModel"
                     >
                       <option value="">Disabled</option>
-                      <template x-for="m in allModels" :key="m.id">
+                      <template x-for="m in generationModels" :key="m.id">
                         <option :value="m.id" x-text="m.id"></option>
                       </template>
                     </select>

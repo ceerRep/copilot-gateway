@@ -7,21 +7,17 @@ import {
   ModelsFetchError,
   type ModelsResponse,
 } from "../../lib/models-cache.ts";
-import type { GeminiModel } from "../../lib/gemini-types.ts";
+import type { GeminiGenerationMethod, GeminiModel } from "../../lib/gemini-types.ts";
 import { getRepo } from "../../repo/index.ts";
 import { createOpenAiUpstream } from "../../lib/upstream/openai.ts";
-import { resolveEffectiveSupportedEndpoints } from "../llm/shared/models/get-model-capabilities.ts";
+import { endpointsIncludeLlmGeneration, resolveEffectiveSupportedEndpoints } from "../llm/shared/models/get-model-capabilities.ts";
 import { mergeClaudeVariants } from "../models/merge.ts";
 
-const LLM_ENDPOINTS = new Set([
-  "/v1/messages",
-  "/responses",
-  "/chat/completions",
-]);
-
 const supportsLlmGeneration = (model: ModelInfo): boolean =>
-  model.supported_endpoints?.some((endpoint) => LLM_ENDPOINTS.has(endpoint)) ===
-    true;
+  model.supports_generation ??
+    (model.supported_endpoints
+      ? endpointsIncludeLlmGeneration(model.supported_endpoints)
+      : true);
 
 const displayNameForModel = (model: ModelInfo): string =>
   model.name || model.id;
@@ -35,25 +31,28 @@ const outputLimitForModel = (model: ModelInfo): number | undefined =>
   model.capabilities?.limits?.max_output_tokens ??
     model.capabilities?.limits?.max_non_streaming_output_tokens;
 
-const toGeminiModel = (model: ModelInfo): GeminiModel => ({
-  name: `models/${model.id}`,
-  baseModelId: model.id,
-  displayName: displayNameForModel(model),
-  supportedGenerationMethods: [
+const toGeminiModel = (model: ModelInfo): GeminiModel => {
+  const methods: GeminiGenerationMethod[] = [
     "generateContent",
     "streamGenerateContent",
-    "countTokens",
-  ],
-  ...(inputLimitForModel(model) !== undefined
-    ? { inputTokenLimit: inputLimitForModel(model) }
-    : {}),
-  ...(outputLimitForModel(model) !== undefined
-    ? { outputTokenLimit: outputLimitForModel(model) }
-    : {}),
-  temperature: 1,
-  topP: 0.95,
-  topK: 40,
-});
+  ];
+  if (model.upstream_kind !== "openai") methods.push("countTokens");
+  return {
+    name: `models/${model.id}`,
+    baseModelId: model.id,
+    displayName: displayNameForModel(model),
+    supportedGenerationMethods: methods,
+    ...(inputLimitForModel(model) !== undefined
+      ? { inputTokenLimit: inputLimitForModel(model) }
+      : {}),
+    ...(outputLimitForModel(model) !== undefined
+      ? { outputTokenLimit: outputLimitForModel(model) }
+      : {}),
+    temperature: 1,
+    topP: 0.95,
+    topK: 40,
+  };
+};
 
 const geminiStatusForHttpStatus = (status: number): string => {
   switch (status) {
@@ -107,7 +106,13 @@ const loadMergedModels = async (): Promise<ModelsResponse> => {
     sawSuccess = true;
     for (const model of result.data.data) {
       if (!model?.id || byId.has(model.id)) continue;
-      byId.set(model.id, model);
+      byId.set(model.id, {
+        ...model,
+        upstream_kind: "copilot",
+        supports_generation: model.supported_endpoints
+          ? endpointsIncludeLlmGeneration(model.supported_endpoints)
+          : true,
+      });
     }
   }
 
@@ -128,7 +133,12 @@ const loadMergedModels = async (): Promise<ModelsResponse> => {
           model.supported_endpoints,
           upstream,
         );
-      byId.set(model.id, { ...model, supported_endpoints });
+      byId.set(model.id, {
+        ...model,
+        supported_endpoints,
+        upstream_kind: "openai",
+        supports_generation: endpointsIncludeLlmGeneration(supported_endpoints),
+      });
     }
   }
 

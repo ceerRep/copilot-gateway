@@ -154,6 +154,10 @@ Deno.test("/v1beta/models includes custom upstream LLM models", async () => {
     assertEquals(list.models.length, 1);
     assertEquals(list.models[0].name, "models/custom-llm-model");
     assertEquals(list.models[0].displayName, "Custom LLM Model");
+    assertEquals(list.models[0].supportedGenerationMethods, [
+      "generateContent",
+      "streamGenerateContent",
+    ]);
 
     const getResp = await requestApp("/v1beta/models/custom-llm-model", {
       headers: { "x-api-key": apiKey.key },

@@ -67,6 +67,12 @@ export const resolveEffectiveSupportedEndpoints = (
   return { endpoints: [], explicit: false };
 };
 
+const LLM_ENDPOINTS = new Set(["/v1/messages", "/responses", "/chat/completions"]);
+
+export const endpointsIncludeLlmGeneration = (
+  endpoints: string[],
+): boolean => endpoints.some((ep) => LLM_ENDPOINTS.has(ep));
+
 export const getModelCapabilities = async (
   modelId: string,
   upstream: Upstream,

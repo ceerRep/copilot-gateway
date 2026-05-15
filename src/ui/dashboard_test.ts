@@ -1469,3 +1469,53 @@ Deno.test("dashboardApp model search does not crash when model.name is missing",
     globalThis.fetch = originalFetch;
   }
 });
+
+Deno.test("dashboardApp filteredChatModels excludes embedding-only custom upstream models", async () => {
+  const originalFetch = globalThis.fetch;
+  // deno-lint-ignore no-explicit-any
+  globalThis.fetch = (input: any) => {
+    const url = String(input);
+    if (url.startsWith("/api/models")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "chat-model",
+                name: "Chat Model",
+                model_picker_enabled: true,
+                capabilities: { type: "chat", limits: {} },
+                supported_endpoints: ["/chat/completions"],
+              },
+              {
+                id: "embed-only",
+                name: "Embed Only",
+                model_picker_enabled: true,
+                supported_endpoints: ["/embeddings"],
+              },
+              {
+                id: "no-caps-embed",
+                model_picker_enabled: true,
+                supported_endpoints: ["/embeddings"],
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  try {
+    const { app } = createDashboardHarness();
+    await app.loadModels();
+
+    const ids = app.filteredChatModels
+      .filter((m: { _divider?: boolean }) => !m._divider)
+      .map((m: { id: string }) => m.id);
+    assertEquals(ids, ["chat-model"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

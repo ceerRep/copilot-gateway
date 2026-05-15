@@ -21,7 +21,7 @@ import {
   apiErrorResponse,
   getErrorMessage,
 } from "../shared/http/proxy-response.ts";
-import { resolveEffectiveSupportedEndpoints } from "../llm/shared/models/get-model-capabilities.ts";
+import { endpointsIncludeLlmGeneration, resolveEffectiveSupportedEndpoints } from "../llm/shared/models/get-model-capabilities.ts";
 import { mergeClaudeVariants } from "./merge.ts";
 
 const errorResponse = (error: unknown): Response | null => {
@@ -58,9 +58,13 @@ export const models = async (c: Context) => {
       sawCopilotSuccess = true;
       for (const model of result.data.data) {
         if (!model?.id || byId.has(model.id)) continue;
-        // Copilot's /models is authoritative — supported_endpoints is set
-        // explicitly per SKU, so we keep whatever it declares (or undefined).
-        byId.set(model.id, { ...model, upstream_kind: "copilot" });
+        byId.set(model.id, {
+          ...model,
+          upstream_kind: "copilot",
+          supports_generation: model.supported_endpoints
+            ? endpointsIncludeLlmGeneration(model.supported_endpoints)
+            : true,
+        });
       }
     }
 
@@ -87,6 +91,7 @@ export const models = async (c: Context) => {
           ...model,
           supported_endpoints,
           upstream_kind: "openai",
+          supports_generation: endpointsIncludeLlmGeneration(supported_endpoints),
         });
       }
     }

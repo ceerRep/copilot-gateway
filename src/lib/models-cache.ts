@@ -50,6 +50,11 @@ export interface ModelInfo {
   // by which upstream serves them. Not present on the upstream's raw /models
   // response.
   upstream_kind?: "copilot" | "openai";
+  // True when supported_endpoints includes at least one LLM generation target
+  // (/v1/messages, /responses, /chat/completions). Set at the merging /v1/models
+  // boundary so consumers (dashboard, Gemini model listing) can filter without
+  // hardcoding endpoint strings.
+  supports_generation?: boolean;
   // Upstream-only fields: the gateway clients are OpenAI/Anthropic SDKs that
   // do not consume these, but they pass through verbatim and the /v1/models
   // merge logic needs to read/write them.

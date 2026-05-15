@@ -438,8 +438,12 @@ export function dashboardAssets() {
                     return caps;
                   },
 
+                  get generationModels() {
+                    return this.allModels.filter(m => m.supports_generation !== false);
+                  },
+
                   get filteredChatModels() {
-                    let models = this.allModels.filter(m => m.capabilities?.type !== 'embeddings');
+                    let models = this.generationModels;
                     if (this.modelsSearch.trim()) {
                       const q = this.modelsSearch.toLowerCase();
                       models = models.filter(m => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q));
@@ -654,7 +658,13 @@ export function dashboardAssets() {
                             return;
                           }
                           const { data: rawData } = await resp.json();
-                          const data = rawData.map(m => m.name ? m : { ...m, name: m.id });
+                          const LLM_ENDPOINTS = ['/v1/messages', '/responses', '/chat/completions'];
+                          const data = rawData.map(m => ({
+                            ...m,
+                            name: m.name || m.id,
+                            supports_generation: m.supports_generation ??
+                              (!m.supported_endpoints?.length || m.supported_endpoints.some(e => LLM_ENDPOINTS.includes(e))),
+                          }));
 
                           this.allModels = data;
                           if (!this.chatModelId) {
