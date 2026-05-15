@@ -4,6 +4,7 @@
 import type { Context, Next } from "hono";
 import { recordUsage } from "../lib/usage-tracker.ts";
 import { touchApiKeyLastUsed } from "../lib/api-keys.ts";
+import { asJsonObject, type JsonObject, readChatCompletionsCacheTokens } from "../lib/usage-normalize.ts";
 import {
   getUsageResponseMetadata,
   type UsageResponseMetadata,
@@ -141,14 +142,6 @@ interface StreamUsageInfo extends UsageInfo {
   fromStart: boolean;
 }
 
-type JsonObject = Record<string, unknown>;
-
-function asObject(value: unknown): JsonObject | null {
-  return value !== null && typeof value === "object"
-    ? value as JsonObject
-    : null;
-}
-
 function readNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
 }
@@ -184,17 +177,17 @@ const persistUsage = async (
 // the usage. Use that structured output instead of a request-context side
 // channel so accounting follows alias resolution and translated paths.
 function extractModelFromJson(json: unknown): string | null {
-  const payload = asObject(json);
+  const payload = asJsonObject(json);
   return readString(payload?.model);
 }
 
 function extractModelFromStreamEvent(parsed: unknown): string | null {
-  const payload = asObject(parsed);
+  const payload = asJsonObject(parsed);
   if (!payload) return null;
 
   return readString(payload.model) ??
-    readString(asObject(payload.message)?.model) ??
-    readString(asObject(payload.response)?.model);
+    readString(asJsonObject(payload.message)?.model) ??
+    readString(asJsonObject(payload.response)?.model);
 }
 
 function setInputUsage(total: UsageInfo, next: UsageInfo): void {
@@ -291,11 +284,12 @@ function extractUsageFromJson(json: any): UsageInfo | null {
   }
 
   if (json?.usage?.prompt_tokens != null) {
+    const cache = readChatCompletionsCacheTokens(asJsonObject(json.usage));
     return {
       input: json.usage.prompt_tokens,
       output: json.usage.completion_tokens ?? 0,
-      cacheRead: json.usage.prompt_tokens_details?.cached_tokens ?? 0,
-      cacheCreation: 0,
+      cacheRead: cache.cacheRead,
+      cacheCreation: cache.cacheCreation,
     };
   }
 
@@ -306,12 +300,12 @@ function extractUsageFromStreamEvent(
   parsed: unknown,
   gotInputFromStart: boolean,
 ): StreamUsageInfo | null {
-  const payload = asObject(parsed);
+  const payload = asJsonObject(parsed);
   if (!payload) return null;
 
   if (payload.type === "message_start") {
-    const message = asObject(payload.message);
-    const usage = asObject(message?.usage);
+    const message = asJsonObject(payload.message);
+    const usage = asJsonObject(message?.usage);
     if (!usage) return null;
 
     const cacheRead = readNumber(usage.cache_read_input_tokens) ?? 0;
@@ -336,7 +330,7 @@ function extractUsageFromStreamEvent(
   // carrying both input_tokens and output_tokens. We only extract input_tokens
   // from message_delta when message_start didn't already provide them.
   if (payload.type === "message_delta") {
-    const usage = asObject(payload.usage);
+    const usage = asJsonObject(payload.usage);
     if (!usage) return null;
     const output = readNumber(usage.output_tokens);
     if (output == null) return null;
@@ -363,10 +357,10 @@ function extractUsageFromStreamEvent(
     payload.type === "response.completed" ||
     payload.type === "response.incomplete"
   ) {
-    const response = asObject(payload.response);
-    const usage = asObject(response?.usage);
+    const response = asJsonObject(payload.response);
+    const usage = asJsonObject(response?.usage);
     if (!usage) return null;
-    const details = asObject(usage.input_tokens_details);
+    const details = asJsonObject(usage.input_tokens_details);
     return {
       kind: "final",
       input: readNumber(usage.input_tokens) ?? 0,
@@ -377,20 +371,20 @@ function extractUsageFromStreamEvent(
     };
   }
 
-  const usage = asObject(payload.usage);
+  const usage = asJsonObject(payload.usage);
   if (readNumber(usage?.prompt_tokens) != null) {
-    const details = asObject(usage?.prompt_tokens_details);
+    const cache = readChatCompletionsCacheTokens(usage);
     return {
       kind: "final",
       input: readNumber(usage?.prompt_tokens) ?? 0,
       output: readNumber(usage?.completion_tokens) ?? 0,
-      cacheRead: readNumber(details?.cached_tokens) ?? 0,
-      cacheCreation: 0,
+      cacheRead: cache.cacheRead,
+      cacheCreation: cache.cacheCreation,
       fromStart: false,
     };
   }
 
-  const geminiUsage = asObject(payload.usageMetadata);
+  const geminiUsage = asJsonObject(payload.usageMetadata);
   if (geminiUsage && readNumber(geminiUsage.promptTokenCount) != null) {
     const info = geminiUsageFromMetadata(geminiUsage);
     return {
