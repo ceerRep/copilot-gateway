@@ -22,6 +22,10 @@ export interface ModelCapabilities {
   supportsResponses: boolean;
   supportsChatCompletions: boolean;
   supportsAdaptiveThinking: boolean;
+  // True when supported_endpoints came from an authoritative source (per-model
+  // metadata or admin-configured upstream-level config). When false, the
+  // caller's planning layer may fall back to legacy model-name heuristics.
+  hasExplicitCapabilities: boolean;
 }
 
 // Copilot's /models response only annotates supported_endpoints on newer
@@ -41,23 +45,42 @@ const inferredChatCompletionsSupport = (
   model.supported_endpoints === undefined &&
   model.capabilities?.type === "chat";
 
-// When the upstream's /models entry does not declare per-model
-// `supported_endpoints` (most third-party OpenAI-compatible providers do
-// not), fall back to the upstream-level configuration so each model on that
-// upstream inherits the admin's declared capability set.
+// Resolve the effective supported_endpoints for a model on a given upstream.
 //
-// Copilot's /models is authoritative — its embedding/non-chat SKUs report
-// per-model supported_endpoints explicitly, so a missing field on a Copilot
-// entry means "not declared" rather than "all of the above". Skip the
-// upstream-level fallback for copilot upstreams to avoid promoting
-// embedding-only models into the chat/responses/messages routing surface.
+// Custom OpenAI-compatible upstreams have admin-configured capabilities that
+// are trusted and tight — when the provider's /models entry omits per-model
+// supported_endpoints, the upstream-level config fills in.
+//
+// Copilot's /models is authoritative per SKU; a missing field means "not
+// declared", not "all of the above". We return an empty list so embedding-only
+// SKUs are not promoted into the chat/responses/messages routing surface.
+// The caller's planning layer is still allowed to layer on legacy model-name
+// heuristics (see `inferredChatCompletionsSupport`) when the field is missing.
+export const resolveEffectiveSupportedEndpoints = (
+  modelEndpoints: string[] | undefined,
+  upstream: { kind: Upstream["kind"]; supportedEndpoints: string[] },
+): { endpoints: string[]; explicit: boolean } => {
+  if (modelEndpoints) return { endpoints: modelEndpoints, explicit: true };
+  if (upstream.kind === "openai") {
+    return { endpoints: upstream.supportedEndpoints, explicit: true };
+  }
+  return { endpoints: [], explicit: false };
+};
+
 export const getModelCapabilities = async (
   modelId: string,
   upstream: Upstream,
 ): Promise<ModelCapabilities> => {
   const model = await findModel(modelId, upstream);
-  const supportedEndpoints = model?.supported_endpoints ??
-    (upstream.kind === "openai" ? upstream.supportedEndpoints : []);
+  return modelCapabilitiesFromModel(model, upstream);
+};
+
+export const modelCapabilitiesFromModel = (
+  model: ModelInfo | undefined,
+  upstream: { kind: Upstream["kind"]; supportedEndpoints: string[] },
+): ModelCapabilities => {
+  const { endpoints: supportedEndpoints, explicit } =
+    resolveEffectiveSupportedEndpoints(model?.supported_endpoints, upstream);
 
   return {
     model,
@@ -68,5 +91,6 @@ export const getModelCapabilities = async (
       inferredChatCompletionsSupport(model),
     supportsAdaptiveThinking:
       model?.capabilities?.supports?.adaptive_thinking === true,
+    hasExplicitCapabilities: explicit,
   };
 };

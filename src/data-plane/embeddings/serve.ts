@@ -6,8 +6,11 @@
 import type { Context } from "hono";
 
 import { isCopilotTokenFetchError } from "../../lib/copilot.ts";
+import { findModel } from "../../lib/models-cache.ts";
 import { resolveUpstreamForModel } from "../../lib/upstream/resolver.ts";
+import { resolveEffectiveSupportedEndpoints } from "../llm/shared/models/get-model-capabilities.ts";
 import { runOnUpstream } from "../llm/shared/upstream-run.ts";
+import { withAccountFallback } from "../shared/account-pool/fallback.ts";
 import { withUsageResponseMetadata } from "../../middleware/usage-response-metadata.ts";
 import {
   apiErrorResponse,
@@ -62,6 +65,20 @@ export const embeddings = async (c: Context) => {
   try {
     const request = prepareEmbeddingsRequest(await c.req.text());
 
+    // When the body is malformed or lacks a model string, skip upstream
+    // resolution and let Copilot produce the request-shape validation error
+    // so the client sees the provider's native error rather than a gateway 404.
+    if (!request.usageModel) {
+      const resp = await withAccountFallback(
+        request.model,
+        ({ upstream }) =>
+          upstream.fetch("embeddings", { method: "POST", body: request.body }),
+      );
+      return withUsageResponseMetadata(c, proxyJsonResponse(resp), {
+        usageModel: request.usageModel,
+      });
+    }
+
     const selection = await resolveUpstreamForModel(request.model);
     if (!selection) {
       return apiErrorResponse(
@@ -74,13 +91,33 @@ export const embeddings = async (c: Context) => {
     const resp = await runOnUpstream(
       selection,
       request.model,
-      (upstream) =>
-        upstream.fetch("embeddings", { method: "POST", body: request.body }),
+      async (upstream) => {
+        const model = await findModel(request.model, upstream);
+        const { endpoints, explicit } = resolveEffectiveSupportedEndpoints(
+          model?.supported_endpoints,
+          upstream,
+        );
+        if (explicit && !endpoints.includes("/embeddings")) {
+          return apiErrorResponse(
+            c,
+            `Model ${request.model} does not support the /embeddings endpoint.`,
+            400,
+          );
+        }
+        return withUsageResponseMetadata(
+          c,
+          proxyJsonResponse(
+            await upstream.fetch("embeddings", {
+              method: "POST",
+              body: request.body,
+            }),
+          ),
+          { usageModel: request.usageModel },
+        );
+      },
     );
 
-    return withUsageResponseMetadata(c, proxyJsonResponse(resp), {
-      usageModel: request.usageModel,
-    });
+    return resp;
   } catch (e: unknown) {
     if (isCopilotTokenFetchError(e)) {
       return new Response(e.body, {

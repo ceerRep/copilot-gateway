@@ -1,6 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { Hono } from "hono";
 import { DEFAULT_SEARCH_CONFIG } from "../../data-plane/tools/web-search/search-config.ts";
+import { normalizeGatewayConfig } from "../../lib/gateway-config.ts";
 import { initRepo } from "../../repo/index.ts";
 import { InMemoryRepo } from "../../repo/memory.ts";
 import type {
@@ -804,4 +805,88 @@ Deno.test("import — handles missing optional arrays gracefully", async () => {
     upstreamConfigs: 0,
     performance: 0,
   });
+});
+
+Deno.test("export includes gatewayConfig", async () => {
+  const { app, repo } = setup();
+
+  await repo.gatewayConfig.save({ codexAutoReviewModel: "claude-sonnet-4" });
+
+  const exported = await doExport(app);
+  assertEquals(exported.data.gatewayConfig.codexAutoReviewModel, "claude-sonnet-4");
+});
+
+Deno.test("export returns default gatewayConfig when none is saved", async () => {
+  const { app } = setup();
+
+  const exported = await doExport(app);
+  assertEquals(exported.data.gatewayConfig.codexAutoReviewModel, null);
+});
+
+Deno.test("import replace resets gatewayConfig to default when the payload omits it", async () => {
+  const { app, repo } = setup();
+
+  await repo.gatewayConfig.save({ codexAutoReviewModel: "claude-sonnet-4" });
+
+  const { status } = await doImport(app, "replace", {
+    apiKeys: [],
+    githubAccounts: [],
+    usage: [],
+  });
+
+  assertEquals(status, 200);
+
+  const config = normalizeGatewayConfig(await repo.gatewayConfig.get());
+  assertEquals(config.codexAutoReviewModel, null);
+});
+
+Deno.test("import replace preserves gatewayConfig when the payload includes it", async () => {
+  const { app, repo } = setup();
+
+  const { status } = await doImport(app, "replace", {
+    apiKeys: [],
+    githubAccounts: [],
+    usage: [],
+    gatewayConfig: { codexAutoReviewModel: "claude-opus-4" },
+  });
+
+  assertEquals(status, 200);
+
+  const config = normalizeGatewayConfig(await repo.gatewayConfig.get());
+  assertEquals(config.codexAutoReviewModel, "claude-opus-4");
+});
+
+Deno.test("import merge updates gatewayConfig when present", async () => {
+  const { app, repo } = setup();
+
+  await repo.gatewayConfig.save({ codexAutoReviewModel: "claude-sonnet-4" });
+
+  const { status } = await doImport(app, "merge", {
+    apiKeys: [],
+    githubAccounts: [],
+    usage: [],
+    gatewayConfig: { codexAutoReviewModel: "claude-opus-4" },
+  });
+
+  assertEquals(status, 200);
+
+  const config = normalizeGatewayConfig(await repo.gatewayConfig.get());
+  assertEquals(config.codexAutoReviewModel, "claude-opus-4");
+});
+
+Deno.test("import merge leaves gatewayConfig untouched when payload omits it", async () => {
+  const { app, repo } = setup();
+
+  await repo.gatewayConfig.save({ codexAutoReviewModel: "claude-sonnet-4" });
+
+  const { status } = await doImport(app, "merge", {
+    apiKeys: [],
+    githubAccounts: [],
+    usage: [],
+  });
+
+  assertEquals(status, 200);
+
+  const config = normalizeGatewayConfig(await repo.gatewayConfig.get());
+  assertEquals(config.codexAutoReviewModel, "claude-sonnet-4");
 });

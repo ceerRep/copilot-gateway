@@ -269,7 +269,10 @@ export const importData = async (c: Context) => {
     await Promise.all(
       existingUpstreams.map((cfg) => invalidateUpstreamModels(cfg.id)),
     );
-    await repo.searchConfig.save(normalizeSearchConfig(data.searchConfig));
+    await Promise.all([
+      repo.searchConfig.save(normalizeSearchConfig(data.searchConfig)),
+      saveGatewayConfig(data.gatewayConfig ?? {}),
+    ]);
   }
 
   // Import API keys
@@ -312,7 +315,11 @@ export const importData = async (c: Context) => {
     await repo.searchConfig.save(normalizeSearchConfig(data.searchConfig));
   }
 
-  if (typeof data.gatewayConfig === "object" && data.gatewayConfig !== null) {
+  if (
+    mode !== "replace" &&
+    typeof data.gatewayConfig === "object" &&
+    data.gatewayConfig !== null
+  ) {
     await saveGatewayConfig(data.gatewayConfig);
   }
 

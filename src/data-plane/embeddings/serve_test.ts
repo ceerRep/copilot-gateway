@@ -198,3 +198,105 @@ Deno.test("/v1/embeddings routes to custom upstream when model is only declared 
   assertEquals(forwardedBody.model, "custom-embed-model");
   assertEquals(forwardedBody.input, ["hello world"]);
 });
+
+Deno.test("/v1/embeddings rejects model on custom upstream without /embeddings capability", async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  await repo.upstreamConfigs.save({
+    id: "up_chat_only",
+    name: "Chat Only Provider",
+    baseUrl: "https://chat.example.com",
+    bearerToken: "sk-chat",
+    supportedEndpoints: ["/chat/completions"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    reasoningDialect: "openai",
+  });
+
+  await withMockedFetch(async (request) => {
+    const url = new URL(request.url);
+
+    if (
+      url.hostname === "chat.example.com" &&
+      url.pathname === "/v1/models"
+    ) {
+      return jsonResponse({
+        object: "list",
+        data: [{ id: "chat-model" }],
+      });
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp("/v1/embeddings", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey.key,
+      },
+      body: JSON.stringify({
+        model: "chat-model",
+        input: "hello",
+      }),
+    });
+
+    assertEquals(response.status, 400);
+    const body = await response.json();
+    assertEquals(
+      body.error.message,
+      "Model chat-model does not support the /embeddings endpoint.",
+    );
+  });
+});
+
+Deno.test("/v1/embeddings passes malformed body to Copilot for upstream validation", async () => {
+  const { apiKey } = await setupAppTest();
+  let copilotReceivedBody: string | undefined;
+
+  await withMockedFetch(async (request) => {
+    const url = new URL(request.url);
+
+    if (url.hostname === "update.code.visualstudio.com") {
+      return jsonResponse(["1.110.1"]);
+    }
+    if (url.pathname === "/copilot_internal/v2/token") {
+      return jsonResponse({
+        token: "copilot-access-token",
+        expires_at: 4102444800,
+        refresh_in: 3600,
+      });
+    }
+    if (url.pathname === "/models") {
+      return jsonResponse(copilotModels([
+        { id: "text-embedding-real", supported_endpoints: ["/embeddings"] },
+      ]));
+    }
+    if (url.pathname === "/embeddings") {
+      copilotReceivedBody = await request.text();
+      return jsonResponse({
+        error: { message: "model is required", type: "invalid_request_error" },
+      }, 400);
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp("/v1/embeddings", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey.key,
+      },
+      body: "not valid json",
+    });
+
+    assertEquals(response.status, 400);
+    const body = await response.json();
+    assertEquals(body.error.type, "invalid_request_error");
+  });
+
+  assertExists(copilotReceivedBody);
+});

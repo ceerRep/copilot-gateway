@@ -4,6 +4,8 @@ import {
   assertFalse,
   assertStringIncludes,
 } from "@std/assert";
+import { clearCopilotTokenCache } from "../../../../lib/copilot.ts";
+import { clearModelsCache } from "../../../../lib/models-cache.ts";
 import type { ResponsesResult } from "../../../../lib/responses-types.ts";
 import type { SearchConfig } from "../../../tools/web-search/types.ts";
 import {
@@ -2863,4 +2865,60 @@ Deno.test("/v1/messages routes native web search through translated /chat/comple
     "web_search",
   );
   assertEquals(searchBody?.query, "latest React docs");
+});
+
+Deno.test("/v1/messages rejects embedding-only custom upstream model instead of legacy chat fallback", async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  await repo.upstreamConfigs.save({
+    id: "up_embed",
+    name: "Embedding Only",
+    baseUrl: "https://embed.example.com",
+    bearerToken: "sk-embed",
+    supportedEndpoints: ["/embeddings"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    reasoningDialect: "openai",
+  });
+
+  await withMockedFetch(async (request) => {
+    const url = new URL(request.url);
+
+    if (
+      url.hostname === "embed.example.com" &&
+      url.pathname === "/v1/models"
+    ) {
+      return jsonResponse({
+        object: "list",
+        data: [{ id: "embed-model" }],
+      });
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp("/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey.key,
+      },
+      body: JSON.stringify({
+        model: "embed-model",
+        max_tokens: 100,
+        stream: false,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    });
+
+    assertEquals(response.status, 400);
+    const body = await response.json();
+    assertStringIncludes(
+      body.error.message,
+      "does not support the /messages endpoint",
+    );
+  });
 });

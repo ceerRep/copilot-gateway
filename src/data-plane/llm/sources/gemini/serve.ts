@@ -129,6 +129,16 @@ export const serveGemini = async (
             capabilities,
             wantsStream,
           );
+          if (!plan) {
+            return {
+              type: "upstream-error" as const,
+              status: 400,
+              headers: new Headers({ "content-type": "application/json" }),
+              body: new TextEncoder().encode(JSON.stringify({
+                error: { code: 400, message: `Model ${modelId} does not support generateContent.`, status: "INVALID_ARGUMENT" },
+              })),
+            };
+          }
 
           if (plan.target === "messages") {
             const targetPayload = buildMessagesTargetRequest(

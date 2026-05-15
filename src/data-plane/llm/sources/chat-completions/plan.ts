@@ -11,7 +11,7 @@ const hasVision = (payload: ChatCompletionsPayload): boolean =>
 export const planChatRequest = (
   payload: ChatCompletionsPayload,
   capabilities: ModelCapabilities,
-): ChatPlan => {
+): ChatPlan | null => {
   const wantsStream = payload.stream === true;
   const fetchOptions = { vision: hasVision(payload) };
 
@@ -43,6 +43,12 @@ export const planChatRequest = (
       fetchOptions,
     };
   }
+
+  // Legacy model-name fallback only for upstreams without explicit capability
+  // metadata (Copilot models whose /models entry omits supported_endpoints).
+  // Custom upstreams declare capabilities explicitly — routing to an endpoint
+  // the admin didn't configure would violate that intent.
+  if (capabilities.hasExplicitCapabilities) return null;
 
   // Capability misses keep the legacy model-name heuristic so old callers still
   // get the same Claude -> Messages and non-Claude -> Chat routing behavior.

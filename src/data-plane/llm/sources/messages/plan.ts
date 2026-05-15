@@ -22,7 +22,7 @@ export const planMessagesRequest = (
   payload: MessagesPayload,
   capabilities: ModelCapabilities,
   rawBeta: string | undefined,
-): MessagesPlan => {
+): MessagesPlan | null => {
   const wantsStream = payload.stream === true;
   const fetchOptions = {
     vision: hasVision(payload),
@@ -49,6 +49,21 @@ export const planMessagesRequest = (
       fetchOptions,
     };
   }
+
+  if (capabilities.supportsChatCompletions) {
+    return {
+      source: "messages",
+      target: "chat-completions",
+      wantsStream,
+      fetchOptions,
+    };
+  }
+
+  // Legacy model-name fallback only for upstreams without explicit capability
+  // metadata (Copilot models whose /models entry omits supported_endpoints).
+  // Custom upstreams declare capabilities explicitly — routing to an endpoint
+  // the admin didn't configure would violate that intent.
+  if (capabilities.hasExplicitCapabilities) return null;
 
   return {
     source: "messages",

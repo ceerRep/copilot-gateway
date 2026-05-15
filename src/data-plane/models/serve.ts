@@ -21,6 +21,7 @@ import {
   apiErrorResponse,
   getErrorMessage,
 } from "../shared/http/proxy-response.ts";
+import { resolveEffectiveSupportedEndpoints } from "../llm/shared/models/get-model-capabilities.ts";
 import { mergeClaudeVariants } from "./merge.ts";
 
 const errorResponse = (error: unknown): Response | null => {
@@ -77,11 +78,11 @@ export const models = async (c: Context) => {
       sawCustomSuccess = true;
       for (const model of result.data.data) {
         if (!model?.id || byId.has(model.id)) continue;
-        // Most third-party OpenAI-compatible providers do not declare
-        // per-model supported_endpoints — fall back to the upstream-level
-        // configuration so dashboard pickers and routing agree.
-        const supported_endpoints = model.supported_endpoints ??
-          upstream.supportedEndpoints;
+        const { endpoints: supported_endpoints } =
+          resolveEffectiveSupportedEndpoints(
+            model.supported_endpoints,
+            upstream,
+          );
         byId.set(model.id, {
           ...model,
           supported_endpoints,

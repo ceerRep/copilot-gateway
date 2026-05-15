@@ -25,9 +25,24 @@ import { respondChatCompletions } from "./respond.ts";
 import {
   internalErrorResult,
   type StreamExecuteResult,
+  type UpstreamErrorResult,
 } from "../../shared/errors/result.ts";
 import { toInternalDebugError } from "../../shared/errors/internal-debug-error.ts";
 import type { ProtocolFrame } from "../../shared/stream/types.ts";
+
+const unsupportedChatModelResult = (
+  model: string,
+): UpstreamErrorResult => ({
+  type: "upstream-error",
+  status: 400,
+  headers: new Headers({ "content-type": "application/json" }),
+  body: new TextEncoder().encode(JSON.stringify({
+    error: {
+      message: `Model ${model} does not support the /chat/completions endpoint.`,
+      type: "invalid_request_error",
+    },
+  })),
+});
 import { runOnUpstream } from "../../shared/upstream-run.ts";
 import { resolveUpstreamForModel } from "../../../../lib/upstream/resolver.ts";
 import {
@@ -118,6 +133,9 @@ export const serveChatCompletions = async (
             upstream,
           );
           const plan = planChatRequest(attemptPayload, capabilities);
+          if (!plan) {
+            return unsupportedChatModelResult(attemptPayload.model);
+          }
 
           if (plan.target === "messages") {
             performanceFor(attemptPayload.model, "messages");

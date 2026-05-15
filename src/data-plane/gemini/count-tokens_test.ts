@@ -1,4 +1,6 @@
 import { assertEquals, assertExists } from "@std/assert";
+import { clearCopilotTokenCache } from "../../lib/copilot.ts";
+import { clearModelsCache } from "../../lib/models-cache.ts";
 import {
   copilotModels,
   jsonResponse,
@@ -166,5 +168,63 @@ Deno.test("/v1beta/models/:model:countTokens internal failures include debug fie
     assertEquals(body.error.name, "Error");
     assertEquals(body.error.source_api, "gemini");
     assertExists(body.error.stack);
+  });
+});
+
+Deno.test("/v1beta/models/:model:countTokens rejects custom-upstream-only models", async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  await repo.upstreamConfigs.save({
+    id: "up_custom",
+    name: "Custom Provider",
+    baseUrl: "https://custom.example.com",
+    bearerToken: "sk-custom",
+    supportedEndpoints: ["/chat/completions"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    reasoningDialect: "openai",
+  });
+
+  await withMockedFetch(async (request) => {
+    const url = new URL(request.url);
+
+    if (
+      url.hostname === "custom.example.com" &&
+      url.pathname === "/v1/models"
+    ) {
+      return jsonResponse({
+        object: "list",
+        data: [{ id: "custom-chat-model" }],
+      });
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp(
+      "/v1beta/models/custom-chat-model:countTokens",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": apiKey.key,
+        },
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: "hello" }] }],
+        }),
+      },
+    );
+
+    assertEquals(response.status, 400);
+    const body = await response.json();
+    assertEquals(body.error.code, 400);
+    assertEquals(body.error.status, "INVALID_ARGUMENT");
+    assertEquals(
+      body.error.message.includes("only supported for Copilot-hosted models"),
+      true,
+    );
   });
 });
