@@ -11,8 +11,8 @@
 import { getRepo } from "../../repo/index.ts";
 import {
   findModelInModels,
-  getModelsForUpstream,
   isSwitchableModelsLoadError,
+  loadModels,
   loadModelsForAccount,
 } from "../models-cache.ts";
 import { createCopilotUpstream } from "./copilot.ts";
@@ -80,15 +80,25 @@ export const resolveUpstreamForModel = async (
   }
 
   const customConfigs = await getRepo().upstreamConfigs.list();
+  let lastCustomError: unknown = null;
   for (const config of customConfigs) {
     if (!config.enabled) continue;
     const upstream = createOpenAiUpstream(config);
-    const models = await getModelsForUpstream(upstream);
-    if (findModelInModels(models, modelId)) {
-      return { kind: "openai", upstream };
+    const result = await loadModels(upstream);
+    if (result.type === "models") {
+      if (findModelInModels(result.data, modelId)) {
+        return { kind: "openai", upstream };
+      }
+      continue;
     }
+    // Track rather than swallow — auth errors, config errors, and upstream 5xx
+    // from custom upstreams must surface when no other upstream can serve the
+    // model, instead of masquerading as model-not-found 404s.
+    lastCustomError = result.error;
   }
 
   if (copilotSwitchableErrorOnly) return { kind: "copilot" };
+
+  if (lastCustomError) throw lastCustomError;
   return null;
 };

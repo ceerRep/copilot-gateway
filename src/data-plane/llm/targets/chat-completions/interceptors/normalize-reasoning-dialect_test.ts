@@ -83,6 +83,82 @@ Deno.test("withDeepseekReasoningDialect leaves the payload untouched on an opena
   assertEquals(assistant.reasoning_content, undefined);
 });
 
+Deno.test("withDeepseekReasoningDialect synthesizes reasoning_content from reasoning_items when reasoning_text is absent", async () => {
+  const ctx = {
+    payload: {
+      model: "deepseek-reasoner",
+      messages: [
+        { role: "user" as const, content: "first turn" },
+        {
+          role: "assistant" as const,
+          content: null,
+          reasoning_items: [{
+            type: "reasoning" as const,
+            id: "rs_1",
+            summary: [
+              { type: "summary_text" as const, text: "step one. " },
+              { type: "summary_text" as const, text: "step two." },
+            ],
+            encrypted_content: "opaque-blob",
+          }],
+          tool_calls: [{
+            id: "call_1",
+            type: "function" as const,
+            function: { name: "lookup", arguments: "{}" },
+          }],
+        },
+        { role: "tool" as const, tool_call_id: "call_1", content: "result" },
+      ],
+    } satisfies ChatCompletionsPayload,
+    upstream: stubUpstream({ reasoningDialect: "deepseek" }),
+  };
+
+  let observed: ChatCompletionsPayload | null = null;
+  await withDeepseekReasoningDialect(ctx, async () => {
+    observed = ctx.payload;
+    return eventResult((async function* () {})());
+  });
+
+  const assistant = observed!.messages[1] as unknown as Record<string, unknown>;
+  assertEquals(assistant.reasoning_content, "step one. step two.");
+  assertEquals(assistant.reasoning_text, undefined);
+  assertEquals(assistant.reasoning_opaque, undefined);
+  assertEquals(assistant.reasoning_items, undefined);
+});
+
+Deno.test("withDeepseekReasoningDialect strips reasoning_items even when no summaries are available", async () => {
+  const ctx = {
+    payload: {
+      model: "deepseek-reasoner",
+      messages: [
+        { role: "user" as const, content: "first turn" },
+        {
+          role: "assistant" as const,
+          content: "answer",
+          reasoning_items: [{
+            type: "reasoning" as const,
+            encrypted_content: "opaque-only",
+          }],
+          reasoning_opaque: "opaque-chain",
+        },
+      ],
+    } satisfies ChatCompletionsPayload,
+    upstream: stubUpstream({ reasoningDialect: "deepseek" }),
+  };
+
+  let observed: ChatCompletionsPayload | null = null;
+  await withDeepseekReasoningDialect(ctx, async () => {
+    observed = ctx.payload;
+    return eventResult((async function* () {})());
+  });
+
+  const assistant = observed!.messages[1] as unknown as Record<string, unknown>;
+  assertEquals(assistant.reasoning_content, undefined);
+  assertEquals(assistant.reasoning_items, undefined);
+  assertEquals(assistant.reasoning_opaque, undefined);
+  assertEquals(assistant.content, "answer");
+});
+
 Deno.test("withDeepseekReasoningDialect renames inbound SSE reasoning_content to reasoning_text", async () => {
   const ctx = {
     payload: baseRequest(),

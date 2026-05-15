@@ -5,7 +5,7 @@ import type {
   ModelsResponse,
 } from "../../../../lib/models-cache.ts";
 import {
-  getModelsForUpstream,
+  loadModels,
   loadModelsForAccount,
 } from "../../../../lib/models-cache.ts";
 import { normalizeModelName } from "../../../../lib/model-name.ts";
@@ -186,8 +186,15 @@ export const resolveModelForRequest = async (
   for (const config of customConfigs) {
     if (!config.enabled) continue;
     const upstream = createOpenAiUpstream(config);
-    const models = await getModelsForUpstream(upstream);
-    for (const model of models.data) {
+    const result = await loadModels(upstream);
+    if (result.type !== "models") {
+      console.warn(
+        `Failed to load models for custom upstream ${config.id}:`,
+        result.error,
+      );
+      continue;
+    }
+    for (const model of result.data.data) {
       if (!byId.has(model.id)) byId.set(model.id, model);
     }
   }

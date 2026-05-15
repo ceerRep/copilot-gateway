@@ -1,6 +1,7 @@
 import type {
   ChatCompletionResponse,
   ChatCompletionsPayload,
+  ChatReasoningItem,
   Message,
 } from "../../../../../lib/chat-completions-types.ts";
 import { jsonFrame, sseFrame } from "../../../shared/stream/types.ts";
@@ -26,18 +27,37 @@ import type { TargetInterceptor } from "../../run-interceptors.ts";
 
 type AnyRecord = Record<string, unknown>;
 
+// Synthesize a scalar reasoning text from reasoning_items summaries. Used
+// when the client replays the newer OpenAI shape (reasoning_items only,
+// no scalar reasoning_text).
+const synthesizeFromItems = (
+  items: ChatReasoningItem[] | null | undefined,
+): string | undefined => {
+  if (!items?.length) return undefined;
+  const parts = items.flatMap((item) =>
+    item.summary?.map((s) => s.text) ?? []
+  );
+  return parts.length > 0 ? parts.join("") : undefined;
+};
+
 const rewriteOutboundMessage = (message: Message): Message => {
-  if (typeof message.reasoning_text !== "string") return message;
-  // DeepSeek does not understand reasoning_opaque or reasoning_items; drop
-  // them rather than ship unknown fields. The OpenAI-shape opaque chain
-  // cannot survive a hop through a dialect that has no concept of it.
+  // DeepSeek does not understand reasoning_opaque or reasoning_items — strip
+  // them unconditionally, regardless of whether reasoning_text is present.
+  // When reasoning_text is absent, synthesize from reasoning_items summaries
+  // so the visible reasoning chain survives the dialect hop.
   const {
     reasoning_text,
     reasoning_opaque: _opaque,
-    reasoning_items: _items,
+    reasoning_items,
     ...rest
   } = message;
-  return { ...rest, reasoning_content: reasoning_text } as Message;
+
+  const text = typeof reasoning_text === "string"
+    ? reasoning_text
+    : synthesizeFromItems(reasoning_items);
+
+  if (text === undefined) return rest as Message;
+  return { ...rest, reasoning_content: text } as Message;
 };
 
 const rewriteOutboundPayload = (

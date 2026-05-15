@@ -3,6 +3,7 @@
 import type { Context } from "hono";
 import { normalizeSearchConfig } from "../../data-plane/tools/web-search/search-config.ts";
 import { isWebSearchProviderName } from "../../lib/web-search-types.ts";
+import { invalidateUpstreamModels } from "../../lib/models-cache.ts";
 import { getRepo } from "../../repo/index.ts";
 import type {
   ApiKey,
@@ -244,6 +245,10 @@ export const importData = async (c: Context) => {
   }
   const performance = performanceResult.records;
   if (mode === "replace") {
+    // Collect existing upstream IDs before deletion so their stale model caches
+    // can be invalidated — otherwise the L1/L2 models:<id> entries linger up to
+    // HARD_TTL and feed routing and /v1/models with data from the old config.
+    const existingUpstreams = await repo.upstreamConfigs.list();
     const deletes = [
       repo.apiKeys.deleteAll(),
       repo.github.deleteAllAccounts(),
@@ -254,6 +259,9 @@ export const importData = async (c: Context) => {
     ];
     if (performanceIncluded) deletes.push(repo.performance.deleteAll());
     await Promise.all(deletes);
+    await Promise.all(
+      existingUpstreams.map((cfg) => invalidateUpstreamModels(cfg.id)),
+    );
     await repo.searchConfig.save(normalizeSearchConfig(data.searchConfig));
   }
 
@@ -279,7 +287,9 @@ export const importData = async (c: Context) => {
 
   // Import upstream configs
   for (const config of upstreamConfigs) {
-    await repo.upstreamConfigs.save(normalizeImportedUpstreamConfig(config));
+    const normalized = normalizeImportedUpstreamConfig(config);
+    await repo.upstreamConfigs.save(normalized);
+    await invalidateUpstreamModels(normalized.id);
   }
 
   // Import performance telemetry records

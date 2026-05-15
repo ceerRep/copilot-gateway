@@ -1,11 +1,13 @@
 // POST /v1/embeddings — route embedding requests to the upstream that
-// declares the requested model. For Copilot upstreams, route through the
-// account pool so a 429/403/500 on one account fails over to the next.
+// declares the requested model. Copilot upstreams go through the account pool
+// so a 429/403/500 on one account fails over to the next; custom
+// OpenAI-compatible upstreams are served by their single connection.
 
 import type { Context } from "hono";
 
-import { copilotFetch, isCopilotTokenFetchError } from "../../lib/copilot.ts";
-import { withAccountFallback } from "../shared/account-pool/fallback.ts";
+import { isCopilotTokenFetchError } from "../../lib/copilot.ts";
+import { resolveUpstreamForModel } from "../../lib/upstream/resolver.ts";
+import { runOnUpstream } from "../llm/shared/upstream-run.ts";
 import { withUsageResponseMetadata } from "../../middleware/usage-response-metadata.ts";
 import {
   apiErrorResponse,
@@ -60,9 +62,19 @@ export const embeddings = async (c: Context) => {
   try {
     const request = prepareEmbeddingsRequest(await c.req.text());
 
-    const resp = await withAccountFallback(
+    const selection = await resolveUpstreamForModel(request.model);
+    if (!selection) {
+      return apiErrorResponse(
+        c,
+        `No upstream provides model ${request.model}. Configure an upstream that exposes this model in the dashboard.`,
+        404,
+      );
+    }
+
+    const resp = await runOnUpstream(
+      selection,
       request.model,
-      ({ upstream }) =>
+      (upstream) =>
         upstream.fetch("embeddings", { method: "POST", body: request.body }),
     );
 

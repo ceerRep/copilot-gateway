@@ -1,4 +1,6 @@
 import { assertEquals, assertExists } from "@std/assert";
+import { clearCopilotTokenCache } from "../../lib/copilot.ts";
+import { clearModelsCache } from "../../lib/models-cache.ts";
 import {
   copilotModels,
   flushAsyncWork,
@@ -122,4 +124,77 @@ Deno.test("/v1/embeddings records usage under request model when upstream omits 
   assertEquals(usage.length, 1);
   assertEquals(usage[0].model, "text-embedding-real");
   assertEquals(usage[0].inputTokens, 1);
+});
+
+Deno.test("/v1/embeddings routes to custom upstream when model is only declared there", async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  await repo.upstreamConfigs.save({
+    id: "up_embed",
+    name: "Embedding Provider",
+    baseUrl: "https://embed.example.com",
+    bearerToken: "sk-embed",
+    supportedEndpoints: ["/embeddings"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    reasoningDialect: "openai",
+  });
+
+  let forwardedUrl: string | undefined;
+  let forwardedBody: Record<string, unknown> | undefined;
+
+  await withMockedFetch(async (request) => {
+    const url = new URL(request.url);
+
+    if (
+      url.hostname === "embed.example.com" &&
+      url.pathname === "/v1/models"
+    ) {
+      return jsonResponse({
+        object: "list",
+        data: [{ id: "custom-embed-model" }],
+      });
+    }
+    if (
+      url.hostname === "embed.example.com" &&
+      url.pathname === "/v1/embeddings"
+    ) {
+      forwardedUrl = request.url;
+      forwardedBody = await request.json() as Record<string, unknown>;
+      return jsonResponse({
+        object: "list",
+        model: "custom-embed-model",
+        data: [{ object: "embedding", index: 0, embedding: [0.42] }],
+        usage: { prompt_tokens: 2, total_tokens: 2 },
+      });
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp("/v1/embeddings", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey.key,
+      },
+      body: JSON.stringify({
+        model: "custom-embed-model",
+        input: "hello world",
+      }),
+    });
+
+    assertEquals(response.status, 200);
+    const body = await response.json();
+    assertEquals(body.data[0].embedding, [0.42]);
+  });
+
+  assertExists(forwardedUrl);
+  assertEquals(new URL(forwardedUrl).hostname, "embed.example.com");
+  assertExists(forwardedBody);
+  assertEquals(forwardedBody.model, "custom-embed-model");
+  assertEquals(forwardedBody.input, ["hello world"]);
 });

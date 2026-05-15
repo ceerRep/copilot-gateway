@@ -60,4 +60,3 @@ export const createCopilotUpstream = async (
 };
 
 export { COPILOT_UPSTREAM_ID };
-

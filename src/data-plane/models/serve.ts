@@ -10,7 +10,7 @@
 import type { Context } from "hono";
 import { isCopilotTokenFetchError } from "../../lib/copilot.ts";
 import {
-  getModelsForUpstream,
+  loadModels,
   loadModelsForAccount,
   type ModelInfo,
   ModelsFetchError,
@@ -64,13 +64,18 @@ export const models = async (c: Context) => {
     }
 
     const customConfigs = await getRepo().upstreamConfigs.list();
-    let sawCustom = false;
+    let sawCustomSuccess = false;
+    let lastCustomError: unknown = null;
     for (const config of customConfigs) {
       if (!config.enabled) continue;
-      sawCustom = true;
       const upstream = createOpenAiUpstream(config);
-      const list = await getModelsForUpstream(upstream);
-      for (const model of list.data) {
+      const result = await loadModels(upstream);
+      if (result.type === "error") {
+        lastCustomError = result.error;
+        continue;
+      }
+      sawCustomSuccess = true;
+      for (const model of result.data.data) {
         if (!model?.id || byId.has(model.id)) continue;
         // Most third-party OpenAI-compatible providers do not declare
         // per-model supported_endpoints — fall back to the upstream-level
@@ -85,7 +90,7 @@ export const models = async (c: Context) => {
       }
     }
 
-    if (sawCopilotSuccess || sawCustom) {
+    if (sawCopilotSuccess || sawCustomSuccess) {
       // Merge Claude variants (reasoning-effort, 1M-context, dated aliases)
       // into base model ids for a clean outbound view. Non-Claude models
       // (gpt-*, gemini-*, custom-upstream) pass through unchanged.
@@ -96,7 +101,13 @@ export const models = async (c: Context) => {
       return Response.json(merged);
     }
 
-    if (accounts.length === 0 && !sawCustom) {
+    if (accounts.length === 0 && !sawCustomSuccess) {
+      const anyError = lastCustomError ?? lastCopilotError;
+      if (anyError) {
+        const upstreamErr = errorResponse(anyError);
+        if (upstreamErr) return upstreamErr;
+        return apiErrorResponse(c, getErrorMessage(anyError), 502);
+      }
       return apiErrorResponse(
         c,
         "No GitHub account connected — add one via the dashboard",
@@ -108,6 +119,11 @@ export const models = async (c: Context) => {
     if (upstreamErr) return upstreamErr;
     if (lastCopilotError) {
       return apiErrorResponse(c, getErrorMessage(lastCopilotError), 502);
+    }
+    if (lastCustomError) {
+      const customErr = errorResponse(lastCustomError);
+      if (customErr) return customErr;
+      return apiErrorResponse(c, getErrorMessage(lastCustomError), 502);
     }
     return Response.json({ object: "list", data: [] });
   } catch (e: unknown) {
