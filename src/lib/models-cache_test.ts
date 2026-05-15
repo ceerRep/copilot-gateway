@@ -3,9 +3,11 @@ import { clearCopilotTokenCache } from "./copilot.ts";
 import {
   clearModelsCache,
   findModel,
-  getModels,
+  getModelsForUpstream,
+  invalidateUpstreamModels,
   loadModels,
 } from "./models-cache.ts";
+import { createCopilotUpstream } from "./upstream/copilot.ts";
 import {
   copilotModels,
   jsonResponse,
@@ -40,6 +42,11 @@ Deno.test("models cache uses L1 cache for 120s and L2 cache for 600s", async () 
   const { githubAccount } = await setupAppTest();
   clearModelsCache();
   await clearCopilotTokenCache();
+
+  const upstream = await createCopilotUpstream(
+    githubAccount.token,
+    githubAccount.accountType,
+  );
 
   let modelsFetches = 0;
 
@@ -79,18 +86,9 @@ Deno.test("models cache uses L1 cache for 120s and L2 cache for 600s", async () 
     throw new Error(`Unhandled fetch ${request.url}`);
   }, async () => {
     await withFakeNow([0, 60_000, 130_000], async () => {
-      const first = await getModels(
-        githubAccount.token,
-        githubAccount.accountType,
-      );
-      const second = await getModels(
-        githubAccount.token,
-        githubAccount.accountType,
-      );
-      const third = await getModels(
-        githubAccount.token,
-        githubAccount.accountType,
-      );
+      const first = await getModelsForUpstream(upstream);
+      const second = await getModelsForUpstream(upstream);
+      const third = await getModelsForUpstream(upstream);
 
       assertEquals(first.data[0].id, "claude-sonnet-4");
       assertEquals(second.data[0].id, "claude-sonnet-4");
@@ -105,6 +103,11 @@ Deno.test("models cache refreshes upstream after repo-backed cache expires", asy
   const { githubAccount } = await setupAppTest();
   clearModelsCache();
   await clearCopilotTokenCache();
+
+  const upstream = await createCopilotUpstream(
+    githubAccount.token,
+    githubAccount.accountType,
+  );
 
   let modelsFetches = 0;
 
@@ -144,14 +147,8 @@ Deno.test("models cache refreshes upstream after repo-backed cache expires", asy
     throw new Error(`Unhandled fetch ${request.url}`);
   }, async () => {
     await withFakeNow([0, 610_000], async () => {
-      const first = await getModels(
-        githubAccount.token,
-        githubAccount.accountType,
-      );
-      const second = await getModels(
-        githubAccount.token,
-        githubAccount.accountType,
-      );
+      const first = await getModelsForUpstream(upstream);
+      const second = await getModelsForUpstream(upstream);
 
       assertEquals(first.data[0].id, "model-1");
       assertEquals(second.data[0].id, "model-2");
@@ -165,6 +162,11 @@ Deno.test("models cache uses stale data after soft expiry on switchable errors u
   const { githubAccount } = await setupAppTest();
   clearModelsCache();
   await clearCopilotTokenCache();
+
+  const upstream = await createCopilotUpstream(
+    githubAccount.token,
+    githubAccount.accountType,
+  );
 
   let modelsFetches = 0;
 
@@ -194,10 +196,7 @@ Deno.test("models cache uses stale data after soft expiry on switchable errors u
     throw new Error(`Unhandled fetch ${request.url}`);
   }, async () => {
     await withMutableNow(0, async (setNow) => {
-      const fresh = await loadModels(
-        githubAccount.token,
-        githubAccount.accountType,
-      );
+      const fresh = await loadModels(upstream);
       assertEquals(fresh.type, "models");
       if (fresh.type === "models") {
         assertEquals(fresh.stale, false);
@@ -205,10 +204,7 @@ Deno.test("models cache uses stale data after soft expiry on switchable errors u
       }
 
       setNow(610_000);
-      const stale = await loadModels(
-        githubAccount.token,
-        githubAccount.accountType,
-      );
+      const stale = await loadModels(upstream);
       assertEquals(stale.type, "models");
       if (stale.type === "models") {
         assertEquals(stale.stale, true);
@@ -216,10 +212,7 @@ Deno.test("models cache uses stale data after soft expiry on switchable errors u
       }
 
       setNow(7_201_000);
-      const expired = await loadModels(
-        githubAccount.token,
-        githubAccount.accountType,
-      );
+      const expired = await loadModels(upstream);
       assertEquals(expired.type, "error");
     });
   });
@@ -231,6 +224,11 @@ Deno.test("findModel applies dated Claude aliases only after exact model misses"
   const { githubAccount } = await setupAppTest();
   clearModelsCache();
   await clearCopilotTokenCache();
+
+  const upstream = await createCopilotUpstream(
+    githubAccount.token,
+    githubAccount.accountType,
+  );
 
   await withMockedFetch((request) => {
     const url = new URL(request.url);
@@ -307,24 +305,67 @@ Deno.test("findModel applies dated Claude aliases only after exact model misses"
 
     throw new Error(`Unhandled fetch ${request.url}`);
   }, async () => {
-    const exact = await findModel(
-      "claude-haiku-4.5-20251001",
-      githubAccount.token,
-      githubAccount.accountType,
-    );
-    const fallbackDotted = await findModel(
-      "claude-opus-4.7-20251001",
-      githubAccount.token,
-      githubAccount.accountType,
-    );
-    const fallbackDashed = await findModel(
-      "claude-sonnet-4-5-20251001",
-      githubAccount.token,
-      githubAccount.accountType,
-    );
+    const exact = await findModel("claude-haiku-4.5-20251001", upstream);
+    const fallbackDotted = await findModel("claude-opus-4.7-20251001", upstream);
+    const fallbackDashed = await findModel("claude-sonnet-4-5-20251001", upstream);
 
     assertEquals(exact?.id, "claude-haiku-4.5-20251001");
     assertEquals(fallbackDotted?.id, "claude-opus-4.7");
     assertEquals(fallbackDashed?.id, "claude-sonnet-4.5");
+  });
+});
+
+Deno.test("invalidateUpstreamModels clears both L1 and L2 cache for a given upstream", async () => {
+  const { githubAccount } = await setupAppTest();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  const upstream = await createCopilotUpstream(
+    githubAccount.token,
+    githubAccount.accountType,
+  );
+
+  let modelsFetches = 0;
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+
+    if (url.hostname === "update.code.visualstudio.com") {
+      return jsonResponse(["1.110.1"]);
+    }
+    if (url.pathname === "/copilot_internal/v2/token") {
+      return jsonResponse({ token: "copilot-access-token", expires_at: 4102444800, refresh_in: 3600 });
+    }
+    if (url.pathname === "/models") {
+      modelsFetches++;
+      return jsonResponse({
+        object: "list",
+        data: [{
+          id: `model-${modelsFetches}`,
+          version: "1",
+          object: "model",
+        }],
+      });
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    // First fetch populates both caches
+    const first = await getModelsForUpstream(upstream);
+    assertEquals(first.data[0].id, "model-1");
+    assertEquals(modelsFetches, 1);
+
+    // Within L1 TTL (120s) — should use cache
+    const second = await getModelsForUpstream(upstream);
+    assertEquals(second.data[0].id, "model-1");
+    assertEquals(modelsFetches, 1, "should not re-fetch within L1 TTL");
+
+    // Invalidate the upstream models
+    await invalidateUpstreamModels(upstream.id);
+
+    // After invalidation, should re-fetch
+    const third = await getModelsForUpstream(upstream);
+    assertEquals(third.data[0].id, "model-2");
+    assertEquals(modelsFetches, 2, "invalidation should trigger re-fetch");
   });
 });

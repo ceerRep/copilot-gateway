@@ -1,7 +1,7 @@
 import { app } from "./app.ts";
 import { clearCopilotTokenCache } from "./lib/copilot.ts";
-import { initEnv } from "./lib/env.ts";
 import { clearModelsCache } from "./lib/models-cache.ts";
+import { initEnv } from "./lib/env.ts";
 import type { SearchConfig } from "./data-plane/tools/web-search/types.ts";
 import { InMemoryRepo } from "./repo/memory.ts";
 import { initRepo } from "./repo/index.ts";
@@ -192,3 +192,19 @@ export function copilotModels(
     })),
   };
 }
+
+import type { Upstream } from "./lib/upstream/types.ts";
+
+// A throwaway upstream stub for unit tests that exercise interceptors or other
+// code paths needing an EmitInput.upstream but not the upstream's network
+// behavior. Use createCopilotUpstream() when network calls go through the
+// stub.
+export const stubUpstream = (overrides: Partial<Upstream> = {}): Upstream => ({
+  id: "test-upstream",
+  name: "Test Upstream",
+  kind: "openai",
+  supportedEndpoints: ["/chat/completions", "/responses", "/v1/messages"],
+  reasoningDialect: "openai",
+  fetch: () => Promise.reject(new Error("stubUpstream.fetch was called")),
+  ...overrides,
+});

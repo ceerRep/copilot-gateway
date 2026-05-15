@@ -1,15 +1,26 @@
-// Per-account Copilot model cache. Soft expiry drives refresh attempts; hard
-// expiry bounds how long switchable upstream failures may silently reuse stale
-// model metadata for account-pool routing.
+// Per-upstream model list cache.
+//
+// Each upstream (Copilot — one per GitHub account — or a custom
+// OpenAI-compatible provider) gets its own /models cache key.
+//
+// Copilot's `Upstream` adapter id encodes the GitHub token + account type, so
+// "per-upstream" is automatically per-account for the Copilot side. Account
+// pool routing iterates accounts -> upstreams -> caches without a separate
+// keying scheme.
+//
+// Tiers:
+//   L1 in-process (120s)            — avoids repeated repo reads on hot isolates
+//   L2 repo-backed soft expiry      — refresh attempts after 600s
+//   L2 repo-backed hard expiry      — switchable upstream failures may reuse
+//                                     stale data for up to 2h to keep
+//                                     account-pool routing usable
 
 import { getRepo } from "../repo/index.ts";
 import type { GitHubAccount } from "../repo/types.ts";
-import {
-  copilotFetch,
-  isAccountSwitchableStatus,
-  isCopilotTokenFetchError,
-} from "./copilot.ts";
+import { isAccountSwitchableStatus, isCopilotTokenFetchError } from "./copilot.ts";
 import { dateSuffixedClaudeModelAliasTarget } from "./model-name.ts";
+import { createCopilotUpstream } from "./upstream/copilot.ts";
+import type { Upstream } from "./upstream/types.ts";
 
 export interface ModelInfo {
   id: string;
@@ -35,6 +46,10 @@ export interface ModelInfo {
     };
   };
   supported_endpoints?: string[];
+  // Set by the merging /v1/models handler so the dashboard can group models
+  // by which upstream serves them. Not present on the upstream's raw /models
+  // response.
+  upstream_kind?: "copilot" | "openai";
   // Upstream-only fields: the gateway clients are OpenAI/Anthropic SDKs that
   // do not consume these, but they pass through verbatim and the /v1/models
   // merge logic needs to read/write them.
@@ -79,7 +94,7 @@ export class ModelsFetchError extends Error {
     readonly body: string,
     readonly headers: Headers,
   ) {
-    super(`Copilot models fetch failed: ${status} ${body}`);
+    super(`Models fetch failed: ${status} ${body}`);
     this.name = "ModelsFetchError";
   }
 }
@@ -94,22 +109,28 @@ const inProcessCache = new Map<string, {
   cachedAt: number;
 }>();
 
-export function clearModelsCache(): void {
+export const clearModelsCache = (): void => {
   inProcessCache.clear();
-}
+};
 
-async function modelsCacheKey(
-  githubToken: string,
-  accountType: string,
-): Promise<string> {
-  const bytes = new TextEncoder().encode(`${accountType}:${githubToken}`);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
-  const hash = Array.from(
-    new Uint8Array(digest),
-    (byte) => byte.toString(16).padStart(2, "0"),
-  ).join("");
-  return `${MODELS_CACHE_KEY_PREFIX}:${hash}`;
-}
+const cacheKeyForUpstream = (upstream: Upstream): string =>
+  `${MODELS_CACHE_KEY_PREFIX}:${upstream.id}`;
+
+// Drop both L1 and L2 cache entries for a single upstream id. Use when an
+// upstream's config (base URL, bearer, supported endpoints) changes — the
+// stored model list belongs to the old credentials and would otherwise
+// linger up to HARD_TTL_MS.
+export const invalidateUpstreamModels = async (
+  upstreamId: string,
+): Promise<void> => {
+  const cacheKey = `${MODELS_CACHE_KEY_PREFIX}:${upstreamId}`;
+  inProcessCache.delete(cacheKey);
+  try {
+    await getRepo().cache.delete(cacheKey);
+  } catch {
+    // Best-effort; the in-process drop alone still forces a refresh on this isolate.
+  }
+};
 
 const isSoftFresh = (entry: ModelsCacheEntry, now: number): boolean =>
   now - entry.fetchedAt < SOFT_TTL_MS;
@@ -127,12 +148,12 @@ const isCacheEntry = (value: unknown): value is ModelsCacheEntry => {
 
 const isModelsResponse = (value: unknown): value is ModelsResponse => {
   const response = value as ModelsResponse;
-  return response?.object === "list" && Array.isArray(response.data);
+  return Array.isArray(response?.data);
 };
 
-async function readRepoCache(
+const readRepoCache = async (
   cacheKey: string,
-): Promise<ModelsCacheEntry | null> {
+): Promise<ModelsCacheEntry | null> => {
   try {
     const raw = await getRepo().cache.get(cacheKey);
     if (!raw) return null;
@@ -141,18 +162,18 @@ async function readRepoCache(
   } catch {
     return null;
   }
-}
+};
 
-async function writeRepoCache(
+const writeRepoCache = async (
   cacheKey: string,
   entry: ModelsCacheEntry,
-): Promise<void> {
+): Promise<void> => {
   try {
     await getRepo().cache.set(cacheKey, JSON.stringify(entry));
   } catch {
     // Repo cache is an optimization; fetch result is still usable without persisting it.
   }
-}
+};
 
 export const isSwitchableModelsLoadError = (error: unknown): boolean => {
   if (error instanceof ModelsFetchError) {
@@ -162,16 +183,10 @@ export const isSwitchableModelsLoadError = (error: unknown): boolean => {
     isAccountSwitchableStatus(error.status);
 };
 
-async function fetchModels(
-  githubToken: string,
-  accountType: string,
-): Promise<ModelsResponse> {
-  const resp = await copilotFetch(
-    "/models",
-    { method: "GET" },
-    githubToken,
-    accountType,
-  );
+const fetchUpstreamModels = async (
+  upstream: Upstream,
+): Promise<ModelsResponse> => {
+  const resp = await upstream.fetch("models", { method: "GET" });
 
   if (!resp.ok) {
     throw new ModelsFetchError(
@@ -181,20 +196,25 @@ async function fetchModels(
     );
   }
 
-  const data = await resp.json() as unknown;
+  const data = (await resp.json()) as unknown;
   if (!isModelsResponse(data)) {
-    throw new Error("Invalid Copilot models response");
+    throw new Error(`Invalid /models response from upstream ${upstream.id}`);
   }
-
   return data;
-}
+};
 
-export async function loadModels(
-  githubToken: string,
-  accountType: string,
-): Promise<ModelsLoadResult> {
+/**
+ * Load models for an upstream with discriminated success/failure result.
+ *
+ * Used by the account-pool fallback so it can classify failures (switchable
+ * upstream errors → reuse stale cache, mark account/model as unavailable;
+ * everything else → propagate).
+ */
+export const loadModels = async (
+  upstream: Upstream,
+): Promise<ModelsLoadResult> => {
   const now = Date.now();
-  const cacheKey = await modelsCacheKey(githubToken, accountType);
+  const cacheKey = cacheKeyForUpstream(upstream);
   const cached = inProcessCache.get(cacheKey);
 
   if (
@@ -216,7 +236,7 @@ export async function loadModels(
   }
 
   try {
-    const data = await fetchModels(githubToken, accountType);
+    const data = await fetchUpstreamModels(upstream);
     const entry = {
       fetchedAt: now,
       hardExpiresAt: now + HARD_TTL_MS,
@@ -245,29 +265,44 @@ export async function loadModels(
 
     return { type: "error", error };
   }
-}
+};
 
-export const loadModelsForAccount = (
+export const loadModelsForAccount = async (
   account: GitHubAccount,
-): Promise<ModelsLoadResult> => loadModels(account.token, account.accountType);
+): Promise<ModelsLoadResult> => {
+  const upstream = await createCopilotUpstream(
+    account.token,
+    account.accountType,
+  );
+  return loadModels(upstream);
+};
 
-/** Get cached model list, refreshing after soft expiry. */
-export async function getModels(
-  githubToken: string,
-  accountType: string,
-): Promise<ModelsResponse> {
-  const result = await loadModels(githubToken, accountType);
+/**
+ * Get cached model list for the given upstream, refreshing after soft expiry.
+ *
+ * Convenience wrapper for callers that don't need success/failure
+ * discrimination — returns an empty list on hard failure so non-critical
+ * paths (dashboard pickers, capability lookups) don't have to branch on
+ * errors.
+ */
+export const getModelsForUpstream = async (
+  upstream: Upstream,
+): Promise<ModelsResponse> => {
+  const result = await loadModels(upstream);
   if (result.type === "models") return result.data;
-
-  console.warn("Failed to load model cache:", result.error);
+  console.warn(
+    `Failed to load models for upstream ${upstream.id}:`,
+    result.error,
+  );
   return { object: "list", data: [] };
-}
+};
 
+/** Look up a model by id within a fetched model list. Honors Claude alias rewriting. */
 export const findModelInModels = (
   models: ModelsResponse,
   modelId: string,
 ): ModelInfo | undefined => {
-  const exact = models.data.find((model) => model.id === modelId);
+  const exact = models.data.find((m) => m.id === modelId);
   if (exact) return exact;
 
   // Date-suffixed Claude IDs are client aliases for the same Copilot model,
@@ -275,27 +310,14 @@ export const findModelInModels = (
   // not rewritten to their base model.
   const aliasTarget = dateSuffixedClaudeModelAliasTarget(modelId);
   if (!aliasTarget) return undefined;
-  return models.data.find((model) => model.id === aliasTarget);
+  return models.data.find((m) => m.id === aliasTarget);
 };
 
-/** Find a specific model by ID */
-export async function findModel(
+/** Find a model on a specific upstream. */
+export const findModel = async (
   modelId: string,
-  githubToken: string,
-  accountType: string,
-): Promise<ModelInfo | undefined> {
-  const models = await getModels(githubToken, accountType);
+  upstream: Upstream,
+): Promise<ModelInfo | undefined> => {
+  const models = await getModelsForUpstream(upstream);
   return findModelInModels(models, modelId);
-}
-
-/** Check if a model supports a specific endpoint */
-export async function modelSupportsEndpoint(
-  modelId: string,
-  endpoint: string,
-  githubToken: string,
-  accountType: string,
-): Promise<boolean> {
-  const model = await findModel(modelId, githubToken, accountType);
-  if (!model?.supported_endpoints) return false;
-  return model.supported_endpoints.includes(endpoint);
-}
+};

@@ -17,7 +17,8 @@ import { respondGemini } from "./respond.ts";
 import { geminiModelResolutionIntent, planGeminiRequest } from "./plan.ts";
 import { getModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
 import { resolveModelForRequest } from "../../shared/models/resolve-model.ts";
-import { withAccountFallback } from "../../../shared/account-pool/fallback.ts";
+import { runOnUpstream } from "../../shared/upstream-run.ts";
+import { resolveUpstreamForModel } from "../../../../lib/upstream/resolver.ts";
 import { emitToMessages } from "../../targets/messages/emit.ts";
 import { emitToResponses } from "../../targets/responses/emit.ts";
 import { emitToChatCompletions } from "../../targets/chat-completions/emit.ts";
@@ -93,12 +94,23 @@ export const serveGemini = async (
         );
         performanceFor(modelId, "gemini");
 
-        return await withAccountFallback(modelId, async ({ account }) => {
+        const selection = await resolveUpstreamForModel(modelId);
+        if (!selection) {
+          return {
+            type: "upstream-error" as const,
+            status: 404,
+            headers: new Headers({ "content-type": "application/json" }),
+            body: new TextEncoder().encode(JSON.stringify({
+              error: { code: 404, message: `Model ${modelId} is not available on any configured upstream.`, status: "NOT_FOUND" },
+            })),
+          };
+        }
+
+        return await runOnUpstream(selection, modelId, async (upstream) => {
           const attemptPayload = structuredClone(ctx.payload);
           const capabilities = await getModelCapabilities(
             modelId,
-            account.token,
-            account.accountType,
+            upstream,
           );
           const plan = planGeminiRequest(
             attemptPayload,
@@ -121,8 +133,7 @@ export const serveGemini = async (
             const result = await emitToMessages({
               sourceApi: "gemini",
               payload: targetPayload,
-              githubToken: account.token,
-              accountType: account.accountType,
+              upstream,
               apiKeyId,
               clientStream: wantsStream,
               runtimeLocation,
@@ -151,8 +162,7 @@ export const serveGemini = async (
             const result = await emitToResponses({
               sourceApi: "gemini",
               payload: targetPayload,
-              githubToken: account.token,
-              accountType: account.accountType,
+              upstream,
               apiKeyId,
               clientStream: wantsStream,
               runtimeLocation,
@@ -180,8 +190,7 @@ export const serveGemini = async (
           const result = await emitToChatCompletions({
             sourceApi: "gemini",
             payload: targetPayload,
-            githubToken: account.token,
-            accountType: account.accountType,
+            upstream,
             apiKeyId,
             clientStream: wantsStream,
             runtimeLocation,

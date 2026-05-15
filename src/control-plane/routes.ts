@@ -27,6 +27,13 @@ import {
 import { searchUsage } from "./search-usage/routes.ts";
 import { tokenUsage } from "./token-usage/routes.ts";
 import {
+  createUpstream,
+  deleteUpstream,
+  listUpstreams,
+  testUpstream,
+  updateUpstream,
+} from "./upstreams/routes.ts";
+import {
   performanceOverview,
   performanceTelemetry,
 } from "./performance/routes.ts";
@@ -61,6 +68,11 @@ export const mountControlPlane = (app: Hono) => {
   adminApi.post("/keys/:id/rotate", rotateKey);
   adminApi.patch("/keys/:id", renameKey);
   adminApi.delete("/keys/:id", deleteKey);
+  adminApi.get("/upstreams", listUpstreams);
+  adminApi.post("/upstreams", createUpstream);
+  adminApi.patch("/upstreams/:id", updateUpstream);
+  adminApi.delete("/upstreams/:id", deleteUpstream);
+  adminApi.post("/upstreams/:id/test", testUpstream);
   adminApi.get("/search-config", getSearchConfigRoute);
   adminApi.put("/search-config", putSearchConfigRoute);
   adminApi.post("/search-config/test", testSearchConfigRoute);

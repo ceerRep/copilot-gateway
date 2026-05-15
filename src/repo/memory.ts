@@ -17,6 +17,8 @@ import type {
   SearchConfigRepo,
   SearchUsageRecord,
   SearchUsageRepo,
+  UpstreamConfig,
+  UpstreamConfigRepo,
   UsageRecord,
   UsageRepo,
 } from "./types.ts";
@@ -494,6 +496,47 @@ class MemorySearchConfigRepo implements SearchConfigRepo {
   }
 }
 
+class MemoryUpstreamConfigRepo implements UpstreamConfigRepo {
+  private store = new Map<string, UpstreamConfig>();
+
+  list(): Promise<UpstreamConfig[]> {
+    return Promise.resolve(
+      [...this.store.values()]
+        .map(cloneUpstreamConfig)
+        .sort((a, b) =>
+          a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)
+        ),
+    );
+  }
+
+  getById(id: string): Promise<UpstreamConfig | null> {
+    const found = this.store.get(id);
+    return Promise.resolve(found ? cloneUpstreamConfig(found) : null);
+  }
+
+  save(config: UpstreamConfig): Promise<void> {
+    this.store.set(config.id, cloneUpstreamConfig(config));
+    return Promise.resolve();
+  }
+
+  delete(id: string): Promise<boolean> {
+    return Promise.resolve(this.store.delete(id));
+  }
+
+  deleteAll(): Promise<void> {
+    this.store.clear();
+    return Promise.resolve();
+  }
+}
+
+const cloneUpstreamConfig = (config: UpstreamConfig): UpstreamConfig => ({
+  ...config,
+  supportedEndpoints: [...config.supportedEndpoints],
+  ...(config.pathOverrides
+    ? { pathOverrides: { ...config.pathOverrides } }
+    : {}),
+});
+
 export class InMemoryRepo implements Repo {
   apiKeys: ApiKeyRepo;
   github: GitHubRepo;
@@ -503,6 +546,7 @@ export class InMemoryRepo implements Repo {
   cache: CacheRepo;
   accountModelBackoffs: AccountModelBackoffRepo;
   searchConfig: SearchConfigRepo;
+  upstreamConfigs: UpstreamConfigRepo;
 
   constructor() {
     this.apiKeys = new MemoryApiKeyRepo();
@@ -513,5 +557,6 @@ export class InMemoryRepo implements Repo {
     this.cache = new MemoryCacheRepo();
     this.accountModelBackoffs = new MemoryAccountModelBackoffRepo();
     this.searchConfig = new MemorySearchConfigRepo();
+    this.upstreamConfigs = new MemoryUpstreamConfigRepo();
   }
 }

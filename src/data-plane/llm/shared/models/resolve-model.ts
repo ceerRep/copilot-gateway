@@ -4,11 +4,15 @@ import type {
   ModelInfo,
   ModelsResponse,
 } from "../../../../lib/models-cache.ts";
-import { loadModelsForAccount } from "../../../../lib/models-cache.ts";
+import {
+  getModelsForUpstream,
+  loadModelsForAccount,
+} from "../../../../lib/models-cache.ts";
 import { normalizeModelName } from "../../../../lib/model-name.ts";
 import { getMessagesRequestedReasoningEffort } from "../../../../lib/reasoning.ts";
 import type { ResponsesPayload } from "../../../../lib/responses-types.ts";
 import { getRepo } from "../../../../repo/index.ts";
+import { createOpenAiUpstream } from "../../../../lib/upstream/openai.ts";
 
 const CONTEXT_1M_BETA = "context-1m-2025-08-07";
 const CLAUDE_DATE_SUFFIX = /-\d{8}$/;
@@ -163,18 +167,27 @@ export const resolveModelForRequest = async (
   modelId: string,
   intent: ModelResolutionIntent = {},
 ): Promise<string> => {
-  const accounts = await getRepo().github.listAccounts();
   const byId = new Map<string, ModelInfo>();
 
+  // Model IDs are treated as global upstream contracts: if multiple accounts
+  // or upstreams expose the same id, their capability metadata is expected to
+  // describe the same model. Account fallback handles visibility and backoff,
+  // not per-account capability variants for the same id.
+  const accounts = await getRepo().github.listAccounts();
   for (const account of accounts) {
     const result = await loadModelsForAccount(account);
     if (result.type !== "models") continue;
-
     for (const model of result.data.data) {
-      // Model IDs are treated as global upstream contracts: if multiple
-      // accounts expose the same id, their capability metadata is expected to
-      // describe the same model. Account fallback handles visibility and
-      // backoff, not per-account capability variants for the same id.
+      if (!byId.has(model.id)) byId.set(model.id, model);
+    }
+  }
+
+  const customConfigs = await getRepo().upstreamConfigs.list();
+  for (const config of customConfigs) {
+    if (!config.enabled) continue;
+    const upstream = createOpenAiUpstream(config);
+    const models = await getModelsForUpstream(upstream);
+    for (const model of models.data) {
       if (!byId.has(model.id)) byId.set(model.id, model);
     }
   }

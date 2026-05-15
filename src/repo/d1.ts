@@ -16,6 +16,8 @@ import type {
   SearchConfigRepo,
   SearchUsageRecord,
   SearchUsageRepo,
+  UpstreamConfig,
+  UpstreamConfigRepo,
   UsageRecord,
   UsageRepo,
 } from "./types.ts";
@@ -1009,6 +1011,132 @@ class D1SearchConfigRepo implements SearchConfigRepo {
   }
 }
 
+class D1UpstreamConfigRepo implements UpstreamConfigRepo {
+  constructor(private db: D1Database) {}
+
+  async list(): Promise<UpstreamConfig[]> {
+    const { results } = await this.db
+      .prepare(
+        "SELECT id, name, base_url, bearer_token, supported_endpoints, enabled, sort_order, created_at, reasoning_dialect, path_overrides FROM upstream_configs ORDER BY sort_order, created_at",
+      )
+      .all<UpstreamConfigRow>();
+    return results.map(toUpstreamConfig);
+  }
+
+  async getById(id: string): Promise<UpstreamConfig | null> {
+    const row = await this.db
+      .prepare(
+        "SELECT id, name, base_url, bearer_token, supported_endpoints, enabled, sort_order, created_at, reasoning_dialect, path_overrides FROM upstream_configs WHERE id = ?",
+      )
+      .bind(id)
+      .first<UpstreamConfigRow>();
+    return row ? toUpstreamConfig(row) : null;
+  }
+
+  async save(config: UpstreamConfig): Promise<void> {
+    await this.db
+      .prepare(
+        `INSERT INTO upstream_configs (id, name, base_url, bearer_token, supported_endpoints, enabled, sort_order, created_at, reasoning_dialect, path_overrides) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET
+           name = excluded.name,
+           base_url = excluded.base_url,
+           bearer_token = excluded.bearer_token,
+           supported_endpoints = excluded.supported_endpoints,
+           enabled = excluded.enabled,
+           sort_order = excluded.sort_order,
+           reasoning_dialect = excluded.reasoning_dialect,
+           path_overrides = excluded.path_overrides`,
+      )
+      .bind(
+        config.id,
+        config.name,
+        config.baseUrl,
+        config.bearerToken,
+        JSON.stringify(config.supportedEndpoints),
+        config.enabled ? 1 : 0,
+        config.sortOrder,
+        config.createdAt,
+        config.reasoningDialect,
+        config.pathOverrides ? JSON.stringify(config.pathOverrides) : null,
+      )
+      .run();
+  }
+
+  async delete(id: string): Promise<boolean> {
+    const result = await this.db
+      .prepare("DELETE FROM upstream_configs WHERE id = ?")
+      .bind(id)
+      .run();
+    return (result.meta.changes as number ?? 0) > 0;
+  }
+
+  async deleteAll(): Promise<void> {
+    await this.db.prepare("DELETE FROM upstream_configs").run();
+  }
+}
+
+interface UpstreamConfigRow {
+  id: string;
+  name: string;
+  base_url: string;
+  bearer_token: string;
+  supported_endpoints: string;
+  enabled: number;
+  sort_order: number;
+  created_at: string;
+  reasoning_dialect: string | null;
+  path_overrides: string | null;
+}
+
+function toUpstreamConfig(row: UpstreamConfigRow): UpstreamConfig {
+  let supportedEndpoints: string[] = [];
+  try {
+    const parsed = JSON.parse(row.supported_endpoints);
+    if (Array.isArray(parsed)) {
+      supportedEndpoints = parsed.filter((v): v is string =>
+        typeof v === "string"
+      );
+    }
+  } catch {
+    // Stored value is malformed; treat as empty so upstream is not picked.
+  }
+
+  let pathOverrides: UpstreamConfig["pathOverrides"];
+  if (row.path_overrides) {
+    try {
+      const parsed = JSON.parse(row.path_overrides);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        const result: Record<string, string> = {};
+        for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+          if (typeof v === "string") result[k] = v;
+        }
+        if (Object.keys(result).length > 0) {
+          pathOverrides = result as UpstreamConfig["pathOverrides"];
+        }
+      }
+    } catch {
+      // Malformed override JSON falls back to defaults rather than blocking
+      // the upstream from being used.
+    }
+  }
+
+  const reasoningDialect: UpstreamConfig["reasoningDialect"] =
+    row.reasoning_dialect === "deepseek" ? "deepseek" : "openai";
+
+  return {
+    id: row.id,
+    name: row.name,
+    baseUrl: row.base_url,
+    bearerToken: row.bearer_token,
+    supportedEndpoints,
+    enabled: row.enabled !== 0,
+    sortOrder: row.sort_order,
+    createdAt: row.created_at,
+    reasoningDialect,
+    ...(pathOverrides ? { pathOverrides } : {}),
+  };
+}
+
 export class D1Repo implements Repo {
   apiKeys: ApiKeyRepo;
   github: GitHubRepo;
@@ -1018,6 +1146,7 @@ export class D1Repo implements Repo {
   cache: CacheRepo;
   accountModelBackoffs: AccountModelBackoffRepo;
   searchConfig: SearchConfigRepo;
+  upstreamConfigs: UpstreamConfigRepo;
 
   constructor(db: D1Database) {
     this.apiKeys = new D1ApiKeyRepo(db);
@@ -1028,5 +1157,6 @@ export class D1Repo implements Repo {
     this.cache = new D1CacheRepo(db);
     this.accountModelBackoffs = new D1AccountModelBackoffRepo(db);
     this.searchConfig = new D1SearchConfigRepo(db);
+    this.upstreamConfigs = new D1UpstreamConfigRepo(db);
   }
 }

@@ -11,6 +11,7 @@ import type {
   PerformanceMetricScope,
   PerformanceTelemetryRecord,
   SearchUsageRecord,
+  UpstreamConfig,
   UsageRecord,
 } from "../../repo/types.ts";
 import type { ExportPayload } from "./types.ts";
@@ -174,6 +175,7 @@ export const exportData = async (c: Context) => {
     searchUsage,
     performance,
     rawSearchConfig,
+    upstreamConfigs,
   ] = await Promise.all([
     repo.apiKeys.list(),
     repo.github.listAccounts(),
@@ -181,6 +183,7 @@ export const exportData = async (c: Context) => {
     repo.searchUsage.listAll(),
     includePerformance ? repo.performance.listAll() : Promise.resolve([]),
     repo.searchConfig.get(),
+    repo.upstreamConfigs.list(),
   ]);
 
   const payload: ExportPayload = {
@@ -193,6 +196,7 @@ export const exportData = async (c: Context) => {
       searchUsage,
       performanceIncluded: includePerformance,
       searchConfig: normalizeSearchConfig(rawSearchConfig),
+      upstreamConfigs,
     },
   };
   if (includePerformance) payload.data.performance = performance;
@@ -219,6 +223,9 @@ export const importData = async (c: Context) => {
     ? data.githubAccounts
     : [];
   const usage: UsageRecord[] = Array.isArray(data.usage) ? data.usage : [];
+  const upstreamConfigs: UpstreamConfig[] = Array.isArray(data.upstreamConfigs)
+    ? data.upstreamConfigs
+    : [];
   const searchUsageResult = parseSearchUsageRecords(data.searchUsage);
   if (searchUsageResult.type === "invalid") {
     return c.json({
@@ -242,6 +249,7 @@ export const importData = async (c: Context) => {
       repo.github.deleteAllAccounts(),
       repo.usage.deleteAll(),
       repo.searchUsage.deleteAll(),
+      repo.upstreamConfigs.deleteAll(),
       repo.accountModelBackoffs.deleteAll(),
     ];
     if (performanceIncluded) deletes.push(repo.performance.deleteAll());
@@ -269,6 +277,11 @@ export const importData = async (c: Context) => {
     await repo.searchUsage.set(record);
   }
 
+  // Import upstream configs
+  for (const config of upstreamConfigs) {
+    await repo.upstreamConfigs.save(normalizeImportedUpstreamConfig(config));
+  }
+
   // Import performance telemetry records
   for (const record of performance) {
     await repo.performance.set(record);
@@ -289,6 +302,7 @@ export const importData = async (c: Context) => {
       githubAccounts: githubAccounts.length,
       usage: usage.length,
       searchUsage: searchUsage.length,
+      upstreamConfigs: upstreamConfigs.length,
       performance: performance.length,
     },
   });
@@ -304,4 +318,31 @@ function shouldImportPerformance(data: Record<string, unknown>): boolean {
   // replace import. Non-empty or invalid provided values are still treated as
   // intentional so real payloads import and malformed payloads are rejected.
   return !Array.isArray(data.performance) || data.performance.length > 0;
+}
+
+// Older exports do not include `reasoningDialect` or `pathOverrides`. Fill in
+// the OpenAI defaults so the import can satisfy the now-required schema fields
+// without forcing the admin to re-edit every upstream after a restore.
+function normalizeImportedUpstreamConfig(
+  // deno-lint-ignore no-explicit-any
+  config: any,
+): UpstreamConfig {
+  const reasoningDialect = config.reasoningDialect === "deepseek"
+    ? "deepseek"
+    : "openai";
+  const pathOverrides = config.pathOverrides &&
+      typeof config.pathOverrides === "object" &&
+      !Array.isArray(config.pathOverrides)
+    ? Object.fromEntries(
+      Object.entries(config.pathOverrides as Record<string, unknown>)
+        .filter(([, v]) => typeof v === "string"),
+    ) as UpstreamConfig["pathOverrides"]
+    : undefined;
+  return {
+    ...config,
+    reasoningDialect,
+    ...(pathOverrides && Object.keys(pathOverrides).length > 0
+      ? { pathOverrides }
+      : {}),
+  };
 }

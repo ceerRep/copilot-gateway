@@ -1,6 +1,9 @@
-// POST /v1/embeddings — forward embedding requests to Copilot
+// POST /v1/embeddings — route embedding requests to the upstream that
+// declares the requested model. For Copilot upstreams, route through the
+// account pool so a 429/403/500 on one account fails over to the next.
 
 import type { Context } from "hono";
+
 import { copilotFetch, isCopilotTokenFetchError } from "../../lib/copilot.ts";
 import { withAccountFallback } from "../shared/account-pool/fallback.ts";
 import { withUsageResponseMetadata } from "../../middleware/usage-response-metadata.ts";
@@ -59,13 +62,8 @@ export const embeddings = async (c: Context) => {
 
     const resp = await withAccountFallback(
       request.model,
-      ({ account }) =>
-        copilotFetch(
-          "/embeddings",
-          { method: "POST", body: request.body },
-          account.token,
-          account.accountType,
-        ),
+      ({ upstream }) =>
+        upstream.fetch("embeddings", { method: "POST", body: request.body }),
     );
 
     return withUsageResponseMetadata(c, proxyJsonResponse(resp), {

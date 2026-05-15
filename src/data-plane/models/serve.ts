@@ -1,13 +1,22 @@
-// GET /v1/models, /api/models — proxy to Copilot models endpoint
+// GET /v1/models, /api/models — merge model lists from every configured
+// upstream and every connected GitHub account.
+//
+// Account order matches `repo.github.listAccounts()`; custom OpenAI-compatible
+// upstreams come after. The first upstream/account declaring a model "owns"
+// that id — later entries are dropped so dashboards and routing agree on a
+// single capability set per id (consistent with the routing rule that model
+// ids are global upstream contracts).
 
 import type { Context } from "hono";
 import { isCopilotTokenFetchError } from "../../lib/copilot.ts";
 import {
+  getModelsForUpstream,
   loadModelsForAccount,
+  type ModelInfo,
   ModelsFetchError,
-  type ModelsResponse,
 } from "../../lib/models-cache.ts";
 import { getRepo } from "../../repo/index.ts";
+import { createOpenAiUpstream } from "../../lib/upstream/openai.ts";
 import {
   apiErrorResponse,
   getErrorMessage,
@@ -34,25 +43,52 @@ const errorResponse = (error: unknown): Response | null => {
 
 export const models = async (c: Context) => {
   try {
-    const accounts = await getRepo().github.listAccounts();
-    const byId = new Map<string, ModelsResponse["data"][number]>();
-    let lastError: unknown = null;
-    let sawSuccess = false;
+    const byId = new Map<string, ModelInfo>();
+    let lastCopilotError: unknown = null;
+    let sawCopilotSuccess = false;
 
+    const accounts = await getRepo().github.listAccounts();
     for (const account of accounts) {
       const result = await loadModelsForAccount(account);
       if (result.type === "error") {
-        lastError = result.error;
+        lastCopilotError = result.error;
         continue;
       }
-
-      sawSuccess = true;
+      sawCopilotSuccess = true;
       for (const model of result.data.data) {
-        if (!byId.has(model.id)) byId.set(model.id, model);
+        if (!model?.id || byId.has(model.id)) continue;
+        // Copilot's /models is authoritative — supported_endpoints is set
+        // explicitly per SKU, so we keep whatever it declares (or undefined).
+        byId.set(model.id, { ...model, upstream_kind: "copilot" });
       }
     }
 
-    if (sawSuccess) {
+    const customConfigs = await getRepo().upstreamConfigs.list();
+    let sawCustom = false;
+    for (const config of customConfigs) {
+      if (!config.enabled) continue;
+      sawCustom = true;
+      const upstream = createOpenAiUpstream(config);
+      const list = await getModelsForUpstream(upstream);
+      for (const model of list.data) {
+        if (!model?.id || byId.has(model.id)) continue;
+        // Most third-party OpenAI-compatible providers do not declare
+        // per-model supported_endpoints — fall back to the upstream-level
+        // configuration so dashboard pickers and routing agree.
+        const supported_endpoints = model.supported_endpoints ??
+          upstream.supportedEndpoints;
+        byId.set(model.id, {
+          ...model,
+          supported_endpoints,
+          upstream_kind: "openai",
+        });
+      }
+    }
+
+    if (sawCopilotSuccess || sawCustom) {
+      // Merge Claude variants (reasoning-effort, 1M-context, dated aliases)
+      // into base model ids for a clean outbound view. Non-Claude models
+      // (gpt-*, gemini-*, custom-upstream) pass through unchanged.
       const merged = mergeClaudeVariants({
         object: "list",
         data: [...byId.values()],
@@ -60,14 +96,20 @@ export const models = async (c: Context) => {
       return Response.json(merged);
     }
 
-    const upstreamErrorResponse = errorResponse(lastError);
-    if (upstreamErrorResponse) return upstreamErrorResponse;
-    if (lastError) return apiErrorResponse(c, getErrorMessage(lastError), 502);
-    return apiErrorResponse(
-      c,
-      "No GitHub account connected — add one via the dashboard",
-      502,
-    );
+    if (accounts.length === 0 && !sawCustom) {
+      return apiErrorResponse(
+        c,
+        "No GitHub account connected — add one via the dashboard",
+        502,
+      );
+    }
+
+    const upstreamErr = errorResponse(lastCopilotError);
+    if (upstreamErr) return upstreamErr;
+    if (lastCopilotError) {
+      return apiErrorResponse(c, getErrorMessage(lastCopilotError), 502);
+    }
+    return Response.json({ object: "list", data: [] });
   } catch (e: unknown) {
     return apiErrorResponse(c, getErrorMessage(e), 502);
   }

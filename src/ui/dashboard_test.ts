@@ -1220,6 +1220,9 @@ Deno.test("DashboardPage renders Settings as masonry settings columns", () => {
   assertStringIncludes(html, "Copilot Quota");
   assertStringIncludes(html, "API Endpoints");
   assertStringIncludes(html, "Web Search");
+  assertStringIncludes(html, "Custom Upstreams");
+  assertStringIncludes(html, "Reasoning Dialect");
+  assertStringIncludes(html, "Path Overrides");
   assertStringIncludes(html, "Export Data");
   assertStringIncludes(html, "Import Data");
   assertFalse(html.includes("Data Transfer"));

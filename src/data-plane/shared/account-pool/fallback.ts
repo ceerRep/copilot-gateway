@@ -15,9 +15,11 @@ import {
   loadModelsForAccount,
   ModelsFetchError,
 } from "../../../lib/models-cache.ts";
+import { createCopilotUpstream } from "../../../lib/upstream/copilot.ts";
+import type { Upstream } from "../../../lib/upstream/types.ts";
 
 export interface AccountPoolAttemptContext {
-  account: GitHubAccount;
+  upstream: Upstream;
 }
 
 type LastFailure<T> =
@@ -132,7 +134,11 @@ export async function withAccountFallback<T>(
 
   for (const account of attempts) {
     try {
-      const result = await run({ account });
+      const upstream = await createCopilotUpstream(
+        account.token,
+        account.accountType,
+      );
+      const result = await run({ upstream });
       const status = switchableStatusFromResult(result);
       if (!status) return result;
 

@@ -331,6 +331,7 @@ export function dashboardAssets() {
                   claudeSmallModel: '',
                   codexModels: [],
                   codexModel: '',
+                  modelPickerSeparator: '',
                   tokenRange: 'today',
                   tokenChartMetric: 'total',
                   tokenData: [],
@@ -385,6 +386,34 @@ export function dashboardAssets() {
                   searchConfigSaving: false,
                   searchConfigTesting: false,
                   searchConfigTestResult: null,
+                  upstreams: [],
+                  upstreamsLoaded: false,
+                  upstreamTestingId: null,
+                  upstreamTestResult: null,
+                  upstreamModal: {
+                    open: false,
+                    id: null,
+                    name: '',
+                    baseUrl: '',
+                    bearerToken: '',
+                    supportedEndpoints: ['/chat/completions'],
+                    enabled: true,
+                    sortOrder: 100,
+                    reasoningDialect: 'openai',
+                    pathOverrides: {
+                      chat_completions: '',
+                      responses: '',
+                      messages: '',
+                      embeddings: '',
+                      models: '',
+                    },
+                    // Path overrides default to collapsed; auto-open in edit
+                    // mode if the upstream already has any override set so the
+                    // admin sees the live values without an extra click.
+                    pathOverridesOpen: false,
+                    saving: false,
+                    error: null,
+                  },
                   _chatAbort: null,
 
                   get baseUrl() { return location.origin; },
@@ -540,6 +569,7 @@ export function dashboardAssets() {
                         if (this.tab === 'settings' && this.isAdmin) {
                           this.loadMe().then(() => this.loadUsage());
                           this.loadSearchConfig();
+                          this.loadUpstreams();
                         } else if (this.tab === 'keys') {
                           this.loadKeys();
                         } else if (this.tab === 'usage') {
@@ -577,6 +607,7 @@ export function dashboardAssets() {
                           if (!this.meLoaded) await this.loadMe();
                           await this.loadUsage();
                           if (!this.searchConfigLoaded) this.loadSearchConfig();
+                          if (!this.upstreamsLoaded) this.loadUpstreams();
                         } else if (t === 'usage') {
                           this.tokenLoading = true;
                           this.searchUsageLoading = true;
@@ -601,6 +632,15 @@ export function dashboardAssets() {
                         return _modelsLoadPromise;
                       },
 
+                      // Force a full reload after admin upstream CRUD/test so the
+                      // models picker reflects the current upstream set without
+                      // waiting for an in-process cache refresh.
+                      reloadModels() {
+                        this.modelsLoaded = false;
+                        this.allModels = [];
+                        return this.ensureModelsLoaded();
+                      },
+
                       async loadModels() {
                         try {
                           const resp = await fetch('/api/models', { headers: this.authHeaders() });
@@ -617,26 +657,93 @@ export function dashboardAssets() {
                             if (first) this.chatModelId = first.id;
                           }
 
-                          const claudeFiltered = data
-                          .filter((m) => m.id.startsWith('claude-') && m.supported_endpoints?.includes('/v1/messages'));
+                          // Split models into copilot and custom-upstream groups so the
+                          // dashboard can present them separately. Copilot lists are
+                          // sorted by Claude tier (so claude-* SKUs sit near the top of
+                          // their respective pickers) while custom-upstream lists are
+                          // surfaced as-is — admins configure those by hand and there
+                          // is no canonical "tier" to apply.
+                          const messagesCapable = data.filter((m) => {
+                            const eps = m.supported_endpoints ?? [];
+                            return eps.includes('/v1/messages') ||
+                              eps.includes('/responses') ||
+                              eps.includes('/chat/completions');
+                          });
 
+                          // Context window map — backend mergeClaudeVariants has already
+                          // collapsed dated/variant aliases into base ids, so we can
+                          // key directly by model id.
                           this.claudeContextMap = Object.fromEntries(
-                            claudeFiltered.map((m) => [m.id, modelContextWindow(m)]),
+                            data
+                              .filter((m) => m.id.startsWith('claude-') && m.supported_endpoints?.includes('/v1/messages'))
+                              .map((m) => [m.id, modelContextWindow(m)]),
                           );
-                          const claudeAll = claudeFiltered.map((m) => m.id);
 
-                          this.claudeModelsBig = [...claudeAll].sort(sortClaudeBig);
-                          this.claudeModelsSonnet = [...claudeAll].sort(sortClaudeSonnet);
-                          this.claudeModelsSmall = [...claudeAll].sort(sortClaudeSmall);
-                          this.claudeModel = this.claudeModelsBig[0] || '';
-                          this.claudeSonnetModel = this.claudeModelsSonnet[0] || '';
-                          this.claudeSmallModel = this.claudeModelsSmall[0] || '';
-
-                          this.codexModels = data
-                            .filter((m) => m.supported_endpoints?.includes('/responses'))
+                          const SEPARATOR = '── Custom Upstreams ──';
+                          const isCopilot = (m) => m.upstream_kind !== 'openai';
+                          const dedupe = (ids) => [...new Set(ids)];
+                          // Restrict the Copilot Claude segment to claude-* SKUs that
+                          // natively speak /v1/messages. Other Copilot SKUs (gpt-*,
+                          // gemini-*, ...) are not useful as a Claude Code backend, and
+                          // claude SKUs that are translation-only on Copilot are too
+                          // narrow to be the right default for the Claude pickers.
+                          // Custom upstreams are admin-curated and surfaced in full.
+                          //
+                          // Backend mergeClaudeVariants has already collapsed dated
+                          // and variant aliases (-xhigh, -1m) into base ids, so we
+                          // key directly by model id without configModelName dedupe.
+                          const copilotIds = dedupe(messagesCapable
+                            .filter(isCopilot)
+                            .filter((m) => m.id.startsWith('claude-'))
+                            .filter((m) => m.supported_endpoints?.includes('/v1/messages'))
+                            .map((m) => m.id));
+                          const customClaudeIds = messagesCapable
+                            .filter((m) => !isCopilot(m))
                             .map((m) => m.id)
+                            .sort((a, b) => a.localeCompare(b));
+
+                          const buildClaudePicker = (sortFn) => {
+                            const copilotSorted = [...copilotIds].sort(sortFn);
+                            // Only insert the separator when both segments are
+                            // non-empty. With no Copilot models the picker would
+                            // otherwise lead with a disabled separator row.
+                            return copilotSorted.length > 0 && customClaudeIds.length > 0
+                              ? [...copilotSorted, SEPARATOR, ...customClaudeIds]
+                              : [...copilotSorted, ...customClaudeIds];
+                          };
+
+                          this.claudeModelsBig = buildClaudePicker(sortClaudeBig);
+                          this.claudeModelsSonnet = buildClaudePicker(sortClaudeSonnet);
+                          this.claudeModelsSmall = buildClaudePicker(sortClaudeSmall);
+                          const pickFirst = (list) => list.find((id) => id !== SEPARATOR) || '';
+                          this.claudeModel = pickFirst(this.claudeModelsBig);
+                          this.claudeSonnetModel = pickFirst(this.claudeModelsSonnet);
+                          this.claudeSmallModel = pickFirst(this.claudeModelsSmall);
+
+                          // Codex CLI talks the Responses protocol; any
+                          // upstream that supports /responses natively or that
+                          // can be served by responses-via-chat-completions
+                          // translation qualifies. Backend mergeClaudeVariants
+                          // has already collapsed variants, so we key by id directly.
+                          const codexCapable = data.filter((m) => {
+                            const eps = m.supported_endpoints ?? [];
+                            return eps.includes('/responses') ||
+                              eps.includes('/chat/completions');
+                          });
+                          const copilotCodex = dedupe(codexCapable
+                            .filter(isCopilot)
+                            .filter((m) => m.supported_endpoints?.includes('/responses'))
+                            .map((m) => m.id))
                             .sort(sortCodex);
-                          this.codexModel = this.codexModels[0] || '';
+                          const customCodex = codexCapable
+                            .filter((m) => !isCopilot(m))
+                            .map((m) => m.id)
+                            .sort((a, b) => a.localeCompare(b));
+                          this.codexModels = copilotCodex.length > 0 && customCodex.length > 0
+                            ? [...copilotCodex, SEPARATOR, ...customCodex]
+                            : [...copilotCodex, ...customCodex];
+                          this.codexModel = pickFirst(this.codexModels);
+                          this.modelPickerSeparator = SEPARATOR;
 
                           this.modelsLoaded = true;
                           if (this.tab === 'usage' && this.chartsReady) {
@@ -671,6 +778,9 @@ export function dashboardAssets() {
                       },
 
                       async loadUsage() {
+                        // Quota is Copilot-only — skip the call when no GitHub
+                        // account is selected so the dashboard doesn't log
+                        // a 502 on every poll for users on custom upstreams.
                         if (!this.selectedGithubAccountId) {
                           this.usageData = null;
                           this.usageError = false;
@@ -760,6 +870,162 @@ export function dashboardAssets() {
                           console.error('testSearchConfig:', e);
                         } finally {
                           this.searchConfigTesting = false;
+                        }
+                      },
+
+                      async loadUpstreams() {
+                        try {
+                          const resp = await fetch('/api/upstreams', { headers: this.authHeaders() });
+                          if (resp.status === 401) { this.logout(); return; }
+                          if (!resp.ok) { console.error('loadUpstreams: HTTP', resp.status); return; }
+                          this.upstreams = await resp.json();
+                          this.upstreamsLoaded = true;
+                        } catch (e) {
+                          console.error('loadUpstreams:', e);
+                        }
+                      },
+
+                      openUpstreamModal(existing) {
+                        const blankOverrides = () => ({
+                          chat_completions: '',
+                          responses: '',
+                          messages: '',
+                          embeddings: '',
+                          models: '',
+                        });
+                        if (existing) {
+                          const overrides = { ...blankOverrides(), ...(existing.path_overrides ?? {}) };
+                          const hasOverrides = Object.values(existing.path_overrides ?? {}).some((v) => typeof v === 'string' && v.length > 0);
+                          this.upstreamModal = {
+                            open: true,
+                            id: existing.id,
+                            name: existing.name,
+                            baseUrl: existing.base_url,
+                            bearerToken: '',
+                            supportedEndpoints: [...existing.supported_endpoints],
+                            enabled: existing.enabled,
+                            sortOrder: existing.sort_order,
+                            reasoningDialect: existing.reasoning_dialect ?? 'openai',
+                            pathOverrides: overrides,
+                            pathOverridesOpen: hasOverrides,
+                            saving: false,
+                            error: null,
+                          };
+                        } else {
+                          const nextSort = this.upstreams.reduce((m, u) => Math.max(m, u.sort_order), -1) + 1;
+                          this.upstreamModal = {
+                            open: true,
+                            id: null,
+                            name: '',
+                            baseUrl: '',
+                            bearerToken: '',
+                            supportedEndpoints: ['/chat/completions'],
+                            enabled: true,
+                            sortOrder: nextSort,
+                            reasoningDialect: 'openai',
+                            pathOverrides: blankOverrides(),
+                            pathOverridesOpen: false,
+                            saving: false,
+                            error: null,
+                          };
+                        }
+                      },
+
+                      upstreamModalOverrideCount() {
+                        return Object.values(this.upstreamModal.pathOverrides ?? {})
+                          .filter((v) => typeof v === 'string' && v.trim()).length;
+                      },
+
+                      closeUpstreamModal() {
+                        this.upstreamModal.open = false;
+                      },
+
+                      toggleUpstreamEndpoint(ep) {
+                        const list = this.upstreamModal.supportedEndpoints;
+                        const idx = list.indexOf(ep);
+                        if (idx === -1) list.push(ep); else list.splice(idx, 1);
+                      },
+
+                      async saveUpstream() {
+                        this.upstreamModal.saving = true;
+                        this.upstreamModal.error = null;
+                        try {
+                          const isEdit = !!this.upstreamModal.id;
+                          // Send only non-empty path overrides — blank input means
+                          // "use the default", so the field should be absent rather
+                          // than fail server-side validation as an empty string.
+                          const overrides = {};
+                          for (const [k, v] of Object.entries(this.upstreamModal.pathOverrides ?? {})) {
+                            if (typeof v === 'string' && v.trim()) overrides[k] = v.trim();
+                          }
+                          const body = {
+                            name: this.upstreamModal.name,
+                            base_url: this.upstreamModal.baseUrl,
+                            supported_endpoints: this.upstreamModal.supportedEndpoints,
+                            enabled: this.upstreamModal.enabled,
+                            sort_order: this.upstreamModal.sortOrder,
+                            reasoning_dialect: this.upstreamModal.reasoningDialect,
+                            path_overrides: Object.keys(overrides).length > 0 ? overrides : null,
+                          };
+                          if (this.upstreamModal.bearerToken) {
+                            body.bearer_token = this.upstreamModal.bearerToken;
+                          }
+                          const url = isEdit ? '/api/upstreams/' + this.upstreamModal.id : '/api/upstreams';
+                          const resp = await fetch(url, {
+                            method: isEdit ? 'PATCH' : 'POST',
+                            headers: { ...this.authHeaders(), 'Content-Type': 'application/json' },
+                            body: JSON.stringify(body),
+                          });
+                          if (resp.status === 401) { this.logout(); return; }
+                          if (!resp.ok) {
+                            const err = await resp.json().catch(() => ({}));
+                            this.upstreamModal.error = err.error || ('HTTP ' + resp.status);
+                            return;
+                          }
+                          this.closeUpstreamModal();
+                          await this.loadUpstreams();
+                          this.reloadModels();
+                        } catch (e) {
+                          this.upstreamModal.error = e.message || String(e);
+                        } finally {
+                          this.upstreamModal.saving = false;
+                        }
+                      },
+
+                      async deleteUpstream(id, name) {
+                        if (!confirm('Delete upstream "' + name + '"?')) return;
+                        try {
+                          const resp = await fetch('/api/upstreams/' + id, {
+                            method: 'DELETE',
+                            headers: this.authHeaders(),
+                          });
+                          if (resp.status === 401) { this.logout(); return; }
+                          if (!resp.ok) {
+                            alert('Delete failed: HTTP ' + resp.status);
+                            return;
+                          }
+                          await this.loadUpstreams();
+                          this.reloadModels();
+                        } catch (e) {
+                          console.error('deleteUpstream:', e);
+                        }
+                      },
+
+                      async testUpstream(id) {
+                        this.upstreamTestingId = id;
+                        this.upstreamTestResult = null;
+                        try {
+                          const resp = await fetch('/api/upstreams/' + id + '/test', {
+                            method: 'POST',
+                            headers: this.authHeaders(),
+                          });
+                          if (resp.status === 401) { this.logout(); return; }
+                          this.upstreamTestResult = await resp.json();
+                          if (this.upstreamTestResult?.ok) this.reloadModels();
+                        } catch (e) {
+                          this.upstreamTestResult = { ok: false, error: e.message || String(e) };
+                        } finally {
+                          this.upstreamTestingId = null;
                         }
                       },
 

@@ -1,6 +1,7 @@
 import { assertEquals } from "@std/assert";
 import { initRepo } from "../../../repo/index.ts";
 import { InMemoryRepo } from "../../../repo/memory.ts";
+import { stubUpstream } from "../../../test-helpers.ts";
 import {
   recordUpstreamHttpFailure,
   withUpstreamTelemetry,
@@ -32,8 +33,7 @@ const baseInput = (
       model: overrides.model ?? "claude-test",
       stream: overrides.stream ?? true,
     },
-    githubToken: "token",
-    accountType: "individual",
+    upstream: stubUpstream(),
     apiKeyId: "key_a",
     clientStream: overrides.stream ?? true,
     runtimeLocation: "SJC",
@@ -318,8 +318,7 @@ Deno.test("withUpstreamTelemetry skips recording when apiKeyId is absent", async
     {
       sourceApi: "messages",
       payload: { model: "claude-anon", stream: true },
-      githubToken: "token",
-      accountType: "individual",
+      upstream: stubUpstream(),
       clientStream: true,
       runtimeLocation: "SJC",
       scheduleBackground: (promise) => background.push(promise),

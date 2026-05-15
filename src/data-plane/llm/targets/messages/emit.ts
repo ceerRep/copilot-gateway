@@ -1,7 +1,4 @@
-import {
-  copilotFetch,
-  isCopilotTokenFetchError,
-} from "../../../../lib/copilot.ts";
+import { isCopilotTokenFetchError } from "../../../../lib/copilot.ts";
 import type {
   MessagesPayload,
   MessagesResponse,
@@ -50,15 +47,13 @@ export const emitToMessages = async (
       messagesTargetInterceptors,
       async () => {
         const upstreamStartedAt = performance.now();
-        const response = await copilotFetch(
-          "/v1/messages",
+        const response = await input.upstream.fetch(
+          "messages",
           {
             method: "POST",
             body: JSON.stringify(input.payload),
             signal: input.downstreamAbortSignal,
           },
-          input.githubToken,
-          input.accountType,
           input.fetchOptions,
         );
 

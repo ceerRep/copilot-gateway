@@ -16,6 +16,8 @@ import type {
   SearchConfigRepo,
   SearchUsageRecord,
   SearchUsageRepo,
+  UpstreamConfig,
+  UpstreamConfigRepo,
   UsageRecord,
   UsageRepo,
 } from "./types.ts";
@@ -765,6 +767,49 @@ class DenoKvSearchConfigRepo implements SearchConfigRepo {
   }
 }
 
+class DenoKvUpstreamConfigRepo implements UpstreamConfigRepo {
+  constructor(private kv: Deno.Kv) {}
+
+  async list(): Promise<UpstreamConfig[]> {
+    const items: UpstreamConfig[] = [];
+    for await (
+      const entry of this.kv.list<UpstreamConfig>({ prefix: ["upstream_configs"] })
+    ) {
+      if (entry.value) items.push(entry.value);
+    }
+    return items.sort((a, b) =>
+      a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt)
+    );
+  }
+
+  async getById(id: string): Promise<UpstreamConfig | null> {
+    const entry = await this.kv.get<UpstreamConfig>(["upstream_configs", id]);
+    return entry.value;
+  }
+
+  async save(config: UpstreamConfig): Promise<void> {
+    await this.kv.set(["upstream_configs", config.id], config);
+  }
+
+  async delete(id: string): Promise<boolean> {
+    const existing = await this.kv.get<UpstreamConfig>([
+      "upstream_configs",
+      id,
+    ]);
+    if (!existing.value) return false;
+    await this.kv.delete(["upstream_configs", id]);
+    return true;
+  }
+
+  async deleteAll(): Promise<void> {
+    for await (
+      const entry of this.kv.list({ prefix: ["upstream_configs"] })
+    ) {
+      await this.kv.delete(entry.key);
+    }
+  }
+}
+
 export class DenoKvRepo implements Repo {
   apiKeys: ApiKeyRepo;
   github: GitHubRepo;
@@ -774,6 +819,7 @@ export class DenoKvRepo implements Repo {
   cache: CacheRepo;
   accountModelBackoffs: AccountModelBackoffRepo;
   searchConfig: SearchConfigRepo;
+  upstreamConfigs: UpstreamConfigRepo;
 
   constructor(kv: Deno.Kv) {
     this.apiKeys = new DenoKvApiKeyRepo(kv);
@@ -784,5 +830,6 @@ export class DenoKvRepo implements Repo {
     this.cache = new DenoKvCacheRepo(kv);
     this.accountModelBackoffs = new DenoKvAccountModelBackoffRepo(kv);
     this.searchConfig = new DenoKvSearchConfigRepo(kv);
+    this.upstreamConfigs = new DenoKvUpstreamConfigRepo(kv);
   }
 }

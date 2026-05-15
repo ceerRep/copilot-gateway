@@ -26,8 +26,14 @@ const makePayload = (): ResponsesPayload => ({
 const makeInput = (payload: ResponsesPayload): EmitInput<ResponsesPayload> => ({
   sourceApi: "responses",
   payload,
-  githubToken: "github-token",
-  accountType: "individual",
+  upstream: {
+    id: "test",
+    name: "Test",
+    kind: "copilot" as const,
+    supportedEndpoints: [],
+    reasoningDialect: "openai" as const,
+    fetch: () => Promise.resolve(new Response()),
+  },
 });
 
 type PromiseState<T> =

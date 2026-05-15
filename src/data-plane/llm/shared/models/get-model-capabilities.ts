@@ -1,4 +1,5 @@
 import { findModel, type ModelInfo } from "../../../../lib/models-cache.ts";
+import type { Upstream } from "../../../../lib/upstream/types.ts";
 
 interface ModelCapabilitiesModel {
   id: string;
@@ -40,10 +41,23 @@ const inferredChatCompletionsSupport = (
   model.supported_endpoints === undefined &&
   model.capabilities?.type === "chat";
 
-export const modelCapabilitiesFromModel = (
-  model: ModelInfo | undefined,
-): ModelCapabilities => {
-  const supportedEndpoints = model?.supported_endpoints ?? [];
+// When the upstream's /models entry does not declare per-model
+// `supported_endpoints` (most third-party OpenAI-compatible providers do
+// not), fall back to the upstream-level configuration so each model on that
+// upstream inherits the admin's declared capability set.
+//
+// Copilot's /models is authoritative — its embedding/non-chat SKUs report
+// per-model supported_endpoints explicitly, so a missing field on a Copilot
+// entry means "not declared" rather than "all of the above". Skip the
+// upstream-level fallback for copilot upstreams to avoid promoting
+// embedding-only models into the chat/responses/messages routing surface.
+export const getModelCapabilities = async (
+  modelId: string,
+  upstream: Upstream,
+): Promise<ModelCapabilities> => {
+  const model = await findModel(modelId, upstream);
+  const supportedEndpoints = model?.supported_endpoints ??
+    (upstream.kind === "openai" ? upstream.supportedEndpoints : []);
 
   return {
     model,
@@ -55,13 +69,4 @@ export const modelCapabilitiesFromModel = (
     supportsAdaptiveThinking:
       model?.capabilities?.supports?.adaptive_thinking === true,
   };
-};
-
-export const getModelCapabilities = async (
-  modelId: string,
-  githubToken: string,
-  accountType: string,
-): Promise<ModelCapabilities> => {
-  const model = await findModel(modelId, githubToken, accountType);
-  return modelCapabilitiesFromModel(model);
 };

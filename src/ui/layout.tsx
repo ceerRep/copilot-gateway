@@ -144,7 +144,7 @@ export function Layout({
     }
 
     /* Input styling */
-    input[type="text"], input[type="password"], textarea {
+    input[type="text"], input[type="password"], input[type="number"], textarea, select {
       background: rgba(255, 255, 255, 0.04);
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 10px;
@@ -156,9 +156,27 @@ export function Layout({
       outline: none;
       width: 100%;
     }
-    input:focus, textarea:focus {
+    input:focus, textarea:focus, select:focus {
       border-color: rgba(0, 229, 255, 0.5);
       box-shadow: 0 0 0 3px rgba(0, 229, 255, 0.1);
+    }
+    /* Replace the native dropdown arrow so it does not flip back to a
+       browser-default light triangle on dark backgrounds. Sans-serif and a
+       roomier right-side gutter keep multi-word option labels from
+       crowding the arrow. The explicit padding-left re-asserts the
+       horizontal inset because appearance:none drops the browser's
+       default text inset on Chromium. */
+    select {
+      appearance: none;
+      -webkit-appearance: none;
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background-image:
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none' stroke='%23b0bec5' stroke-width='2'><polyline points='1 1 6 6 11 1'/></svg>");
+      background-repeat: no-repeat;
+      background-position: right 16px center;
+      padding-left: 16px;
+      padding-right: 44px;
+      cursor: pointer;
     }
 
     /* Button */

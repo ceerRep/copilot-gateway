@@ -234,6 +234,7 @@ export function renderDashboardHeader() {
   `;
 }
 
+
 export function renderKeysTab() {
   return html`
     <div x-show="tab === 'keys'">
@@ -511,7 +512,7 @@ export function renderKeysTab() {
                     class="max-w-full text-xs font-mono bg-surface-800 text-gray-300 border border-white/10 rounded-lg px-2 py-1.5 outline-none focus:border-accent-cyan/50 cursor-pointer"
                   >
                     <template x-for="m in claudeModelsBig" :key="m">
-                      <option :value="m" x-text="m"></option>
+                      <option :value="m" x-text="m" :disabled="m === modelPickerSeparator"></option>
                     </template>
                   </select>
                 </div>
@@ -522,7 +523,7 @@ export function renderKeysTab() {
                     class="max-w-full text-xs font-mono bg-surface-800 text-gray-300 border border-white/10 rounded-lg px-2 py-1.5 outline-none focus:border-accent-cyan/50 cursor-pointer"
                   >
                     <template x-for="m in claudeModelsSonnet" :key="m">
-                      <option :value="m" x-text="m"></option>
+                      <option :value="m" x-text="m" :disabled="m === modelPickerSeparator"></option>
                     </template>
                   </select>
                 </div>
@@ -533,7 +534,7 @@ export function renderKeysTab() {
                     class="max-w-full text-xs font-mono bg-surface-800 text-gray-300 border border-white/10 rounded-lg px-2 py-1.5 outline-none focus:border-accent-cyan/50 cursor-pointer"
                   >
                     <template x-for="m in claudeModelsSmall" :key="m">
-                      <option :value="m" x-text="m"></option>
+                      <option :value="m" x-text="m" :disabled="m === modelPickerSeparator"></option>
                     </template>
                   </select>
                 </div>
@@ -559,7 +560,7 @@ export function renderKeysTab() {
                   class="max-w-full text-xs font-mono bg-surface-800 text-gray-300 border border-white/10 rounded-lg px-2 py-1.5 outline-none focus:border-accent-cyan/50 cursor-pointer"
                 >
                   <template x-for="m in codexModels" :key="m">
-                    <option :value="m" x-text="m"></option>
+                    <option :value="m" x-text="m" :disabled="m === modelPickerSeparator"></option>
                   </template>
                 </select>
               </div>
@@ -1150,6 +1151,323 @@ export function renderSettingsTab() {
             </div>
           </div>
         </template>
+
+        <template x-if="upstreamModal.open">
+          <div
+            class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 animate-in overflow-y-auto"
+          >
+            <div
+              class="flex min-h-full items-start justify-center p-4 sm:items-center"
+            >
+              <div class="glass-card p-6 sm:p-8 max-w-lg w-full glow-cyan my-auto">
+              <h3
+                class="text-white text-lg font-semibold mb-4"
+                x-text="upstreamModal.id ? 'Edit Upstream' : 'Add Upstream'"
+              ></h3>
+
+              <div class="space-y-4">
+                <div>
+                  <label
+                    class="block text-xs font-medium text-gray-500 uppercase tracking-widest mb-2"
+                  >Name</label>
+                  <input
+                    type="text"
+                    class="w-full"
+                    placeholder="e.g. OpenAI Production"
+                    x-model="upstreamModal.name"
+                  />
+                </div>
+                <div>
+                  <label
+                    class="block text-xs font-medium text-gray-500 uppercase tracking-widest mb-2"
+                  >Base URL</label>
+                  <input
+                    type="text"
+                    class="w-full font-mono text-sm"
+                    placeholder="https://api.openai.com"
+                    x-model="upstreamModal.baseUrl"
+                  />
+                  <p class="text-[11px] text-gray-600 mt-1">
+                    Final URL is base + path. Override individual paths below
+                    if your provider mounts the API under a subpath.
+                  </p>
+                </div>
+                <div>
+                  <label
+                    class="block text-xs font-medium text-gray-500 uppercase tracking-widest mb-2"
+                  >
+                    <span
+                      x-text="upstreamModal.id ? 'Bearer Token (leave blank to keep)' : 'Bearer Token'"
+                    ></span>
+                  </label>
+                  <input
+                    type="password"
+                    autocomplete="off"
+                    class="w-full font-mono text-sm"
+                    placeholder="sk-..."
+                    x-model="upstreamModal.bearerToken"
+                  />
+                </div>
+                <div>
+                  <label
+                    class="block text-xs font-medium text-gray-500 uppercase tracking-widest mb-2"
+                  >Supported Endpoints</label>
+                  <div class="space-y-2">
+                    <template
+                      x-for="ep in ['/chat/completions','/responses','/v1/messages','/embeddings']"
+                      :key="ep"
+                    >
+                      <label class="flex items-center gap-2 text-sm text-gray-300">
+                        <input
+                          type="checkbox"
+                          class="accent-accent-cyan"
+                          :checked="upstreamModal.supportedEndpoints.includes(ep)"
+                          @change="toggleUpstreamEndpoint(ep)"
+                        />
+                        <span class="font-mono" x-text="ep"></span>
+                      </label>
+                    </template>
+                  </div>
+                </div>
+                <div>
+                  <label
+                    class="block text-xs font-medium text-gray-500 uppercase tracking-widest mb-2"
+                  >Reasoning Dialect</label>
+                  <select
+                    class="w-full"
+                    x-model="upstreamModal.reasoningDialect"
+                  >
+                    <option value="openai">OpenAI standard (reasoning_text)</option>
+                    <option value="deepseek">DeepSeek (reasoning_content)</option>
+                  </select>
+                </div>
+                <div>
+                  <button
+                    type="button"
+                    @click="upstreamModal.pathOverridesOpen = !upstreamModal.pathOverridesOpen"
+                    :aria-expanded="upstreamModal.pathOverridesOpen.toString()"
+                    class="flex w-full items-center justify-between text-left text-xs font-medium text-gray-500 uppercase tracking-widest mb-2 hover:text-gray-300 transition-colors"
+                  >
+                    <span>Path Overrides</span>
+                    <span
+                      class="flex items-center gap-2 normal-case tracking-normal text-[10px] text-gray-600"
+                    >
+                      <span
+                        x-show="!upstreamModal.pathOverridesOpen && upstreamModalOverrideCount() > 0"
+                        x-text="upstreamModalOverrideCount() + ' set'"
+                      ></span>
+                      <svg
+                        class="h-3 w-3 transition-transform"
+                        :class="upstreamModal.pathOverridesOpen ? 'rotate-180' : ''"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </span>
+                  </button>
+                  <div x-show="upstreamModal.pathOverridesOpen" x-cloak>
+                    <p class="text-[11px] text-gray-600 mb-2">
+                      Leave blank to use the OpenAI default
+                      <code class="font-mono">/v1/&lt;endpoint&gt;</code>.
+                      <code class="font-mono">/v1/messages/count_tokens</code>
+                      follows the messages path automatically.
+                    </p>
+                    <div class="space-y-2">
+                      <template
+                        x-for="key in ['chat_completions','responses','messages','embeddings','models']"
+                        :key="key"
+                      >
+                        <div class="flex items-center gap-2">
+                          <span
+                            class="font-mono text-xs text-gray-500 w-32 shrink-0"
+                            x-text="key"
+                          ></span>
+                          <input
+                            type="text"
+                            class="flex-1 font-mono text-xs"
+                            :placeholder="'/v1/' + key.replace('_', '/')"
+                            x-model="upstreamModal.pathOverrides[key]"
+                          />
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+                <div class="flex items-center justify-between gap-3 flex-wrap">
+                  <label class="flex items-center gap-2 text-sm text-gray-300">
+                    <input
+                      type="checkbox"
+                      class="accent-accent-cyan"
+                      x-model="upstreamModal.enabled"
+                    />
+                    Enabled
+                  </label>
+                  <label class="flex items-center gap-2 text-sm text-gray-300">
+                    Order
+                    <input
+                      type="number"
+                      class="w-20"
+                      x-model.number="upstreamModal.sortOrder"
+                    />
+                  </label>
+                </div>
+                <template x-if="upstreamModal.error">
+                  <p
+                    class="text-sm text-red-300"
+                    x-text="upstreamModal.error"
+                  ></p>
+                </template>
+              </div>
+
+              <div class="flex flex-col sm:flex-row gap-2 mt-6">
+                <button
+                  @click="saveUpstream()"
+                  class="btn-primary flex-1"
+                  :disabled="upstreamModal.saving"
+                >
+                  <span x-show="!upstreamModal.saving">Save</span>
+                  <span
+                    x-show="upstreamModal.saving"
+                    class="flex items-center justify-center gap-2"
+                  >
+                    ${spinner("h-4 w-4")} Saving…
+                  </span>
+                </button>
+                <button @click="closeUpstreamModal()" class="btn-ghost">
+                  Cancel
+                </button>
+              </div>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <div class="glass-card p-5 sm:p-6 mb-5 animate-in delay-3">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-4">
+            <div class="min-w-0">
+              <h3 class="text-white font-semibold mb-1">Custom Upstreams</h3>
+              <p class="text-sm text-gray-400">
+                Route requests to OpenAI-compatible APIs alongside (or instead
+                of) GitHub Copilot.
+              </p>
+            </div>
+            <button
+              @click="openUpstreamModal()"
+              class="btn-ghost text-xs self-start sm:self-auto"
+            >
+              + Add Upstream
+            </button>
+          </div>
+
+          <template x-if="!upstreamsLoaded">
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <div class="h-12 bg-surface-600 rounded animate-pulse"></div>
+              <div class="h-12 bg-surface-600 rounded animate-pulse"></div>
+            </div>
+          </template>
+
+          <template x-if="upstreamsLoaded && upstreams.length === 0">
+            <p class="text-sm text-gray-500">
+              No custom upstreams configured. Requests fall back to GitHub
+              Copilot.
+            </p>
+          </template>
+
+          <template x-if="upstreamsLoaded && upstreams.length > 0">
+            <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <template x-for="up in upstreams" :key="up.id">
+                <div
+                  class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-lg border border-white/5 bg-surface-800 p-3"
+                >
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-2 mb-1 flex-wrap">
+                      <span
+                        class="w-2 h-2 rounded-full shrink-0"
+                        :class="up.enabled ? 'bg-accent-emerald' : 'bg-gray-600'"
+                      ></span>
+                      <p
+                        class="text-sm font-medium text-white truncate"
+                        x-text="up.name"
+                      ></p>
+                      <span
+                        class="text-[10px] text-gray-500 font-mono"
+                        x-text="'sort: ' + up.sort_order"
+                      ></span>
+                      <span
+                        x-show="up.reasoning_dialect && up.reasoning_dialect !== 'openai'"
+                        class="text-[10px] uppercase tracking-widest text-accent-amber font-mono"
+                        x-text="up.reasoning_dialect"
+                      ></span>
+                    </div>
+                    <p
+                      class="text-xs text-gray-500 font-mono truncate"
+                      x-text="up.base_url"
+                    ></p>
+                    <p class="text-[11px] text-gray-600 mt-1">
+                      <span x-text="up.supported_endpoints.join(', ')"></span>
+                    </p>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-2">
+                    <button
+                      @click="testUpstream(up.id)"
+                      class="btn-ghost text-xs"
+                      :disabled="upstreamTestingId === up.id"
+                    >
+                      <span x-show="upstreamTestingId !== up.id">Test</span>
+                      <span
+                        x-show="upstreamTestingId === up.id"
+                        class="flex items-center gap-1"
+                      >
+                        ${spinner("h-3 w-3")} Testing
+                      </span>
+                    </button>
+                    <button
+                      @click="openUpstreamModal(up)"
+                      class="btn-ghost text-xs"
+                    >Edit</button>
+                    <button
+                      @click="deleteUpstream(up.id, up.name)"
+                      class="inline-flex min-h-9 min-w-9 items-center justify-center rounded-md text-gray-600 hover:text-accent-rose hover:bg-white/[0.04] transition-colors p-1"
+                      aria-label="Delete upstream"
+                      title="Delete"
+                    >
+                      <svg
+                        class="w-3.5 h-3.5"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
+
+          <template x-if="upstreamTestResult">
+            <div
+              class="rounded-lg border p-3 mt-3"
+              :class="upstreamTestResult.ok ? 'border-accent-emerald/20 bg-accent-emerald/5' : 'border-red-500/20 bg-red-500/5'"
+            >
+              <p
+                class="text-xs font-medium mb-1"
+                :class="upstreamTestResult.ok ? 'text-accent-emerald' : 'text-red-300'"
+                x-text="upstreamTestResult.ok ? ('OK · ' + upstreamTestResult.model_count + ' models') : ('Error · status ' + (upstreamTestResult.status ?? 'n/a'))"
+              ></p>
+              <p
+                class="text-[11px] text-gray-400 break-all"
+                x-text="upstreamTestResult.ok ? upstreamTestResult.models.slice(0, 8).join(', ') + (upstreamTestResult.models.length > 8 ? '…' : '') : (upstreamTestResult.body ?? upstreamTestResult.error ?? '')"
+              ></p>
+            </div>
+          </template>
+        </div>
 
         <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
           <div class="flex flex-col gap-5">

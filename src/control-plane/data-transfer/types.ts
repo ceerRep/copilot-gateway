@@ -4,6 +4,7 @@ import type {
   GitHubAccount,
   PerformanceTelemetryRecord,
   SearchUsageRecord,
+  UpstreamConfig,
   UsageRecord,
 } from "../../repo/types.ts";
 
@@ -18,5 +19,6 @@ export interface ExportPayload {
     performance?: PerformanceTelemetryRecord[];
     performanceIncluded?: boolean;
     searchConfig: SearchConfig;
+    upstreamConfigs: UpstreamConfig[];
   };
 }

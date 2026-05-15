@@ -338,6 +338,7 @@ Deno.test("round-trip — replace import then export yields equivalent data", as
     githubAccounts: 2,
     usage: 2,
     searchUsage: 2,
+    upstreamConfigs: 0,
     performance: 2,
   });
 
@@ -800,6 +801,7 @@ Deno.test("import — handles missing optional arrays gracefully", async () => {
     githubAccounts: 0,
     usage: 0,
     searchUsage: 0,
+    upstreamConfigs: 0,
     performance: 0,
   });
 });

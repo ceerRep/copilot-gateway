@@ -1,8 +1,5 @@
 import type { Context } from "hono";
-import {
-  copilotFetch,
-  isCopilotTokenFetchError,
-} from "../../../../../lib/copilot.ts";
+import { isCopilotTokenFetchError } from "../../../../../lib/copilot.ts";
 import type { MessagesPayload } from "../../../../../lib/messages-types.ts";
 import { withAccountFallback } from "../../../../shared/account-pool/fallback.ts";
 import {
@@ -10,6 +7,10 @@ import {
   resolveModelForRequest,
 } from "../../../shared/models/resolve-model.ts";
 
+// count_tokens is an Anthropic Messages-shaped endpoint hosted only by
+// Copilot — third-party OpenAI-compatible upstreams do not implement it. We
+// always go through the Copilot account pool here; the account-fallback path
+// returns a clear error when no GitHub account is connected.
 export const countTokens = async (c: Context) => {
   try {
     const payload = await c.req.json<MessagesPayload>();
@@ -19,14 +20,12 @@ export const countTokens = async (c: Context) => {
 
     const resp = await withAccountFallback(
       modelId,
-      ({ account }) => {
+      ({ upstream }) => {
         const attemptPayload = structuredClone(payload);
         attemptPayload.model = modelId;
-        return copilotFetch(
-          "/v1/messages/count_tokens",
+        return upstream.fetch(
+          "messages_count_tokens",
           { method: "POST", body: JSON.stringify(attemptPayload) },
-          account.token,
-          account.accountType,
         );
       },
     );

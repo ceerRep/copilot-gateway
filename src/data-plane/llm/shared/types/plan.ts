@@ -1,24 +1,24 @@
-import type { CopilotFetchOptions } from "../../../../lib/copilot.ts";
+import type { UpstreamFetchOptions } from "../../../../lib/upstream/types.ts";
 
 export type MessagesPlan =
   | {
     source: "messages";
     target: "messages";
     wantsStream: boolean;
-    fetchOptions: CopilotFetchOptions;
+    fetchOptions: UpstreamFetchOptions;
     rawBeta?: string;
   }
   | {
     source: "messages";
     target: "responses";
     wantsStream: boolean;
-    fetchOptions: CopilotFetchOptions;
+    fetchOptions: UpstreamFetchOptions;
   }
   | {
     source: "messages";
     target: "chat-completions";
     wantsStream: boolean;
-    fetchOptions: CopilotFetchOptions;
+    fetchOptions: UpstreamFetchOptions;
   };
 
 export type ResponsesPlan =
@@ -26,19 +26,19 @@ export type ResponsesPlan =
     source: "responses";
     target: "responses";
     wantsStream: boolean;
-    fetchOptions: CopilotFetchOptions;
+    fetchOptions: UpstreamFetchOptions;
   }
   | {
     source: "responses";
     target: "messages";
     wantsStream: boolean;
-    fetchOptions: CopilotFetchOptions;
+    fetchOptions: UpstreamFetchOptions;
   }
   | {
     source: "responses";
     target: "chat-completions";
     wantsStream: boolean;
-    fetchOptions: CopilotFetchOptions;
+    fetchOptions: UpstreamFetchOptions;
   };
 
 export type ChatPlan =
@@ -46,19 +46,19 @@ export type ChatPlan =
     source: "chat-completions";
     target: "messages";
     wantsStream: boolean;
-    fetchOptions: CopilotFetchOptions;
+    fetchOptions: UpstreamFetchOptions;
   }
   | {
     source: "chat-completions";
     target: "responses";
     wantsStream: boolean;
-    fetchOptions: CopilotFetchOptions;
+    fetchOptions: UpstreamFetchOptions;
   }
   | {
     source: "chat-completions";
     target: "chat-completions";
     wantsStream: boolean;
-    fetchOptions: CopilotFetchOptions;
+    fetchOptions: UpstreamFetchOptions;
   };
 
 export type GeminiPlan =
@@ -66,17 +66,17 @@ export type GeminiPlan =
     source: "gemini";
     target: "messages";
     wantsStream: boolean;
-    fetchOptions: CopilotFetchOptions;
+    fetchOptions: UpstreamFetchOptions;
   }
   | {
     source: "gemini";
     target: "responses";
     wantsStream: boolean;
-    fetchOptions: CopilotFetchOptions;
+    fetchOptions: UpstreamFetchOptions;
   }
   | {
     source: "gemini";
     target: "chat-completions";
     wantsStream: boolean;
-    fetchOptions: CopilotFetchOptions;
+    fetchOptions: UpstreamFetchOptions;
   };

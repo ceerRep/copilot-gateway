@@ -27,7 +27,8 @@ import {
 import { toInternalDebugError } from "../../shared/errors/internal-debug-error.ts";
 import type { ProtocolFrame } from "../../shared/stream/types.ts";
 import type { SourceResponseStreamEvent } from "./events/protocol.ts";
-import { withAccountFallback } from "../../../shared/account-pool/fallback.ts";
+import { runOnUpstream } from "../../shared/upstream-run.ts";
+import { resolveUpstreamForModel } from "../../../../lib/upstream/resolver.ts";
 import {
   type PerformanceTelemetryContext,
   runtimeLocationFromRequest,
@@ -153,13 +154,27 @@ export const serveResponses = async (
         const modelId = await resolveModelForRequest(ctx.payload.model, intent);
         performanceFor(modelId, "responses");
 
-        return await withAccountFallback(modelId, async ({ account }) => {
+        const selection = await resolveUpstreamForModel(modelId);
+        if (!selection) {
+          return {
+            type: "upstream-error" as const,
+            status: 404,
+            headers: new Headers({ "content-type": "application/json" }),
+            body: new TextEncoder().encode(JSON.stringify({
+              error: {
+                message: `No upstream provides model ${modelId}. Configure an upstream that exposes this model in the dashboard.`,
+                type: "invalid_request_error",
+              },
+            })),
+          };
+        }
+
+        return await runOnUpstream(selection, modelId, async (upstream) => {
           const attemptPayload = structuredClone(ctx.payload);
           attemptPayload.model = modelId;
           const capabilities = await getModelCapabilities(
             modelId,
-            account.token,
-            account.accountType,
+            upstream,
           );
           const plan = planResponsesRequest(attemptPayload, capabilities);
           if (!plan) {
@@ -182,8 +197,7 @@ export const serveResponses = async (
               await emitToResponses({
                 sourceApi: "responses",
                 payload: attemptPayload,
-                githubToken: account.token,
-                accountType: account.accountType,
+                upstream,
                 apiKeyId,
                 clientStream: wantsStream,
                 runtimeLocation,
@@ -209,8 +223,7 @@ export const serveResponses = async (
             const result = await emitToMessages({
               sourceApi: "responses",
               payload: messagesPayload,
-              githubToken: account.token,
-              accountType: account.accountType,
+              upstream,
               apiKeyId,
               clientStream: wantsStream,
               runtimeLocation,
@@ -243,8 +256,7 @@ export const serveResponses = async (
           const result = await emitToChatCompletions({
             sourceApi: "responses",
             payload: chatPayload,
-            githubToken: account.token,
-            accountType: account.accountType,
+            upstream,
             apiKeyId,
             clientStream: wantsStream,
             runtimeLocation,

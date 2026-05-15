@@ -1,7 +1,4 @@
-import {
-  copilotFetch,
-  isCopilotTokenFetchError,
-} from "../../../../lib/copilot.ts";
+import { isCopilotTokenFetchError } from "../../../../lib/copilot.ts";
 import type {
   ChatCompletionChunk,
   ChatCompletionResponse,
@@ -47,15 +44,13 @@ export const emitToChatCompletions = async (
       chatCompletionsTargetInterceptors,
       async () => {
         const upstreamStartedAt = performance.now();
-        const response = await copilotFetch(
-          "/chat/completions",
+        const response = await input.upstream.fetch(
+          "chat_completions",
           {
             method: "POST",
             body: JSON.stringify(input.payload),
             signal: input.downstreamAbortSignal,
           },
-          input.githubToken,
-          input.accountType,
           input.fetchOptions,
         );
 

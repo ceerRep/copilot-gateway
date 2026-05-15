@@ -1,5 +1,6 @@
 import type { Context } from "hono";
-import { copilotFetch, isCopilotTokenFetchError } from "../../lib/copilot.ts";
+import { isCopilotTokenFetchError } from "../../lib/copilot.ts";
+import { ModelsFetchError } from "../../lib/models-cache.ts";
 import type {
   GeminiCountTokensRequest,
   GeminiGenerateContentRequest,
@@ -11,6 +12,8 @@ import { geminiModelResolutionIntent } from "../llm/sources/gemini/plan.ts";
 import { buildTargetRequest as buildMessagesTargetRequest } from "../llm/translate/gemini-via-messages/build-target-request.ts";
 import { getModelCapabilities } from "../llm/shared/models/get-model-capabilities.ts";
 import { resolveModelForRequest } from "../llm/shared/models/resolve-model.ts";
+import { resolveVirtualModel } from "../llm/shared/models/virtual-models.ts";
+import { resolveUpstreamForModel } from "../../lib/upstream/resolver.ts";
 import { withAccountFallback } from "../shared/account-pool/fallback.ts";
 
 const geminiStatusForHttpStatus = (status: number): string => {
@@ -95,30 +98,49 @@ export const countGeminiTokens = async (
     );
     normalizeCountTokensRequest(generateContentRequest);
 
+    const virtualResolution = await resolveVirtualModel(model);
+    const resolvedModel = virtualResolution?.targetModel ?? model;
+    if (
+      virtualResolution?.disableReasoning &&
+      generateContentRequest.generationConfig
+    ) {
+      delete generateContentRequest.generationConfig.thinkingConfig;
+    }
+
     const modelId = await resolveModelForRequest(
-      model,
+      resolvedModel,
       geminiModelResolutionIntent(generateContentRequest),
     );
 
+    const resolution = await resolveUpstreamForModel(modelId);
+    if (resolution.type === "upstream-error") {
+      if (resolution.error instanceof ModelsFetchError) {
+        return geminiError(resolution.error.status, resolution.error.body);
+      }
+      throw resolution.error;
+    }
+    if (
+      resolution.type === "selected" && resolution.selection.kind !== "copilot"
+    ) {
+      return geminiError(
+        400,
+        "countTokens is only supported for Copilot-hosted models. The resolved model is served by a custom upstream that does not implement this endpoint.",
+      );
+    }
+
     const response = await withAccountFallback(
       modelId,
-      async ({ account }) => {
-        const capabilities = await getModelCapabilities(
-          modelId,
-          account.token,
-          account.accountType,
-        );
+      async ({ upstream }) => {
+        const capabilities = await getModelCapabilities(modelId, upstream);
         const messagesPayload = buildMessagesTargetRequest(
           generateContentRequest,
           modelId,
           false,
           capabilities,
         );
-        return copilotFetch(
-          "/v1/messages/count_tokens",
+        return upstream.fetch(
+          "messages_count_tokens",
           { method: "POST", body: JSON.stringify(messagesPayload) },
-          account.token,
-          account.accountType,
         );
       },
     );

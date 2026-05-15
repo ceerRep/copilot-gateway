@@ -172,6 +172,51 @@ export interface SearchConfigRepo {
   save(config: unknown): Promise<void>;
 }
 
+// Logical endpoint keys used by the gateway-internal upstream dispatcher.
+// `messages_count_tokens` is intentionally a logical key: it is a sub-path of
+// `messages` and follows whatever path the admin chose for messages, so the
+// UI never exposes it as a separate configurable endpoint.
+export type EndpointKey =
+  | "chat_completions"
+  | "responses"
+  | "messages"
+  | "messages_count_tokens"
+  | "embeddings"
+  | "models";
+
+// Reasoning field-name dialect used by an upstream Chat Completions endpoint.
+// "openai" follows the standard `reasoning_text` / `reasoning_opaque` /
+// `reasoning_items[]` shape; "deepseek" uses the legacy `reasoning_content`
+// scalar. https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
+export type ReasoningDialect = "openai" | "deepseek";
+
+export interface UpstreamConfig {
+  id: string;
+  name: string;
+  baseUrl: string;
+  bearerToken: string;
+  supportedEndpoints: string[];
+  enabled: boolean;
+  sortOrder: number;
+  createdAt: string;
+  reasoningDialect: ReasoningDialect;
+  // Optional per-endpoint path overrides. The final URL is `baseUrl + path`
+  // with no automatic `/v1` prefixing — admins enter the exact path the
+  // upstream serves. `messages_count_tokens` follows `messages` and is not
+  // overridable independently.
+  pathOverrides?: Partial<
+    Record<Exclude<EndpointKey, "messages_count_tokens">, string>
+  >;
+}
+
+export interface UpstreamConfigRepo {
+  list(): Promise<UpstreamConfig[]>;
+  getById(id: string): Promise<UpstreamConfig | null>;
+  save(config: UpstreamConfig): Promise<void>;
+  delete(id: string): Promise<boolean>;
+  deleteAll(): Promise<void>;
+}
+
 export interface Repo {
   apiKeys: ApiKeyRepo;
   github: GitHubRepo;
@@ -181,4 +226,5 @@ export interface Repo {
   cache: CacheRepo;
   accountModelBackoffs: AccountModelBackoffRepo;
   searchConfig: SearchConfigRepo;
+  upstreamConfigs: UpstreamConfigRepo;
 }
