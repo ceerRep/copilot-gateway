@@ -24,6 +24,10 @@ import {
   putSearchConfigRoute,
   testSearchConfigRoute,
 } from "./search-config/routes.ts";
+import {
+  getGatewayConfigRoute,
+  putGatewayConfigRoute,
+} from "./gateway-config/routes.ts";
 import { searchUsage } from "./search-usage/routes.ts";
 import { tokenUsage } from "./token-usage/routes.ts";
 import {
@@ -76,6 +80,8 @@ export const mountControlPlane = (app: Hono) => {
   adminApi.get("/search-config", getSearchConfigRoute);
   adminApi.put("/search-config", putSearchConfigRoute);
   adminApi.post("/search-config/test", testSearchConfigRoute);
+  adminApi.get("/gateway-config", getGatewayConfigRoute);
+  adminApi.put("/gateway-config", putGatewayConfigRoute);
   adminApi.get("/export", exportData);
   adminApi.post("/import", importData);
   app.route("/api", adminApi);

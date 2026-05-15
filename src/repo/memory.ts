@@ -6,6 +6,7 @@ import type {
   ApiKey,
   ApiKeyRepo,
   CacheRepo,
+  GatewayConfigRepo,
   GitHubAccount,
   GitHubRepo,
   PerformanceDimensions,
@@ -496,6 +497,21 @@ class MemorySearchConfigRepo implements SearchConfigRepo {
   }
 }
 
+class MemoryGatewayConfigRepo implements GatewayConfigRepo {
+  private config: unknown | null = null;
+
+  get(): Promise<unknown | null> {
+    return Promise.resolve(
+      this.config === null ? null : structuredClone(this.config),
+    );
+  }
+
+  save(config: unknown): Promise<void> {
+    this.config = config === undefined ? null : structuredClone(config);
+    return Promise.resolve();
+  }
+}
+
 class MemoryUpstreamConfigRepo implements UpstreamConfigRepo {
   private store = new Map<string, UpstreamConfig>();
 
@@ -546,6 +562,7 @@ export class InMemoryRepo implements Repo {
   cache: CacheRepo;
   accountModelBackoffs: AccountModelBackoffRepo;
   searchConfig: SearchConfigRepo;
+  gatewayConfig: GatewayConfigRepo;
   upstreamConfigs: UpstreamConfigRepo;
 
   constructor() {
@@ -557,6 +574,7 @@ export class InMemoryRepo implements Repo {
     this.cache = new MemoryCacheRepo();
     this.accountModelBackoffs = new MemoryAccountModelBackoffRepo();
     this.searchConfig = new MemorySearchConfigRepo();
+    this.gatewayConfig = new MemoryGatewayConfigRepo();
     this.upstreamConfigs = new MemoryUpstreamConfigRepo();
   }
 }

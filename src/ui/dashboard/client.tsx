@@ -386,6 +386,9 @@ export function dashboardAssets() {
                   searchConfigSaving: false,
                   searchConfigTesting: false,
                   searchConfigTestResult: null,
+                  gatewayConfig: { codexAutoReviewModel: '' },
+                  gatewayConfigLoaded: false,
+                  gatewayConfigSaving: false,
                   upstreams: [],
                   upstreamsLoaded: false,
                   upstreamTestingId: null,
@@ -569,6 +572,7 @@ export function dashboardAssets() {
                         if (this.tab === 'settings' && this.isAdmin) {
                           this.loadMe().then(() => this.loadUsage());
                           this.loadSearchConfig();
+                          this.loadGatewayConfig();
                           this.loadUpstreams();
                         } else if (this.tab === 'keys') {
                           this.loadKeys();
@@ -607,6 +611,7 @@ export function dashboardAssets() {
                           if (!this.meLoaded) await this.loadMe();
                           await this.loadUsage();
                           if (!this.searchConfigLoaded) this.loadSearchConfig();
+                          if (!this.gatewayConfigLoaded) this.loadGatewayConfig();
                           if (!this.upstreamsLoaded) this.loadUpstreams();
                         } else if (t === 'usage') {
                           this.tokenLoading = true;
@@ -870,6 +875,40 @@ export function dashboardAssets() {
                           console.error('testSearchConfig:', e);
                         } finally {
                           this.searchConfigTesting = false;
+                        }
+                      },
+
+                      async loadGatewayConfig() {
+                        try {
+                          const resp = await fetch('/api/gateway-config', { headers: this.authHeaders() });
+                          if (resp.status === 401) { this.logout(); return; }
+                          if (!resp.ok) { console.error('loadGatewayConfig: HTTP', resp.status); return; }
+                          const data = await resp.json();
+                          this.gatewayConfig = { codexAutoReviewModel: data.codexAutoReviewModel || '' };
+                          this.gatewayConfigLoaded = true;
+                        } catch (e) {
+                          console.error('loadGatewayConfig:', e);
+                        }
+                      },
+
+                      async saveGatewayConfig() {
+                        this.gatewayConfigSaving = true;
+                        try {
+                          const resp = await fetch('/api/gateway-config', {
+                            method: 'PUT',
+                            headers: { ...this.authHeaders(), 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              codexAutoReviewModel: this.gatewayConfig.codexAutoReviewModel || null,
+                            }),
+                          });
+                          if (resp.status === 401) { this.logout(); return; }
+                          if (!resp.ok) { console.error('saveGatewayConfig: HTTP', resp.status); return; }
+                          const data = await resp.json();
+                          this.gatewayConfig = { codexAutoReviewModel: data.codexAutoReviewModel || '' };
+                        } catch (e) {
+                          console.error('saveGatewayConfig:', e);
+                        } finally {
+                          this.gatewayConfigSaving = false;
                         }
                       },
 
