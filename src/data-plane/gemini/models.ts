@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import { isCopilotTokenFetchError } from "../../lib/copilot.ts";
 import {
+  loadModels,
   loadModelsForAccount,
   type ModelInfo,
   ModelsFetchError,
@@ -8,6 +9,8 @@ import {
 } from "../../lib/models-cache.ts";
 import type { GeminiModel } from "../../lib/gemini-types.ts";
 import { getRepo } from "../../repo/index.ts";
+import { createOpenAiUpstream } from "../../lib/upstream/openai.ts";
+import { resolveEffectiveSupportedEndpoints } from "../llm/shared/models/get-model-capabilities.ts";
 import { mergeClaudeVariants } from "../models/merge.ts";
 
 const LLM_ENDPOINTS = new Set([
@@ -90,21 +93,42 @@ const upstreamErrorResponse = (error: unknown): Response | null => {
 };
 
 const loadMergedModels = async (): Promise<ModelsResponse> => {
-  const accounts = await getRepo().github.listAccounts();
   const byId = new Map<string, ModelsResponse["data"][number]>();
   let sawSuccess = false;
   let lastError: unknown = null;
 
+  const accounts = await getRepo().github.listAccounts();
   for (const account of accounts) {
     const result = await loadModelsForAccount(account);
     if (result.type === "error") {
       lastError = result.error;
       continue;
     }
-
     sawSuccess = true;
     for (const model of result.data.data) {
-      if (!byId.has(model.id)) byId.set(model.id, model);
+      if (!model?.id || byId.has(model.id)) continue;
+      byId.set(model.id, model);
+    }
+  }
+
+  const customConfigs = await getRepo().upstreamConfigs.list();
+  for (const config of customConfigs) {
+    if (!config.enabled) continue;
+    const upstream = createOpenAiUpstream(config);
+    const result = await loadModels(upstream);
+    if (result.type === "error") {
+      lastError = result.error;
+      continue;
+    }
+    sawSuccess = true;
+    for (const model of result.data.data) {
+      if (!model?.id || byId.has(model.id)) continue;
+      const { endpoints: supported_endpoints } =
+        resolveEffectiveSupportedEndpoints(
+          model.supported_endpoints,
+          upstream,
+        );
+      byId.set(model.id, { ...model, supported_endpoints });
     }
   }
 

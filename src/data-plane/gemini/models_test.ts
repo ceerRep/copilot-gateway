@@ -1,4 +1,6 @@
 import { assertEquals } from "@std/assert";
+import { clearCopilotTokenCache } from "../../lib/copilot.ts";
+import { clearModelsCache } from "../../lib/models-cache.ts";
 import {
   copilotModels,
   jsonResponse,
@@ -108,5 +110,98 @@ Deno.test("/v1beta/models/:modelId returns one Gemini model or Google RPC 404", 
         status: "NOT_FOUND",
       },
     });
+  });
+});
+
+Deno.test("/v1beta/models includes custom upstream LLM models", async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  await repo.upstreamConfigs.save({
+    id: "up_custom",
+    name: "Custom LLM",
+    baseUrl: "https://custom.example.com",
+    bearerToken: "sk-custom",
+    supportedEndpoints: ["/chat/completions"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    reasoningDialect: "openai",
+  });
+
+  await withMockedFetch(async (request) => {
+    const url = new URL(request.url);
+
+    if (
+      url.hostname === "custom.example.com" &&
+      url.pathname === "/v1/models"
+    ) {
+      return jsonResponse({
+        object: "list",
+        data: [{ id: "custom-llm-model", name: "Custom LLM Model" }],
+      });
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const listResp = await requestApp("/v1beta/models", {
+      headers: { "x-api-key": apiKey.key },
+    });
+    assertEquals(listResp.status, 200);
+    const list = await listResp.json();
+    assertEquals(list.models.length, 1);
+    assertEquals(list.models[0].name, "models/custom-llm-model");
+    assertEquals(list.models[0].displayName, "Custom LLM Model");
+
+    const getResp = await requestApp("/v1beta/models/custom-llm-model", {
+      headers: { "x-api-key": apiKey.key },
+    });
+    assertEquals(getResp.status, 200);
+    const model = await getResp.json();
+    assertEquals(model.name, "models/custom-llm-model");
+  });
+});
+
+Deno.test("/v1beta/models excludes custom upstream embedding-only models", async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  await repo.upstreamConfigs.save({
+    id: "up_embed",
+    name: "Embedding Provider",
+    baseUrl: "https://embed.example.com",
+    bearerToken: "sk-embed",
+    supportedEndpoints: ["/embeddings"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    reasoningDialect: "openai",
+  });
+
+  await withMockedFetch(async (request) => {
+    const url = new URL(request.url);
+
+    if (
+      url.hostname === "embed.example.com" &&
+      url.pathname === "/v1/models"
+    ) {
+      return jsonResponse({
+        object: "list",
+        data: [{ id: "embed-only-model" }],
+      });
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const listResp = await requestApp("/v1beta/models", {
+      headers: { "x-api-key": apiKey.key },
+    });
+    assertEquals(listResp.status, 200);
+    const list = await listResp.json();
+    assertEquals(list.models.length, 0);
   });
 });
