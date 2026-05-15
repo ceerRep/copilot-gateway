@@ -368,9 +368,14 @@ export const translateChatCompletionsChunkToMessagesEvents = (
 ): MessagesStreamEventData[] => {
   const events: MessagesStreamEventData[] = [];
 
+  // Capture usage from any chunk shape. Some upstreams (e.g. DeepSeek) attach
+  // the final usage block to a chunk with `choices: [{index:0, delta:{}}]`
+  // instead of the `choices: []` carrier described by the OpenAI spec; we
+  // would otherwise drop it and emit message_delta with zeroed token counts.
+  if (chunk.usage) state.pendingUsage = chunk.usage;
+
   if (chunk.choices.length === 0) {
     if (!state.aborted && chunk.usage && !state.usageSent) {
-      state.pendingUsage = chunk.usage;
       flushFinalMessage(state, events);
     }
 
@@ -379,43 +384,46 @@ export const translateChatCompletionsChunkToMessagesEvents = (
 
   if (state.aborted) return events;
 
-  const choice = chunk.choices[0];
+  // Iterate all choices: Copilot's Claude `/chat/completions` adapter has been
+  // observed to split one logical answer across multiple choices in a single
+  // chunk (content, tool_calls, finish_reason). The Claude choice-shape fix
+  // only renormalizes choice indices, so we must consume every choice here
+  // rather than dropping `chunk.choices[1+]`.
+  for (const choice of chunk.choices) {
+    if (state.aborted) break;
 
-  if (!state.messageStartSent) {
-    events.push({
-      type: "message_start",
-      message: {
-        id: toMessagesId(chunk.id),
-        type: "message",
-        role: "assistant",
-        content: [],
-        model: chunk.model,
-        stop_reason: null,
-        stop_sequence: null,
-        usage: mapChatCompletionsUsageToMessagesUsage(chunk.usage),
-      },
-    });
-    state.messageStartSent = true;
-  }
+    if (!state.messageStartSent) {
+      events.push({
+        type: "message_start",
+        message: {
+          id: toMessagesId(chunk.id),
+          type: "message",
+          role: "assistant",
+          content: [],
+          model: chunk.model,
+          stop_reason: null,
+          stop_sequence: null,
+          usage: mapChatCompletionsUsageToMessagesUsage(chunk.usage),
+        },
+      });
+      state.messageStartSent = true;
+    }
 
-  const aborted = handleReasoningDelta(choice.delta, state, events);
-  if (aborted) return events;
+    if (handleReasoningDelta(choice.delta, state, events)) return events;
 
-  if (choice.delta.content) {
-    handleContentDelta(choice.delta.content, state, events);
-  }
+    if (choice.delta.content) {
+      handleContentDelta(choice.delta.content, state, events);
+    }
 
-  if (choice.delta.tool_calls) {
-    const aborted = handleToolCallsDelta(
-      choice.delta.tool_calls,
-      state,
-      events,
-    );
-    if (aborted) return events;
-  }
+    if (choice.delta.tool_calls?.length) {
+      if (handleToolCallsDelta(choice.delta.tool_calls, state, events)) {
+        return events;
+      }
+    }
 
-  if (choice.finish_reason) {
-    handleFinishReason(choice.finish_reason, chunk, state, events);
+    if (choice.finish_reason) {
+      handleFinishReason(choice.finish_reason, chunk, state, events);
+    }
   }
 
   return events;

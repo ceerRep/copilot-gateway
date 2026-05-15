@@ -370,3 +370,95 @@ Deno.test("flushChatCompletionsToMessagesEvents emits pending stop when no usage
     { type: "message_stop" },
   ]);
 });
+
+
+Deno.test("translateChatCompletionsChunkToMessagesEvents ignores empty tool_calls arrays", () => {
+  const state = createChatCompletionsToMessagesStreamState();
+  // First chunk with role: "assistant" and empty tool_calls.
+  // Before the fix (choice.delta.tool_calls), empty [] was truthy and
+  // entered the tool-calls branch, which could close an open text block
+  // prematurely. After the fix (choice.delta.tool_calls?.length), empty
+  // arrays are treated as absent.
+  const events1 = translateChatCompletionsChunkToMessagesEvents(
+    chunk({ role: "assistant", tool_calls: [] }),
+    state,
+  );
+  // First event should be message_start (from role), not any tool-call handling.
+  // No content yet, so no content_block_start.
+  assertEquals(events1.length, 1);
+  assertEquals(events1[0].type, "message_start");
+
+  // Second chunk with content — should start a text block normally.
+  const events2 = translateChatCompletionsChunkToMessagesEvents(
+    chunk({ content: "hello" }),
+    state,
+  );
+  assertEquals(events2.length, 2);
+  assertEquals(events2[0].type, "content_block_start");
+  assertEquals(events2[1].type, "content_block_delta");
+
+  // Finish with stop.
+  const events3 = translateChatCompletionsChunkToMessagesEvents(
+    chunk({}, "stop"),
+    state,
+  );
+  const textBlocks = events3.filter((e) =>
+    e.type === "content_block_stop"
+  );
+  assertEquals(textBlocks.length, 1, "only one text block should have been closed");
+});
+
+
+Deno.test("translateChatCompletionsChunkToMessagesEvents consumes every choice in a multi-choice chunk", () => {
+  // Copilot's Claude `/chat/completions` adapter has been observed to split
+  // one logical answer across multiple choices in a single chunk. Without
+  // iterating every choice, tool_calls and finish_reason in choices[1+] would
+  // be silently dropped and the Messages stream would stall right after the
+  // text block.
+  const state = createChatCompletionsToMessagesStreamState();
+  const multiChoiceChunk: ChatCompletionChunk = {
+    id: "chatcmpl_test",
+    object: "chat.completion.chunk",
+    created: 1,
+    model: "claude-test",
+    choices: [
+      { index: 0, delta: { role: "assistant", content: "hi" }, finish_reason: null },
+      {
+        index: 0,
+        delta: {
+          tool_calls: [{
+            index: 0,
+            id: "call_1",
+            type: "function",
+            function: { name: "do_it", arguments: "{}" },
+          }],
+        },
+        finish_reason: null,
+      },
+      { index: 0, delta: {}, finish_reason: "tool_calls" },
+    ],
+  };
+
+  const events = translateChatCompletionsChunkToMessagesEvents(
+    multiChoiceChunk,
+    state,
+  );
+  const types = events.map((event) => event.type);
+
+  assertEquals(types.includes("message_start"), true);
+  const startBlocks = events.filter((event) =>
+    event.type === "content_block_start"
+  );
+  assertEquals(startBlocks.length, 2, "both text and tool_use blocks should open");
+  assertEquals(
+    startBlocks.some((event) =>
+      event.type === "content_block_start" &&
+      event.content_block.type === "tool_use"
+    ),
+    true,
+    "tool_use block from choices[1] must be emitted",
+  );
+
+  // Finish reason from choices[2] should be staged for flush.
+  assertEquals(state.pendingFinishReason, "tool_calls");
+});

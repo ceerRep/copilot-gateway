@@ -22,6 +22,8 @@ import type {
   MessagesWebSearchToolResultBlock,
 } from "../messages-types.ts";
 
+import { getMessagesRequestedReasoningEffort } from "../reasoning.ts";
+
 const toChatCompletionsContent = (
   content:
     | string
@@ -340,10 +342,19 @@ export const translateMessagesToChatCompletions = (
   payload: MessagesPayload,
 ): ChatCompletionsPayload => {
   const clientTools = getClientTools(payload.tools);
+  const effort = getMessagesRequestedReasoningEffort(payload);
+
+  // Normalize Anthropic Messages effort values to Chat Completions range.
+  // Chat Completions supports low/medium/high but not xhigh or max.
+  let reasoningEffort: string | undefined;
+  if (effort && effort !== "none") {
+    reasoningEffort = effort === "xhigh" || effort === "max" ? "high" : effort;
+  }
 
   return {
     model: payload.model,
     messages: translateMessagesInput(payload.messages, payload.system),
+    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
     max_tokens: payload.max_tokens,
     stop: payload.stop_sequences,
     stream: payload.stream,
