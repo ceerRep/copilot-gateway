@@ -229,6 +229,26 @@ Gemini-compatible routes:
 - `POST /v1beta/models/:model:streamGenerateContent`
 - `POST /v1beta/models/:model:countTokens`
 
+## Custom Upstream Configuration
+
+Custom OpenAI-compatible upstreams are admin-configured via `/api/upstreams`.
+Each upstream stores:
+
+- `base_url`: stitched directly with the per-endpoint path (no automatic
+  `/v1` prefix). The final URL is exactly `base_url + path`.
+- `path_overrides`: optional per-endpoint override map keyed by the logical
+  endpoint name (`chat_completions`, `responses`, `messages`, `embeddings`,
+  `models`). Use this when a provider mounts the API under a subpath while
+  keeping `/models` at the host root, or any other path divergence.
+  `messages_count_tokens` is not separately configurable; it follows
+  `messages` and resolves to `<messages-path>/count_tokens`.
+- `reasoning_dialect`: `openai` (default) or `deepseek`. Selects the
+  field-name dialect used on Chat Completions handling. The gateway-internal
+  protocol is OpenAI-shape; the dialect is applied at the chat-completions
+  target boundary only.
+
+Copilot upstream paths and reasoning dialect are not admin-configurable.
+
 ## Data Plane Routing Rules
 
 `/v1/messages` chooses among:
@@ -298,6 +318,10 @@ Current placement:
   - replay shim-owned search history back upstream as `search_result` blocks
   - rewrite upstream tool use, tool results, and citations back into native
     `web_search` blocks for downstream Messages clients
+  - force `thinking: { type: "disabled" }` on active web-search shim turns
+    since clients typically pair the native `web_search_*` tool with a forced
+    `tool_choice`, which most non-Anthropic upstreams reject when reasoning is
+    also enabled
   - strip `x-anthropic-billing-header` prompt attribution
   - strip `cache_control.scope`
   - rewrite upstream context-window errors into the Anthropic compact
@@ -336,6 +360,12 @@ Current placement:
   - strip unsupported `service_tier`
 - `src/data-plane/llm/targets/chat-completions/interceptors/include-usage-stream-options.ts`
   - ensure streaming usage options needed by native chat handling
+- `src/data-plane/llm/targets/chat-completions/interceptors/normalize-reasoning-dialect.ts`
+  - rename OpenAI-shape `reasoning_text` to DeepSeek's legacy
+    `reasoning_content` on outbound requests, and back on inbound chunks and
+    JSON results, when the upstream config selects the `deepseek` dialect
+  - drop `reasoning_opaque` and `reasoning_items` for that dialect since
+    DeepSeek has no concept of an opaque reasoning chain
 - shared translation event helpers
   - guard against infinite whitespace in tool/function arguments
 
