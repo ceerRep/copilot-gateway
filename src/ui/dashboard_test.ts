@@ -1412,3 +1412,60 @@ Deno.test("dashboardApp renders search usage per-key datasets for active provide
   assert(searchKeyChart.data.datasets[0].data.includes(5));
   assertFalse(searchKeyChart.data.datasets[0].data.includes(7));
 });
+
+Deno.test("dashboardApp model search does not crash when model.name is missing", async () => {
+  const originalFetch = globalThis.fetch;
+  // deno-lint-ignore no-explicit-any
+  globalThis.fetch = (input: any) => {
+    const url = String(input);
+    if (url.startsWith("/api/models")) {
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            data: [
+              {
+                id: "custom-model-no-name",
+                model_picker_enabled: true,
+                capabilities: { type: "chat", limits: {} },
+                supported_endpoints: ["/chat/completions"],
+              },
+              {
+                id: "named-model",
+                name: "Named Model",
+                model_picker_enabled: true,
+                capabilities: { type: "chat", limits: {} },
+                supported_endpoints: ["/chat/completions"],
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        ),
+      );
+    }
+    throw new Error(`unexpected fetch ${url}`);
+  };
+
+  try {
+    const { app } = createDashboardHarness();
+    await app.loadModels();
+
+    const nameless = app.allModels.find(
+      (m: { id: string }) => m.id === "custom-model-no-name",
+    );
+    assertEquals(nameless.name, "custom-model-no-name");
+
+    app.modelsSearch = "custom";
+    const filtered = app.filteredChatModels
+      .filter((m: { _divider?: boolean }) => !m._divider)
+      .map((m: { id: string }) => m.id);
+    assertEquals(filtered, ["custom-model-no-name"]);
+
+    app.modelsSearch = "Named Model";
+    const filtered2 = app.filteredChatModels
+      .filter((m: { _divider?: boolean }) => !m._divider)
+      .map((m: { id: string }) => m.id);
+    assertEquals(filtered2, ["named-model"]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

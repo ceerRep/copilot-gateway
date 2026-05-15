@@ -654,7 +654,7 @@ export function dashboardAssets() {
                             return;
                           }
                           const { data: rawData } = await resp.json();
-                          const data = rawData;
+                          const data = rawData.map(m => m.name ? m : { ...m, name: m.id });
 
                           this.allModels = data;
                           if (!this.chatModelId) {
