@@ -70,7 +70,7 @@ interface ReplayAwareMessagesWebSearchShimState {
   requestSearchResultOwnership: SearchResultOwnership[];
 }
 
-interface ActiveMessagesWebSearchProvider {
+export interface ActiveMessagesWebSearchProvider {
   providerName: WebSearchProviderName;
   search: WebSearchProvider;
   apiKeyId?: string;
@@ -786,6 +786,38 @@ export const prepareMessagesWebSearchShimRequest = (
     };
   }
 
+  // Active mode means the client both injected web_search tools and typically
+  // forced `tool_choice` so the model would actually call the shim. Many
+  // non-Anthropic upstreams reject `thinking enabled + forced tool_choice`
+  // outright (Anthropic itself silently falls back), so disable thinking on
+  // this turn. Without this, reasoning models emit JSON inside
+  // reasoning_content instead of producing a tool_use, which is exactly the
+  // failure mode logged at the active-mode warning below. We also drop
+  // `output_config.effort` for the same reason: the source-shape effort
+  // request takes precedence over `thinking.disabled` in
+  // `getMessagesRequestedReasoningEffort`, so leaving it set would re-enable
+  // reasoning on the Responses/Chat-Completions translated paths.
+  if (state.mode === "active") {
+    const { output_config: _outputConfig, ...rest } = payload;
+    return {
+      type: "ok",
+      payload: {
+        ...rest,
+        ...(payload.tools
+          ? {
+            tools: rewriteMessagesWebSearchToolDefinitions(
+              payload.tools,
+              validatedNativeTools.nativeTool,
+            ),
+          }
+          : {}),
+        thinking: { type: "disabled" as const },
+        messages: replay.messages,
+      },
+      state,
+    };
+  }
+
   return {
     type: "ok",
     payload: {
@@ -968,6 +1000,16 @@ export const rewriteMessagesWebSearchResponseToNative = async (
         buildNativeWebSearchErrorResultBlock(block.id, "unavailable"),
       );
     }
+  }
+
+  if (
+    state.mode === "active" &&
+    state.priorSearchUseCount === 0 &&
+    interceptedSearches === 0
+  ) {
+    console.warn(
+      "[web-search-shim] first-turn active session produced no web_search tool_use; upstream model likely ignored forced tool_choice (e.g. reasoning model emitted JSON as reasoning_content).",
+    );
   }
 
   return {
