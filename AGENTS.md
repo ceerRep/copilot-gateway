@@ -242,12 +242,34 @@ Each upstream stores:
   keeping `/models` at the host root, or any other path divergence.
   `messages_count_tokens` is not separately configurable; it follows
   `messages` and resolves to `<messages-path>/count_tokens`.
+- `supported_endpoints`: admin-declared capability list used when the
+  provider's `/models` response omits per-model `supported_endpoints`. The
+  capability resolver treats this as authoritative (`hasExplicitCapabilities`
+  is true) so planning routes strictly through declared endpoints. Custom
+  upstreams therefore never participate in the legacy `claude*`-style
+  model-name fallback — embedding-only providers surface "not supported"
+  instead of being mis-routed onto chat traffic.
 - `reasoning_dialect`: `openai` (default) or `deepseek`. Selects the
   field-name dialect used on Chat Completions handling. The gateway-internal
   protocol is OpenAI-shape; the dialect is applied at the chat-completions
   target boundary only.
 
-Copilot upstream paths and reasoning dialect are not admin-configurable.
+Copilot upstream paths, supported endpoints, and reasoning dialect are not
+admin-configurable. Copilot's `/models` response is authoritative per SKU; a
+missing `supported_endpoints` field on a Copilot entry means "not declared"
+rather than "all endpoints". As a narrow exception, legacy Copilot chat SKUs
+(`gpt-4o`, `gpt-4.1`, `gpt-4o-mini`, `gemini-2.5-pro`, …) no longer carry the
+field at all, so when `capabilities.type === "chat"` the resolver infers
+`/chat/completions` support. This inference happens through
+`supportsChatCompletions`, not through the legacy `claude*` fallback — Copilot
+chat models route correctly without `hasExplicitCapabilities` ever being
+true.
+
+The `codex-auto-review` virtual model and any other gateway-level mappings
+live in the `gatewayConfig` repo and are admin-configured via the dashboard
+Settings tab. Source interceptors resolve the mapping before plan() looks at
+the model so every source API agrees on the routed upstream model and
+reasoning is disabled for that turn.
 
 ## Data Plane Routing Rules
 
@@ -273,8 +295,12 @@ model supports it.
 3. Translated `/responses`
 
 If no capability-backed target is available, `/v1/chat/completions` keeps its
-legacy model-name fallback: `claude*` models route through `/v1/messages`, and
-other models route through native `/chat/completions`.
+legacy model-name fallback only when the resolved upstream did not declare
+capabilities explicitly (`hasExplicitCapabilities` false): `claude*` models
+route through `/v1/messages`, and other models route through native
+`/chat/completions`. Custom upstreams with declared
+`supported_endpoints` skip the fallback and surface "not supported" instead,
+so embedding-only providers never receive chat traffic.
 
 `/v1beta/models/:model:generateContent` and
 `/v1beta/models/:model:streamGenerateContent` use the same target preference as
@@ -285,8 +311,8 @@ the Chat Completions source:
 3. Translated `/responses`
 
 If no capability-backed target is available, Gemini keeps the same legacy
-model-name fallback as Chat Completions: `claude*` models route through
-`/v1/messages`, and other models route through native `/chat/completions`.
+model-name fallback as Chat Completions, gated on the same
+`hasExplicitCapabilities` rule.
 
 Planning is the only layer allowed to make this routing decision.
 
@@ -310,7 +336,12 @@ Current placement:
 - `src/data-plane/llm/shared/models/resolve-model.ts`
   - resolve Claude compatibility aliases and variants before account fallback
   - keep account fallback model-fixed after one final upstream ID is selected
+- `src/data-plane/llm/shared/models/virtual-models.ts`
+  - rewrite the gateway-virtual `codex-auto-review` model to the admin-mapped
+    target model and disable reasoning for that turn; source interceptors call
+    in so every source API sees the same mapping
 - `src/data-plane/llm/sources/messages/interceptors/`
+  - apply the virtual-model rewrite before any other source workaround
   - rewrite native Anthropic `web_search_*` server tools into a
     gateway-executed shim that runs once at the source layer, so every
     Messages routing path (native messages, via responses, via
@@ -327,8 +358,15 @@ Current placement:
   - rewrite upstream context-window errors into the Anthropic compact
     `invalid_request_error` envelope expected by Messages clients
 - `src/data-plane/llm/sources/responses/interceptors/`
-  - rewrite `apply_patch` from `custom` to `function`
-  - remove unsupported `image_generation` tools and forced tool choices
+  - apply the virtual-model rewrite before any tool fix-up
+  - rewrite Codex's `apply_patch` Freeform tool (and a forced `apply_patch`
+    `tool_choice`) into a function tool before stripping
+  - strip hosted Responses tool entries Copilot upstream cannot serve
+    (`image_generation`, `web_search`, `tool_search`, `namespace`) and any
+    remaining Freeform `custom` tool with no shim, including forced
+    `tool_choice` entries that target a removed tool
+- `src/data-plane/llm/sources/chat-completions/interceptors/`
+  - apply the virtual-model rewrite before any other source workaround
 - `src/data-plane/llm/sources/gemini/interceptors/`
   - strip unsupported Gemini file/code part fields
   - strip unsupported Gemini tool capabilities, including `googleSearch`, until
@@ -336,28 +374,34 @@ Current placement:
   - strip `safetySettings`
   - hide `thought: true` summary parts by default; only expose Gemini thought
     summaries when `generationConfig.thinkingConfig.includeThoughts === true`
+- `src/data-plane/llm/sources/gemini/serve.ts`
+  - apply the virtual-model rewrite inline (Gemini source has no virtual-model
+    interceptor; the rewrite happens before plan() reads the model)
 - `src/data-plane/llm/translate/gemini-via-chat-completions/translate-to-source-events.ts`
   - preserve `thoughtSignature` on the next visible text or function-call action
     part so clients can echo it next turn
 - `src/data-plane/llm/sources/gemini/respond.ts`
   - translate source errors into Google RPC Status envelopes
+- `src/data-plane/llm/targets/messages/interceptors/promote-thinking-display.ts`
+  - promote Claude 4.x default thinking display so clients see summarized or
+    full thinking text rather than upstream's omitted summary
 - `src/data-plane/llm/targets/messages/interceptors/fix-beta-header.ts`
   - whitelist `anthropic-beta`
   - auto-add `interleaved-thinking-2025-05-14` when required
-- `src/data-plane/llm/targets/messages/interceptors/strip-service-tier.ts`
-  - strip unsupported `service_tier`
 - `src/data-plane/llm/targets/messages/interceptors/strip-done-sentinel.ts`
   - strip stray `[DONE]` sentinels
+- `src/data-plane/llm/targets/messages/interceptors/strip-eager-input-streaming.ts`
+  - drop per-tool `eager_input_streaming` Copilot upstream rejects
 - `src/data-plane/llm/targets/responses/interceptors/strip-service-tier.ts`
   - strip unsupported `service_tier`
 - `src/data-plane/llm/targets/responses/interceptors/retry-connection-mismatch.ts`
   - detect expired connection-bound input IDs
   - deterministically rewrite IDs
   - retry once
+- `src/data-plane/llm/targets/responses/interceptors/retry-cyber-policy.ts`
+  - retry on Copilot upstream `cyber_policy` failures up to a fixed cap
 - `src/data-plane/llm/targets/responses/interceptors/synchronize-output-item-ids.ts`
   - synchronize mismatched stream item IDs
-- `src/data-plane/llm/targets/chat-completions/interceptors/strip-service-tier.ts`
-  - strip unsupported `service_tier`
 - `src/data-plane/llm/targets/chat-completions/interceptors/include-usage-stream-options.ts`
   - ensure streaming usage options needed by native chat handling
 - `src/data-plane/llm/targets/chat-completions/interceptors/normalize-reasoning-dialect.ts`
