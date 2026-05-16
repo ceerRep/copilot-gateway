@@ -410,6 +410,14 @@ Current placement:
     JSON results, when the upstream config selects the `deepseek` dialect
   - drop `reasoning_opaque` and `reasoning_items` for that dialect since
     DeepSeek has no concept of an opaque reasoning chain
+- `src/data-plane/llm/targets/chat-completions/interceptors/normalize-usage.ts`
+  - rewrite vendor cache-token field variants (DeepSeek `prompt_cache_hit_tokens`,
+    Kimi flat `cached_tokens`, ...) into the OpenAI standard
+    `prompt_tokens_details.cached_tokens` on both non-stream responses and
+    stream chunks
+  - relocate `usage` from a non-spec chunk (vendors that attach it to a chunk
+    with non-empty `choices`) to a synthesized spec-compliant `choices: []`
+    carrier chunk
 - shared translation event helpers
   - guard against infinite whitespace in tool/function arguments
 

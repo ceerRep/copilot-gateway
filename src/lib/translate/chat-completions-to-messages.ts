@@ -24,7 +24,6 @@ import {
   resolveImageUrlToMessagesImage,
 } from "./remote-images.ts";
 import { safeJsonParse } from "./utils.ts";
-import { readChatCompletionsCacheTokens } from "../usage-normalize.ts";
 
 export type { RemoteImageLoader } from "./remote-images.ts";
 
@@ -325,17 +324,14 @@ interface ChatCompletionsUsage {
 export const mapChatCompletionsUsageToMessagesUsage = (
   usage?: ChatCompletionsUsage,
 ): MessagesResponse["usage"] => {
-  // Tolerate vendor variants (DeepSeek, Kimi, ...) on top of the OpenAI
-  // standard `prompt_tokens_details.cached_tokens`. See
-  // src/lib/usage-normalize.ts for the supported field names.
-  const { cacheRead } = readChatCompletionsCacheTokens(
-    usage as Record<string, unknown> | undefined,
-  );
+  const cachedTokens = usage?.prompt_tokens_details?.cached_tokens;
 
   return {
-    input_tokens: (usage?.prompt_tokens ?? 0) - cacheRead,
+    input_tokens: (usage?.prompt_tokens ?? 0) - (cachedTokens ?? 0),
     output_tokens: usage?.completion_tokens ?? 0,
-    ...(cacheRead > 0 ? { cache_read_input_tokens: cacheRead } : {}),
+    ...(cachedTokens !== undefined
+      ? { cache_read_input_tokens: cachedTokens }
+      : {}),
   };
 };
 

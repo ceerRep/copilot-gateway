@@ -4,7 +4,7 @@
 import type { Context, Next } from "hono";
 import { recordUsage } from "../lib/usage-tracker.ts";
 import { touchApiKeyLastUsed } from "../lib/api-keys.ts";
-import { asJsonObject, type JsonObject, readChatCompletionsCacheTokens } from "../lib/usage-normalize.ts";
+import { asJsonObject, type JsonObject, readJsonNumber } from "../lib/json-helpers.ts";
 import {
   getUsageResponseMetadata,
   type UsageResponseMetadata,
@@ -284,12 +284,14 @@ function extractUsageFromJson(json: any): UsageInfo | null {
   }
 
   if (json?.usage?.prompt_tokens != null) {
-    const cache = readChatCompletionsCacheTokens(asJsonObject(json.usage));
+    const cacheRead = readJsonNumber(
+      asJsonObject(json.usage.prompt_tokens_details)?.cached_tokens,
+    ) ?? 0;
     return {
       input: json.usage.prompt_tokens,
       output: json.usage.completion_tokens ?? 0,
-      cacheRead: cache.cacheRead,
-      cacheCreation: cache.cacheCreation,
+      cacheRead,
+      cacheCreation: 0,
     };
   }
 
@@ -373,13 +375,15 @@ function extractUsageFromStreamEvent(
 
   const usage = asJsonObject(payload.usage);
   if (readNumber(usage?.prompt_tokens) != null) {
-    const cache = readChatCompletionsCacheTokens(usage);
+    const cacheRead = readJsonNumber(
+      asJsonObject(usage?.prompt_tokens_details)?.cached_tokens,
+    ) ?? 0;
     return {
       kind: "final",
       input: readNumber(usage?.prompt_tokens) ?? 0,
       output: readNumber(usage?.completion_tokens) ?? 0,
-      cacheRead: cache.cacheRead,
-      cacheCreation: cache.cacheCreation,
+      cacheRead,
+      cacheCreation: 0,
       fromStart: false,
     };
   }

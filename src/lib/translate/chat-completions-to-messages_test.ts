@@ -919,32 +919,6 @@ Deno.test("mapChatCompletionsUsageToMessagesUsage maps OpenAI cached_tokens to c
   assertEquals(usage.cache_read_input_tokens, 60);
 });
 
-Deno.test("mapChatCompletionsUsageToMessagesUsage handles DeepSeek prompt_cache_hit_tokens", () => {
-  // DeepSeek reports cache hits via prompt_cache_hit_tokens; prompt_tokens
-  // already includes the hit count.
-  // https://api-docs.deepseek.com/guides/kv_cache
-  const usage = mapChatCompletionsUsageToMessagesUsage({
-    prompt_tokens: 100,
-    completion_tokens: 20,
-    // deno-lint-ignore no-explicit-any
-    prompt_cache_hit_tokens: 70,
-  } as any);
-  assertEquals(usage.input_tokens, 30);
-  assertEquals(usage.output_tokens, 20);
-  assertEquals(usage.cache_read_input_tokens, 70);
-});
-
-Deno.test("mapChatCompletionsUsageToMessagesUsage handles Kimi flat cached_tokens", () => {
-  const usage = mapChatCompletionsUsageToMessagesUsage({
-    prompt_tokens: 100,
-    completion_tokens: 20,
-    // deno-lint-ignore no-explicit-any
-    cached_tokens: 50,
-  } as any);
-  assertEquals(usage.input_tokens, 50);
-  assertEquals(usage.cache_read_input_tokens, 50);
-});
-
 Deno.test("mapChatCompletionsUsageToMessagesUsage omits cache_read_input_tokens when no cache field", () => {
   const usage = mapChatCompletionsUsageToMessagesUsage({
     prompt_tokens: 100,

@@ -175,8 +175,7 @@ const translateResponseTools = (
   // and fix-apply-patch-tools rewrites Codex's `apply_patch` Freeform tool.
   // Other Freeform tools have no shim today, so anything left without
   // `name`/`parameters` is dropped here rather than forwarded as a malformed
-  // function tool. (vLLM specifically rejects function entries missing
-  // `name`.)
+  // function tool.
   const functionTools = tools.filter(
     (tool): tool is ResponseFunctionTool => tool.type === "function",
   );

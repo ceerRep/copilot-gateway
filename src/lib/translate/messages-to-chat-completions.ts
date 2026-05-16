@@ -343,13 +343,9 @@ export const translateMessagesToChatCompletions = (
 ): ChatCompletionsPayload => {
   const clientTools = getClientTools(payload.tools);
   const effort = getMessagesRequestedReasoningEffort(payload);
-
-  // Normalize Anthropic Messages effort values to Chat Completions range.
-  // Chat Completions supports low/medium/high but not xhigh or max.
-  let reasoningEffort: string | undefined;
-  if (effort && effort !== "none") {
-    reasoningEffort = effort === "xhigh" || effort === "max" ? "high" : effort;
-  }
+  // Pass effort through verbatim; per-upstream enum acceptance (e.g. some
+  // backends rejecting `xhigh`/`max`) is the target interceptor's concern.
+  const reasoningEffort = effort && effort !== "none" ? effort : undefined;
 
   return {
     model: payload.model,
