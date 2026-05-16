@@ -20,7 +20,7 @@ import {
   withUpstreamTelemetry,
 } from "../telemetry.ts";
 import { messagesStreamFramesToEvents } from "./events/from-stream.ts";
-import { messagesTargetInterceptors } from "./interceptors/index.ts";
+import { interceptorsForMessages } from "./interceptors/index.ts";
 
 export interface EmitToMessagesInput extends EmitInput<MessagesPayload> {
   rawBeta?: string;
@@ -44,7 +44,7 @@ export const emitToMessages = async (
       MessagesResponse
     >(
       input,
-      messagesTargetInterceptors,
+      interceptorsForMessages(input.upstream),
       async () => {
         const upstreamStartedAt = performance.now();
         const response = await input.upstream.fetch(

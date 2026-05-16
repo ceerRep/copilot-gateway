@@ -1,12 +1,12 @@
 import type {
   MessagesResponse,
   MessagesThinkingDisplay,
-} from "../../../../../lib/messages-types.ts";
-import { normalizeModelName } from "../../../../../lib/model-name.ts";
-import { mapEventResult } from "../../../shared/errors/result.ts";
-import type { StreamFrame } from "../../../shared/stream/types.ts";
-import type { TargetInterceptor } from "../../run-interceptors.ts";
-import type { EmitToMessagesInput } from "../emit.ts";
+} from "../../../../../../lib/messages-types.ts";
+import { normalizeModelName } from "../../../../../../lib/model-name.ts";
+import { mapEventResult } from "../../../../shared/errors/result.ts";
+import type { StreamFrame } from "../../../../shared/stream/types.ts";
+import type { TargetInterceptor } from "../../../run-interceptors.ts";
+import type { EmitToMessagesInput } from "../../emit.ts";
 
 const CLAUDE_VERSION_PATTERN = /(?:^|-)(\d+)\.(\d+)(?=-|$)/;
 

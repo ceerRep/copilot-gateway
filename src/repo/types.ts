@@ -189,12 +189,6 @@ export type EndpointKey =
   | "embeddings"
   | "models";
 
-// Reasoning field-name dialect used by an upstream Chat Completions endpoint.
-// "openai" follows the standard `reasoning_text` / `reasoning_opaque` /
-// `reasoning_items[]` shape; "deepseek" uses the legacy `reasoning_content`
-// scalar. https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
-export type ReasoningDialect = "openai" | "deepseek";
-
 export interface UpstreamConfig {
   id: string;
   name: string;
@@ -204,7 +198,10 @@ export interface UpstreamConfig {
   enabled: boolean;
   sortOrder: number;
   createdAt: string;
-  reasoningDialect: ReasoningDialect;
+  // Flag ids the admin opted into for this upstream. See
+  // src/data-plane/llm/targets/optional-fixes.ts for the catalog.
+  // Always sorted + deduped at the repo boundary.
+  enabledFixes: string[];
   // Optional per-endpoint path overrides. The final URL is `baseUrl + path`
   // with no automatic `/v1` prefixing — admins enter the exact path the
   // upstream serves. `messages_count_tokens` follows `messages` and is not

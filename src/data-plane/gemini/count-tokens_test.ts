@@ -186,7 +186,7 @@ Deno.test("/v1beta/models/:model:countTokens rejects custom-upstream-only models
     enabled: true,
     sortOrder: 100,
     createdAt: "2026-05-01T00:00:00.000Z",
-    reasoningDialect: "openai",
+    enabledFixes: [],
   });
 
   await withMockedFetch(async (request) => {
@@ -244,7 +244,7 @@ Deno.test("/v1beta/models/:model:countTokens preserves custom upstream /models H
     enabled: true,
     sortOrder: 100,
     createdAt: "2026-05-01T00:00:00.000Z",
-    reasoningDialect: "openai",
+    enabledFixes: [],
   });
 
   await withMockedFetch(async (request) => {

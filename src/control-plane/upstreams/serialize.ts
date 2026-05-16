@@ -13,7 +13,7 @@ export const upstreamConfigToJson = (cfg: UpstreamConfig) => ({
   enabled: cfg.enabled,
   sort_order: cfg.sortOrder,
   created_at: cfg.createdAt,
-  reasoning_dialect: cfg.reasoningDialect,
+  enabled_fixes: cfg.enabledFixes,
   ...(cfg.pathOverrides ? { path_overrides: cfg.pathOverrides } : {}),
 });
 
@@ -26,6 +26,6 @@ export const upstreamConfigToFullJson = (cfg: UpstreamConfig) => ({
   enabled: cfg.enabled,
   sort_order: cfg.sortOrder,
   created_at: cfg.createdAt,
-  reasoning_dialect: cfg.reasoningDialect,
+  enabled_fixes: cfg.enabledFixes,
   ...(cfg.pathOverrides ? { path_overrides: cfg.pathOverrides } : {}),
 });

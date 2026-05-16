@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS upstream_configs (
   enabled INTEGER NOT NULL DEFAULT 1,
   sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
-  reasoning_dialect TEXT NOT NULL DEFAULT 'openai',
+  enabled_fixes TEXT NOT NULL DEFAULT '[]',
   path_overrides TEXT
 );
 

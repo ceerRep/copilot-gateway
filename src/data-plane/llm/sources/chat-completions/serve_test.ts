@@ -1506,7 +1506,7 @@ Deno.test("/v1/chat/completions preserves custom upstream /models HTTP errors", 
     enabled: true,
     sortOrder: 100,
     createdAt: "2026-05-01T00:00:00.000Z",
-    reasoningDialect: "openai",
+    enabledFixes: [],
   });
 
   await withMockedFetch(async (request) => {

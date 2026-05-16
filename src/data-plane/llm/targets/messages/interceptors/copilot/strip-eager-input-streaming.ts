@@ -1,6 +1,6 @@
-import type { MessagesResponse } from "../../../../../lib/messages-types.ts";
-import type { TargetInterceptor } from "../../run-interceptors.ts";
-import type { EmitToMessagesInput } from "../emit.ts";
+import type { MessagesResponse } from "../../../../../../lib/messages-types.ts";
+import type { TargetInterceptor } from "../../../run-interceptors.ts";
+import type { EmitToMessagesInput } from "../../emit.ts";
 
 /**
  * `eager_input_streaming` is a per-tool property in the Anthropic Messages API

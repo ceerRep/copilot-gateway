@@ -1047,7 +1047,7 @@ class D1UpstreamConfigRepo implements UpstreamConfigRepo {
   async list(): Promise<UpstreamConfig[]> {
     const { results } = await this.db
       .prepare(
-        "SELECT id, name, base_url, bearer_token, supported_endpoints, enabled, sort_order, created_at, reasoning_dialect, path_overrides FROM upstream_configs ORDER BY sort_order, created_at",
+        "SELECT id, name, base_url, bearer_token, supported_endpoints, enabled, sort_order, created_at, enabled_fixes, path_overrides FROM upstream_configs ORDER BY sort_order, created_at",
       )
       .all<UpstreamConfigRow>();
     return results.map(toUpstreamConfig);
@@ -1056,7 +1056,7 @@ class D1UpstreamConfigRepo implements UpstreamConfigRepo {
   async getById(id: string): Promise<UpstreamConfig | null> {
     const row = await this.db
       .prepare(
-        "SELECT id, name, base_url, bearer_token, supported_endpoints, enabled, sort_order, created_at, reasoning_dialect, path_overrides FROM upstream_configs WHERE id = ?",
+        "SELECT id, name, base_url, bearer_token, supported_endpoints, enabled, sort_order, created_at, enabled_fixes, path_overrides FROM upstream_configs WHERE id = ?",
       )
       .bind(id)
       .first<UpstreamConfigRow>();
@@ -1066,7 +1066,7 @@ class D1UpstreamConfigRepo implements UpstreamConfigRepo {
   async save(config: UpstreamConfig): Promise<void> {
     await this.db
       .prepare(
-        `INSERT INTO upstream_configs (id, name, base_url, bearer_token, supported_endpoints, enabled, sort_order, created_at, reasoning_dialect, path_overrides) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO upstream_configs (id, name, base_url, bearer_token, supported_endpoints, enabled, sort_order, created_at, enabled_fixes, path_overrides) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET
            name = excluded.name,
            base_url = excluded.base_url,
@@ -1074,7 +1074,7 @@ class D1UpstreamConfigRepo implements UpstreamConfigRepo {
            supported_endpoints = excluded.supported_endpoints,
            enabled = excluded.enabled,
            sort_order = excluded.sort_order,
-           reasoning_dialect = excluded.reasoning_dialect,
+           enabled_fixes = excluded.enabled_fixes,
            path_overrides = excluded.path_overrides`,
       )
       .bind(
@@ -1086,7 +1086,7 @@ class D1UpstreamConfigRepo implements UpstreamConfigRepo {
         config.enabled ? 1 : 0,
         config.sortOrder,
         config.createdAt,
-        config.reasoningDialect,
+        JSON.stringify(config.enabledFixes),
         config.pathOverrides ? JSON.stringify(config.pathOverrides) : null,
       )
       .run();
@@ -1114,7 +1114,7 @@ interface UpstreamConfigRow {
   enabled: number;
   sort_order: number;
   created_at: string;
-  reasoning_dialect: string | null;
+  enabled_fixes: string | null;
   path_overrides: string | null;
 }
 
@@ -1150,8 +1150,27 @@ function toUpstreamConfig(row: UpstreamConfigRow): UpstreamConfig {
     }
   }
 
-  const reasoningDialect: UpstreamConfig["reasoningDialect"] =
-    row.reasoning_dialect === "deepseek" ? "deepseek" : "openai";
+  // Parse enabled_fixes JSON: keep all string entries, dedupe + sort.
+  // The repo intentionally does not check ids against the fix catalog —
+  // that's the control plane's job on write. Unknown ids surviving on
+  // read (e.g. from an older snapshot) are inert: the per-target
+  // interceptor assembler only matches registered fixIds.
+  let enabledFixes: string[] = [];
+  if (row.enabled_fixes) {
+    try {
+      const parsed = JSON.parse(row.enabled_fixes);
+      if (Array.isArray(parsed)) {
+        const seen = new Set<string>();
+        for (const v of parsed) {
+          if (typeof v === "string") seen.add(v);
+        }
+        enabledFixes = [...seen].sort();
+      }
+    } catch {
+      // Malformed JSON falls back to empty — the upstream still works,
+      // just without any opt-in fixes until the admin re-saves.
+    }
+  }
 
   return {
     id: row.id,
@@ -1162,7 +1181,7 @@ function toUpstreamConfig(row: UpstreamConfigRow): UpstreamConfig {
     enabled: row.enabled !== 0,
     sortOrder: row.sort_order,
     createdAt: row.created_at,
-    reasoningDialect,
+    enabledFixes,
     ...(pathOverrides ? { pathOverrides } : {}),
   };
 }

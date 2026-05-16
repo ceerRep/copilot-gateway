@@ -30,7 +30,7 @@ Deno.test("/v1/models returns merged model list from Copilot and custom upstream
     enabled: true,
     sortOrder: 100,
     createdAt: new Date().toISOString(),
-    reasoningDialect: "openai",
+    enabledFixes: [],
   });
 
   await withMockedFetch((request) => {

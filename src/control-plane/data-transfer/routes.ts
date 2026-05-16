@@ -9,6 +9,7 @@ import {
 import { isWebSearchProviderName } from "../../lib/web-search-types.ts";
 import { invalidateUpstreamModels } from "../../lib/models-cache.ts";
 import { getRepo } from "../../repo/index.ts";
+import { isKnownFixId } from "../../data-plane/llm/targets/optional-fixes.ts";
 import type {
   ApiKey,
   GitHubAccount,
@@ -348,27 +349,35 @@ function shouldImportPerformance(data: Record<string, unknown>): boolean {
   return !Array.isArray(data.performance) || data.performance.length > 0;
 }
 
-// Older exports do not include `reasoningDialect` or `pathOverrides`. Fill in
-// the OpenAI defaults so the import can satisfy the now-required schema fields
-// without forcing the admin to re-edit every upstream after a restore.
+// Normalize an imported UpstreamConfig:
+//   - Drop legacy `reasoningDialect` field (was dev-only, never released).
+//   - Keep `enabledFixes` as a sorted/deduped string array of known fix ids.
+//   - Tolerate missing `pathOverrides`.
 function normalizeImportedUpstreamConfig(
   // deno-lint-ignore no-explicit-any
   config: any,
 ): UpstreamConfig {
-  const reasoningDialect = config.reasoningDialect === "deepseek"
-    ? "deepseek"
-    : "openai";
-  const pathOverrides = config.pathOverrides &&
-      typeof config.pathOverrides === "object" &&
-      !Array.isArray(config.pathOverrides)
+  const { reasoningDialect: _legacyDialect, enabledFixes, ...rest } = config;
+  const fixes = Array.isArray(enabledFixes)
+    ? [
+      ...new Set(
+        enabledFixes.filter((v: unknown): v is string =>
+          typeof v === "string" && isKnownFixId(v)
+        ),
+      ),
+    ].sort()
+    : [];
+  const pathOverrides = rest.pathOverrides &&
+      typeof rest.pathOverrides === "object" &&
+      !Array.isArray(rest.pathOverrides)
     ? Object.fromEntries(
-      Object.entries(config.pathOverrides as Record<string, unknown>)
+      Object.entries(rest.pathOverrides as Record<string, unknown>)
         .filter(([, v]) => typeof v === "string"),
     ) as UpstreamConfig["pathOverrides"]
     : undefined;
   return {
-    ...config,
-    reasoningDialect,
+    ...rest,
+    enabledFixes: fixes,
     ...(pathOverrides && Object.keys(pathOverrides).length > 0
       ? { pathOverrides }
       : {}),

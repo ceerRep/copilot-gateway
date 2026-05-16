@@ -1,9 +1,9 @@
 import type {
   ResponsesPayload,
   ResponsesResult,
-} from "../../../../../lib/responses-types.ts";
-import type { TargetInterceptor } from "../../run-interceptors.ts";
-import type { EmitInput } from "../../emit-types.ts";
+} from "../../../../../../lib/responses-types.ts";
+import type { TargetInterceptor } from "../../../run-interceptors.ts";
+import type { EmitInput } from "../../../emit-types.ts";
 
 /**
  * Copilot does not expose a compatible `service_tier` control on native or

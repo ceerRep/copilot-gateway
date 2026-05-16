@@ -20,7 +20,7 @@ import {
   withUpstreamTelemetry,
 } from "../telemetry.ts";
 import { chatCompletionsStreamFramesToEvents } from "./events/from-stream.ts";
-import { chatCompletionsTargetInterceptors } from "./interceptors/index.ts";
+import { interceptorsForChatCompletions } from "./interceptors/index.ts";
 
 export interface EmitToChatCompletionsInput
   extends EmitInput<ChatCompletionsPayload> {}
@@ -41,7 +41,7 @@ export const emitToChatCompletions = async (
       ChatCompletionResponse
     >(
       input,
-      chatCompletionsTargetInterceptors,
+      interceptorsForChatCompletions(input.upstream),
       async () => {
         const upstreamStartedAt = performance.now();
         const response = await input.upstream.fetch(

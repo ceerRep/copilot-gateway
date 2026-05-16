@@ -33,6 +33,7 @@ import { tokenUsage } from "./token-usage/routes.ts";
 import {
   createUpstream,
   deleteUpstream,
+  listOptionalFixes,
   listUpstreams,
   testUpstream,
   updateUpstream,
@@ -73,6 +74,7 @@ export const mountControlPlane = (app: Hono) => {
   adminApi.patch("/keys/:id", renameKey);
   adminApi.delete("/keys/:id", deleteKey);
   adminApi.get("/upstreams", listUpstreams);
+  adminApi.get("/upstream-fixes", listOptionalFixes);
   adminApi.post("/upstreams", createUpstream);
   adminApi.patch("/upstreams/:id", updateUpstream);
   adminApi.delete("/upstreams/:id", deleteUpstream);

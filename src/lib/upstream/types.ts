@@ -9,7 +9,7 @@
 // stored `pathOverrides` config so admins can point one endpoint at a subpath
 // without disturbing the others.
 
-import type { EndpointKey, ReasoningDialect } from "../../repo/types.ts";
+import type { EndpointKey } from "../../repo/types.ts";
 
 export interface UpstreamFetchOptions {
   vision?: boolean;
@@ -27,7 +27,11 @@ export interface Upstream {
   // when /models does not declare per-model `supported_endpoints` (Copilot
   // does; most third-party providers do not).
   supportedEndpoints: string[];
-  reasoningDialect: ReasoningDialect;
+  // Flag ids the upstream opted into. Each target's emit pipeline filters
+  // its OptionalInterceptor descriptors by this set before running them.
+  // Copilot-only workarounds live in `interceptors/copilot/` and are
+  // attached by upstream kind, not by this set.
+  enabledFixes: ReadonlySet<string>;
   fetch(
     endpoint: EndpointKey,
     init: RequestInit,

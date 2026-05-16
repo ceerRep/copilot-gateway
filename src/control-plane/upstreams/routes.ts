@@ -3,11 +3,11 @@ import { getRepo } from "../../repo/index.ts";
 import { invalidateUpstreamModels } from "../../lib/models-cache.ts";
 import { createOpenAiUpstream } from "../../lib/upstream/openai.ts";
 import { validateUpstreamPath } from "../../lib/upstream/join.ts";
-import type {
-  EndpointKey,
-  ReasoningDialect,
-  UpstreamConfig,
-} from "../../repo/types.ts";
+import type { EndpointKey, UpstreamConfig } from "../../repo/types.ts";
+import {
+  getFixCatalog,
+  isKnownFixId,
+} from "../../data-plane/llm/targets/optional-fixes.ts";
 import { upstreamConfigToJson } from "./serialize.ts";
 
 const ALLOWED_ENDPOINTS = new Set([
@@ -32,11 +32,6 @@ const OVERRIDABLE_ENDPOINTS: ReadonlySet<
   "models",
 ]);
 
-const REASONING_DIALECTS: ReadonlySet<ReasoningDialect> = new Set([
-  "openai",
-  "deepseek",
-]);
-
 interface UpstreamCreateBody {
   name?: unknown;
   base_url?: unknown;
@@ -44,7 +39,7 @@ interface UpstreamCreateBody {
   supported_endpoints?: unknown;
   enabled?: unknown;
   sort_order?: unknown;
-  reasoning_dialect?: unknown;
+  enabled_fixes?: unknown;
   path_overrides?: unknown;
 }
 
@@ -96,17 +91,42 @@ const validateEndpoints = (
   return { ok: true, value: result };
 };
 
-const validateReasoningDialect = (
+// Validate enabled_fixes against the flag catalog. Unknown ids are
+// hard-rejected so an admin typo surfaces at save time. We don't enforce
+// that a flag's `appliesTo` overlaps `supported_endpoints` — assembling
+// the per-target interceptor list naturally no-ops on flags that don't
+// match any registered descriptor for the endpoints actually served, so
+// an enabled-but-unreachable flag is harmless. Skipping the check also
+// avoids drift when `supported_endpoints` is edited without revisiting
+// `enabled_fixes`.
+const validateEnabledFixes = (
   value: unknown,
-): { ok: true; value: ReasoningDialect } | { ok: false; error: string } => {
-  if (typeof value !== "string" || !REASONING_DIALECTS.has(value as ReasoningDialect)) {
+): { ok: true; value: string[] } | { ok: false; error: string } => {
+  if (!Array.isArray(value)) {
+    return { ok: false, error: "enabled_fixes must be an array of strings" };
+  }
+  const unknown: string[] = [];
+  const known = new Set<string>();
+  for (const v of value) {
+    if (typeof v !== "string") {
+      return {
+        ok: false,
+        error: "enabled_fixes entries must be strings",
+      };
+    }
+    if (!isKnownFixId(v)) {
+      unknown.push(v);
+      continue;
+    }
+    known.add(v);
+  }
+  if (unknown.length > 0) {
     return {
       ok: false,
-      error:
-        `reasoning_dialect must be one of: ${[...REASONING_DIALECTS].join(", ")}`,
+      error: `Unknown enabled_fixes ids: ${unknown.join(", ")}`,
     };
   }
-  return { ok: true, value: value as ReasoningDialect };
+  return { ok: true, value: [...known].sort() };
 };
 
 type PathOverrides = NonNullable<UpstreamConfig["pathOverrides"]>;
@@ -150,6 +170,10 @@ export const listUpstreams = async (c: Context) => {
   return c.json(items.map(upstreamConfigToJson));
 };
 
+export const listOptionalFixes = (c: Context) => {
+  return c.json(getFixCatalog());
+};
+
 export const createUpstream = async (c: Context) => {
   const body = await c.req.json<UpstreamCreateBody>();
 
@@ -165,10 +189,8 @@ export const createUpstream = async (c: Context) => {
   const endpoints = validateEndpoints(body.supported_endpoints);
   if (!endpoints.ok) return c.json({ error: endpoints.error }, 400);
 
-  const dialect = body.reasoning_dialect === undefined
-    ? { ok: true as const, value: "openai" as ReasoningDialect }
-    : validateReasoningDialect(body.reasoning_dialect);
-  if (!dialect.ok) return c.json({ error: dialect.error }, 400);
+  const fixes = validateEnabledFixes(body.enabled_fixes ?? []);
+  if (!fixes.ok) return c.json({ error: fixes.error }, 400);
 
   const overrides = validatePathOverrides(body.path_overrides);
   if (!overrides.ok) return c.json({ error: overrides.error }, 400);
@@ -188,7 +210,7 @@ export const createUpstream = async (c: Context) => {
     enabled: body.enabled === undefined ? true : Boolean(body.enabled),
     sortOrder,
     createdAt: new Date().toISOString(),
-    reasoningDialect: dialect.value,
+    enabledFixes: fixes.value,
     ...(overrides.value ? { pathOverrides: overrides.value } : {}),
   };
 
@@ -232,10 +254,10 @@ export const updateUpstream = async (c: Context) => {
   if (body.sort_order !== undefined && typeof body.sort_order === "number") {
     next.sortOrder = Math.floor(body.sort_order);
   }
-  if (body.reasoning_dialect !== undefined) {
-    const dialect = validateReasoningDialect(body.reasoning_dialect);
-    if (!dialect.ok) return c.json({ error: dialect.error }, 400);
-    next.reasoningDialect = dialect.value;
+  if (body.enabled_fixes !== undefined) {
+    const fixes = validateEnabledFixes(body.enabled_fixes);
+    if (!fixes.ok) return c.json({ error: fixes.error }, 400);
+    next.enabledFixes = fixes.value;
   }
   if (body.path_overrides !== undefined) {
     const overrides = validatePathOverrides(body.path_overrides);

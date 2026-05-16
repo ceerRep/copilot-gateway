@@ -50,7 +50,7 @@ const collectFrames = async (
 Deno.test("withDeepseekReasoningDialect renames outbound reasoning_text on a deepseek upstream", async () => {
   const ctx = {
     payload: baseRequest(),
-    upstream: stubUpstream({ reasoningDialect: "deepseek" }),
+    upstream: stubUpstream({ enabledFixes: new Set(["deepseek-reasoning-dialect"]) }),
   };
 
   let observed: ChatCompletionsPayload | null = null;
@@ -66,21 +66,6 @@ Deno.test("withDeepseekReasoningDialect renames outbound reasoning_text on a dee
   assertEquals(assistant.reasoning_items, undefined);
   // Non-reasoning fields stay intact so the tool-call replay still works.
   assertEquals((assistant.tool_calls as unknown[]).length, 1);
-});
-
-Deno.test("withDeepseekReasoningDialect leaves the payload untouched on an openai upstream", async () => {
-  const ctx = {
-    payload: baseRequest(),
-    upstream: stubUpstream({ reasoningDialect: "openai" }),
-  };
-
-  await withDeepseekReasoningDialect(ctx, async () =>
-    eventResult((async function* () {})()));
-
-  const assistant = ctx.payload.messages[1] as unknown as Record<string, unknown>;
-  assertEquals(assistant.reasoning_text, "let me check the docs");
-  assertEquals(assistant.reasoning_opaque, "opaque-blob");
-  assertEquals(assistant.reasoning_content, undefined);
 });
 
 Deno.test("withDeepseekReasoningDialect synthesizes reasoning_content from reasoning_items when reasoning_text is absent", async () => {
@@ -110,7 +95,7 @@ Deno.test("withDeepseekReasoningDialect synthesizes reasoning_content from reaso
         { role: "tool" as const, tool_call_id: "call_1", content: "result" },
       ],
     } satisfies ChatCompletionsPayload,
-    upstream: stubUpstream({ reasoningDialect: "deepseek" }),
+    upstream: stubUpstream({ enabledFixes: new Set(["deepseek-reasoning-dialect"]) }),
   };
 
   let observed: ChatCompletionsPayload | null = null;
@@ -143,7 +128,7 @@ Deno.test("withDeepseekReasoningDialect strips reasoning_items even when no summ
         },
       ],
     } satisfies ChatCompletionsPayload,
-    upstream: stubUpstream({ reasoningDialect: "deepseek" }),
+    upstream: stubUpstream({ enabledFixes: new Set(["deepseek-reasoning-dialect"]) }),
   };
 
   let observed: ChatCompletionsPayload | null = null;
@@ -162,7 +147,7 @@ Deno.test("withDeepseekReasoningDialect strips reasoning_items even when no summ
 Deno.test("withDeepseekReasoningDialect renames inbound SSE reasoning_content to reasoning_text", async () => {
   const ctx = {
     payload: baseRequest(),
-    upstream: stubUpstream({ reasoningDialect: "deepseek" }),
+    upstream: stubUpstream({ enabledFixes: new Set(["deepseek-reasoning-dialect"]) }),
   };
   const upstreamChunk = JSON.stringify({
     id: "chunk_1",
@@ -192,7 +177,7 @@ Deno.test("withDeepseekReasoningDialect renames inbound SSE reasoning_content to
 Deno.test("withDeepseekReasoningDialect renames inbound non-stream message.reasoning_content", async () => {
   const ctx = {
     payload: baseRequest(),
-    upstream: stubUpstream({ reasoningDialect: "deepseek" }),
+    upstream: stubUpstream({ enabledFixes: new Set(["deepseek-reasoning-dialect"]) }),
   };
   const upstreamResponse = {
     id: "chatcmpl_1",

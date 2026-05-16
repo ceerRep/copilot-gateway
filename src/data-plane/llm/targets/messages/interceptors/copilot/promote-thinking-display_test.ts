@@ -1,8 +1,8 @@
 import { assertEquals } from "@std/assert";
-import type { MessagesResponse } from "../../../../../lib/messages-types.ts";
-import { jsonFrame, sseFrame } from "../../../shared/stream/types.ts";
-import { stubUpstream } from "../../../../../test-helpers.ts";
-import type { EmitToMessagesInput } from "../emit.ts";
+import type { MessagesResponse } from "../../../../../../lib/messages-types.ts";
+import { jsonFrame, sseFrame } from "../../../../shared/stream/types.ts";
+import { stubUpstream } from "../../../../../../test-helpers.ts";
+import type { EmitToMessagesInput } from "../../emit.ts";
 import {
   resolveMessagesDownstreamThinkingDisplay,
   withThinkingDisplayPromoted,

@@ -141,7 +141,7 @@ Deno.test("/v1/embeddings routes to custom upstream when model is only declared 
     enabled: true,
     sortOrder: 100,
     createdAt: "2026-05-01T00:00:00.000Z",
-    reasoningDialect: "openai",
+    enabledFixes: [],
   });
 
   let forwardedUrl: string | undefined;
@@ -214,7 +214,7 @@ Deno.test("/v1/embeddings rejects model on custom upstream without /embeddings c
     enabled: true,
     sortOrder: 100,
     createdAt: "2026-05-01T00:00:00.000Z",
-    reasoningDialect: "openai",
+    enabledFixes: [],
   });
 
   await withMockedFetch(async (request) => {
@@ -268,7 +268,7 @@ Deno.test("/v1/embeddings preserves custom upstream /models HTTP errors", async 
     enabled: true,
     sortOrder: 100,
     createdAt: "2026-05-01T00:00:00.000Z",
-    reasoningDialect: "openai",
+    enabledFixes: [],
   });
 
   await withMockedFetch(async (request) => {

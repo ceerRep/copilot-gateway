@@ -204,7 +204,7 @@ export const stubUpstream = (overrides: Partial<Upstream> = {}): Upstream => ({
   name: "Test Upstream",
   kind: "openai",
   supportedEndpoints: ["/chat/completions", "/responses", "/v1/messages"],
-  reasoningDialect: "openai",
+  enabledFixes: new Set<string>(),
   fetch: () => Promise.reject(new Error("stubUpstream.fetch was called")),
   ...overrides,
 });

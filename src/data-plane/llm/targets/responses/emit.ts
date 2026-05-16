@@ -20,7 +20,7 @@ import {
 } from "../telemetry.ts";
 import { type SequencedResponseStreamEvent } from "./events/from-result.ts";
 import { responsesStreamFramesToEvents } from "./events/from-stream.ts";
-import { responsesTargetInterceptors } from "./interceptors/index.ts";
+import { interceptorsForResponses } from "./interceptors/index.ts";
 
 const responsesRawResultToProtocolResult = (
   result: RawEmitResult<ResponsesResult>,
@@ -40,7 +40,7 @@ export const emitToResponses = async (
       ResponsesResult
     >(
       input,
-      responsesTargetInterceptors,
+      interceptorsForResponses(input.upstream),
       async () => {
         const upstreamStartedAt = performance.now();
         const response = await input.upstream.fetch(

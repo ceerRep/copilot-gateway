@@ -1,15 +1,51 @@
 import type { ChatCompletionResponse } from "../../../../../lib/chat-completions-types.ts";
+import type { Upstream } from "../../../../../lib/upstream/types.ts";
+import type { OptionalInterceptor } from "../../optional-fix.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 import type { EmitToChatCompletionsInput } from "../emit.ts";
 import { withUsageStreamOptionsIncluded } from "./include-usage-stream-options.ts";
 import { withDeepseekReasoningDialect } from "./normalize-reasoning-dialect.ts";
 import { withUsageNormalized } from "./normalize-usage.ts";
 
-export const chatCompletionsTargetInterceptors = [
+// Always-on Chat Completions target interceptors. Both gate the gateway's
+// usage-tracking pipeline:
+//   - `include-usage-stream-options` ensures upstreams emit a final usage
+//     chunk in streaming mode.
+//   - `normalize-usage` normalizes vendor variants (DeepSeek / Kimi /
+//     standard OpenAI) into the OpenAI standard usage shape so accounting
+//     reads one contract.
+// Turning either off would silently break per-key accounting, so neither
+// is surfaced as a flag.
+const baseInterceptors = [
   withUsageStreamOptionsIncluded,
-  withDeepseekReasoningDialect,
   withUsageNormalized,
-] satisfies readonly TargetInterceptor<
+] as const satisfies readonly TargetInterceptor<
   EmitToChatCompletionsInput,
   ChatCompletionResponse
 >[];
+
+// Optional interceptors for the Chat Completions target. Each entry binds
+// a run function to a flag id declared in ../../optional-fixes.ts.
+export const chatCompletionsOptionalInterceptors = [
+  {
+    fixId: "deepseek-reasoning-dialect",
+    run: withDeepseekReasoningDialect,
+  },
+] as const satisfies readonly OptionalInterceptor<
+  EmitToChatCompletionsInput,
+  ChatCompletionResponse
+>[];
+
+export const interceptorsForChatCompletions = (
+  upstream: Upstream,
+): readonly TargetInterceptor<
+  EmitToChatCompletionsInput,
+  ChatCompletionResponse
+>[] => [
+  ...baseInterceptors,
+  // No Copilot-only chat-completions workarounds today; the subdir is omitted
+  // until a first one shows up.
+  ...chatCompletionsOptionalInterceptors
+    .filter(({ fixId }) => upstream.enabledFixes.has(fixId))
+    .map(({ run }) => run),
+];

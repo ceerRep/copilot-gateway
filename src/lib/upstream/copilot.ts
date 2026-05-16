@@ -4,6 +4,7 @@
 
 import { copilotFetch } from "../copilot.ts";
 import type { EndpointKey } from "../../repo/types.ts";
+import { defaultFixesFor } from "../../data-plane/llm/targets/optional-fixes.ts";
 import type { Upstream, UpstreamFetchOptions } from "./types.ts";
 
 const COPILOT_UPSTREAM_ID = "copilot";
@@ -50,10 +51,12 @@ export const createCopilotUpstream = async (
     name: "GitHub Copilot",
     kind: "copilot",
     supportedEndpoints: COPILOT_SUPPORTED_ENDPOINTS,
-    // Copilot does not expose configurable reasoning field-name dialects;
-    // it follows the OpenAI standard `reasoning_text` shape on its native
-    // chat-completions handling.
-    reasoningDialect: "openai",
+    // Copilot gets every flag that opts into "copilot" by default.
+    // Copilot-only structural workarounds (anthropic beta header rewrite,
+    // [DONE] sentinel stripping, etc.) live in targets/<x>/interceptors/copilot/
+    // and are attached by the assembler purely on `kind === "copilot"`, so
+    // they don't appear here.
+    enabledFixes: defaultFixesFor("copilot"),
     fetch: (endpoint, init, options?: UpstreamFetchOptions) =>
       copilotFetch(COPILOT_PATHS[endpoint], init, githubToken, accountType, options),
   };

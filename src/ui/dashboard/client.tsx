@@ -392,6 +392,8 @@ export function dashboardAssets() {
                   upstreams: [],
                   upstreamsLoaded: false,
                   upstreamTestingId: null,
+                  upstreamFixCatalog: [],
+                  upstreamFixCatalogLoaded: false,
                   upstreamTestResult: null,
                   upstreamModal: {
                     open: false,
@@ -402,7 +404,7 @@ export function dashboardAssets() {
                     supportedEndpoints: ['/chat/completions'],
                     enabled: true,
                     sortOrder: 100,
-                    reasoningDialect: 'openai',
+                    enabledFixes: [],
                     pathOverrides: {
                       chat_completions: '',
                       responses: '',
@@ -932,6 +934,20 @@ export function dashboardAssets() {
                         } catch (e) {
                           console.error('loadUpstreams:', e);
                         }
+                        if (!this.upstreamFixCatalogLoaded) {
+                          try {
+                            const resp = await fetch('/api/upstream-fixes', { headers: this.authHeaders() });
+                            if (resp.status === 401) { this.logout(); return; }
+                            if (resp.ok) {
+                              this.upstreamFixCatalog = await resp.json();
+                              this.upstreamFixCatalogLoaded = true;
+                            } else {
+                              console.error('loadUpstreams (fixes): HTTP', resp.status);
+                            }
+                          } catch (e) {
+                            console.error('loadUpstreams (fixes):', e);
+                          }
+                        }
                       },
 
                       openUpstreamModal(existing) {
@@ -945,6 +961,7 @@ export function dashboardAssets() {
                         if (existing) {
                           const overrides = { ...blankOverrides(), ...(existing.path_overrides ?? {}) };
                           const hasOverrides = Object.values(existing.path_overrides ?? {}).some((v) => typeof v === 'string' && v.length > 0);
+                          const existingFixes = Array.isArray(existing.enabled_fixes) ? [...existing.enabled_fixes] : [];
                           this.upstreamModal = {
                             open: true,
                             id: existing.id,
@@ -954,7 +971,8 @@ export function dashboardAssets() {
                             supportedEndpoints: [...existing.supported_endpoints],
                             enabled: existing.enabled,
                             sortOrder: existing.sort_order,
-                            reasoningDialect: existing.reasoning_dialect ?? 'openai',
+                            enabledFixes: existingFixes,
+                            enabledFixesOpen: existingFixes.length > 0,
                             pathOverrides: overrides,
                             pathOverridesOpen: hasOverrides,
                             saving: false,
@@ -962,6 +980,12 @@ export function dashboardAssets() {
                           };
                         } else {
                           const nextSort = this.upstreams.reduce((m, u) => Math.max(m, u.sort_order), -1) + 1;
+                          // Custom upstreams are always the openai kind in the
+                          // gateway today, so pre-fill enabledFixes with every
+                          // catalog entry whose defaultFor includes openai.
+                          const defaults = this.upstreamFixCatalog
+                            .filter((f) => Array.isArray(f.defaultFor) && f.defaultFor.includes('openai'))
+                            .map((f) => f.id);
                           this.upstreamModal = {
                             open: true,
                             id: null,
@@ -971,7 +995,8 @@ export function dashboardAssets() {
                             supportedEndpoints: ['/chat/completions'],
                             enabled: true,
                             sortOrder: nextSort,
-                            reasoningDialect: 'openai',
+                            enabledFixes: defaults,
+                            enabledFixesOpen: false,
                             pathOverrides: blankOverrides(),
                             pathOverridesOpen: false,
                             saving: false,
@@ -995,6 +1020,12 @@ export function dashboardAssets() {
                         if (idx === -1) list.push(ep); else list.splice(idx, 1);
                       },
 
+                      toggleUpstreamFix(id) {
+                        const list = this.upstreamModal.enabledFixes;
+                        const idx = list.indexOf(id);
+                        if (idx === -1) list.push(id); else list.splice(idx, 1);
+                      },
+
                       async saveUpstream() {
                         this.upstreamModal.saving = true;
                         this.upstreamModal.error = null;
@@ -1013,7 +1044,7 @@ export function dashboardAssets() {
                             supported_endpoints: this.upstreamModal.supportedEndpoints,
                             enabled: this.upstreamModal.enabled,
                             sort_order: this.upstreamModal.sortOrder,
-                            reasoning_dialect: this.upstreamModal.reasoningDialect,
+                            enabled_fixes: this.upstreamModal.enabledFixes,
                             path_overrides: Object.keys(overrides).length > 0 ? overrides : null,
                           };
                           if (this.upstreamModal.bearerToken) {

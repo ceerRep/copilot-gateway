@@ -2884,7 +2884,7 @@ Deno.test("/v1/messages rejects embedding-only custom upstream model instead of 
     enabled: true,
     sortOrder: 100,
     createdAt: "2026-05-01T00:00:00.000Z",
-    reasoningDialect: "openai",
+    enabledFixes: [],
   });
 
   await withMockedFetch(async (request) => {
@@ -2940,7 +2940,7 @@ Deno.test("/v1/messages preserves custom upstream /models HTTP errors", async ()
     enabled: true,
     sortOrder: 100,
     createdAt: "2026-05-01T00:00:00.000Z",
-    reasoningDialect: "openai",
+    enabledFixes: [],
   });
 
   await withMockedFetch(async (request) => {

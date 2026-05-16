@@ -587,7 +587,7 @@ Deno.test("/v1beta/models/:model:generateContent preserves custom upstream /mode
     enabled: true,
     sortOrder: 100,
     createdAt: "2026-05-01T00:00:00.000Z",
-    reasoningDialect: "openai",
+    enabledFixes: [],
   });
 
   await withMockedFetch(async (request) => {

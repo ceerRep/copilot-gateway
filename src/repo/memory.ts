@@ -548,6 +548,7 @@ class MemoryUpstreamConfigRepo implements UpstreamConfigRepo {
 const cloneUpstreamConfig = (config: UpstreamConfig): UpstreamConfig => ({
   ...config,
   supportedEndpoints: [...config.supportedEndpoints],
+  enabledFixes: [...config.enabledFixes],
   ...(config.pathOverrides
     ? { pathOverrides: { ...config.pathOverrides } }
     : {}),

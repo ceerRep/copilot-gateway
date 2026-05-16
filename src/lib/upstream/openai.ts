@@ -44,7 +44,7 @@ export const createOpenAiUpstream = (config: UpstreamConfig): Upstream => {
     name: config.name,
     kind: "openai",
     supportedEndpoints: config.supportedEndpoints,
-    reasoningDialect: config.reasoningDialect,
+    enabledFixes: new Set(config.enabledFixes),
     fetch: async (
       endpoint,
       init: RequestInit,

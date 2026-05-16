@@ -1,6 +1,6 @@
-import type { ResponsesPayload } from "../../../../../lib/responses-types.ts";
-import type { ResponsesResult } from "../../../../../lib/responses-types.ts";
-import type { TargetInterceptor } from "../../run-interceptors.ts";
+import type { ResponsesPayload } from "../../../../../../lib/responses-types.ts";
+import type { ResponsesResult } from "../../../../../../lib/responses-types.ts";
+import type { TargetInterceptor } from "../../../run-interceptors.ts";
 
 /**
  * Copilot `/responses` streams have been seen to emit one `item.id` on

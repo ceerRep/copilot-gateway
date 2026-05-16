@@ -31,7 +31,7 @@ const makeInput = (payload: ResponsesPayload): EmitInput<ResponsesPayload> => ({
     name: "Test",
     kind: "copilot" as const,
     supportedEndpoints: [],
-    reasoningDialect: "openai" as const,
+    enabledFixes: new Set<string>(),
     fetch: () => Promise.resolve(new Response()),
   },
 });

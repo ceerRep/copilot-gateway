@@ -12,7 +12,7 @@ const baseConfig: UpstreamConfig = {
   enabled: true,
   sortOrder: 0,
   createdAt: "2026-04-29T00:00:00.000Z",
-  reasoningDialect: "openai",
+  enabledFixes: [],
 };
 
 Deno.test("createOpenAiUpstream uses default /v1/* paths", async () => {
@@ -82,13 +82,13 @@ Deno.test("createOpenAiUpstream sends the configured bearer token", async () => 
   assertEquals(authHeader, "Bearer sk-test");
 });
 
-Deno.test("createOpenAiUpstream surfaces the configured reasoning dialect", () => {
-  const openai = createOpenAiUpstream(baseConfig);
-  const deepseek = createOpenAiUpstream({
+Deno.test("createOpenAiUpstream surfaces the configured enabled fixes as a Set", () => {
+  const none = createOpenAiUpstream(baseConfig);
+  const withFix = createOpenAiUpstream({
     ...baseConfig,
-    reasoningDialect: "deepseek",
+    enabledFixes: ["deepseek-reasoning-dialect"],
   });
 
-  assertEquals(openai.reasoningDialect, "openai");
-  assertEquals(deepseek.reasoningDialect, "deepseek");
+  assertEquals(none.enabledFixes.size, 0);
+  assertEquals(withFix.enabledFixes.has("deepseek-reasoning-dialect"), true);
 });

@@ -145,7 +145,7 @@ Deno.test("/v1/messages/count_tokens rejects custom-upstream-only models", async
     enabled: true,
     sortOrder: 100,
     createdAt: "2026-05-01T00:00:00.000Z",
-    reasoningDialect: "openai",
+    enabledFixes: [],
   });
 
   await withMockedFetch(async (request) => {
@@ -201,7 +201,7 @@ Deno.test("/v1/messages/count_tokens preserves custom upstream /models HTTP erro
     enabled: true,
     sortOrder: 100,
     createdAt: "2026-05-01T00:00:00.000Z",
-    reasoningDialect: "openai",
+    enabledFixes: [],
   });
 
   await withMockedFetch(async (request) => {

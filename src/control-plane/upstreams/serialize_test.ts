@@ -14,7 +14,7 @@ const sampleConfig: UpstreamConfig = {
   enabled: true,
   sortOrder: 10,
   createdAt: "2026-04-29T00:00:00.000Z",
-  reasoningDialect: "openai",
+  enabledFixes: [],
 };
 
 Deno.test("upstreamConfigToJson omits bearer token and includes bearer_token_set", () => {
@@ -29,7 +29,7 @@ Deno.test("upstreamConfigToJson omits bearer token and includes bearer_token_set
   assertEquals(result.enabled, true);
   assertEquals(result.sort_order, 10);
   assertEquals(result.created_at, "2026-04-29T00:00:00.000Z");
-  assertEquals(result.reasoning_dialect, "openai");
+  assertEquals(result.enabled_fixes, []);
   assertEquals(result.path_overrides, undefined);
 });
 
@@ -42,14 +42,14 @@ Deno.test("upstreamConfigToJson reports bearer_token_set as false for empty toke
   assertEquals(result.bearer_token_set, false);
 });
 
-Deno.test("upstreamConfigToJson surfaces reasoning_dialect and path_overrides when set", () => {
+Deno.test("upstreamConfigToJson surfaces enabled_fixes and path_overrides when set", () => {
   const result = upstreamConfigToJson({
     ...sampleConfig,
-    reasoningDialect: "deepseek",
+    enabledFixes: ["deepseek-reasoning-dialect"],
     pathOverrides: { messages: "/api/v1/messages" },
   }) as Record<string, unknown>;
 
-  assertEquals(result.reasoning_dialect, "deepseek");
+  assertEquals(result.enabled_fixes, ["deepseek-reasoning-dialect"]);
   assertEquals(result.path_overrides, { messages: "/api/v1/messages" });
 });
 
@@ -59,5 +59,5 @@ Deno.test("upstreamConfigToFullJson includes bearer token", () => {
   assertEquals(result.id, "up_test123");
   assertEquals(result.bearer_token, "sk-secret-token-12345");
   assertEquals(result.bearer_token_set, undefined);
-  assertEquals(result.reasoning_dialect, "openai");
+  assertEquals(result.enabled_fixes, []);
 });

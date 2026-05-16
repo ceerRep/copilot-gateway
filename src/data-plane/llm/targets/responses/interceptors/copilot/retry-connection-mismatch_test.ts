@@ -2,11 +2,11 @@ import { assertEquals, assertStringIncludes } from "@std/assert";
 import type {
   ResponsesPayload,
   ResponsesResult,
-} from "../../../../../lib/responses-types.ts";
-import { initRepo } from "../../../../../repo/index.ts";
-import { InMemoryRepo } from "../../../../../repo/memory.ts";
-import { eventResult } from "../../../shared/errors/result.ts";
-import { jsonFrame } from "../../../shared/stream/types.ts";
+} from "../../../../../../lib/responses-types.ts";
+import { initRepo } from "../../../../../../repo/index.ts";
+import { InMemoryRepo } from "../../../../../../repo/memory.ts";
+import { eventResult } from "../../../../shared/errors/result.ts";
+import { jsonFrame } from "../../../../shared/stream/types.ts";
 import { withConnectionMismatchRetried } from "./retry-connection-mismatch.ts";
 
 Deno.test("withConnectionMismatchRetried does not retry unrelated upstream errors", async () => {

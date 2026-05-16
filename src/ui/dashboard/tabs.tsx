@@ -1230,16 +1230,66 @@ export function renderSettingsTab() {
                   </div>
                 </div>
                 <div>
-                  <label
-                    class="block text-xs font-medium text-gray-500 uppercase tracking-widest mb-2"
-                  >Reasoning Dialect</label>
-                  <select
-                    class="w-full"
-                    x-model="upstreamModal.reasoningDialect"
+                  <button
+                    type="button"
+                    @click="upstreamModal.enabledFixesOpen = !upstreamModal.enabledFixesOpen"
+                    :aria-expanded="upstreamModal.enabledFixesOpen.toString()"
+                    class="flex w-full items-center justify-between text-left text-xs font-medium text-gray-500 uppercase tracking-widest mb-2 hover:text-gray-300 transition-colors"
                   >
-                    <option value="openai">OpenAI standard (reasoning_text)</option>
-                    <option value="deepseek">DeepSeek (reasoning_content)</option>
-                  </select>
+                    <span>Enabled Fixes</span>
+                    <span
+                      class="flex items-center gap-2 normal-case tracking-normal text-[10px] text-gray-600"
+                    >
+                      <span
+                        x-show="!upstreamModal.enabledFixesOpen && upstreamModal.enabledFixes.length > 0"
+                        x-text="upstreamModal.enabledFixes.length + ' enabled'"
+                      ></span>
+                      <svg
+                        class="h-3 w-3 transition-transform"
+                        :class="upstreamModal.enabledFixesOpen ? 'rotate-180' : ''"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      >
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </span>
+                  </button>
+                  <div x-show="upstreamModal.enabledFixesOpen" x-cloak>
+                    <p
+                      x-show="upstreamFixCatalog.length === 0"
+                      class="text-[11px] text-gray-600"
+                    >
+                      No opt-in target fixes are registered.
+                    </p>
+                    <div
+                      x-show="upstreamFixCatalog.length > 0"
+                      class="max-h-72 overflow-y-auto rounded-lg border border-white/10 bg-surface-700/40 p-3 space-y-2"
+                    >
+                      <template
+                        x-for="fix in upstreamFixCatalog"
+                        :key="fix.id"
+                      >
+                        <label class="flex items-start gap-2 text-sm text-gray-300">
+                          <input
+                            type="checkbox"
+                            class="accent-accent-cyan mt-0.5"
+                            :checked="upstreamModal.enabledFixes.includes(fix.id)"
+                            @change="toggleUpstreamFix(fix.id)"
+                          />
+                          <span class="flex-1">
+                            <span class="font-mono text-xs text-white" x-text="fix.label || fix.id"></span>
+                            <span
+                              x-show="fix.description"
+                              class="block text-[11px] text-gray-500 mt-0.5"
+                              x-text="fix.description"
+                            ></span>
+                          </span>
+                        </label>
+                      </template>
+                    </div>
+                  </div>
                 </div>
                 <div>
                   <button
@@ -1397,9 +1447,9 @@ export function renderSettingsTab() {
                         x-text="'sort: ' + up.sort_order"
                       ></span>
                       <span
-                        x-show="up.reasoning_dialect && up.reasoning_dialect !== 'openai'"
+                        x-show="up.enabled_fixes && up.enabled_fixes.length > 0"
                         class="text-[10px] uppercase tracking-widest text-accent-amber font-mono"
-                        x-text="up.reasoning_dialect"
+                        x-text="up.enabled_fixes.length + ' fix' + (up.enabled_fixes.length === 1 ? '' : 'es')"
                       ></span>
                     </div>
                     <p

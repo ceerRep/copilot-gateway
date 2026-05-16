@@ -249,12 +249,17 @@ Each upstream stores:
   upstreams therefore never participate in the legacy `claude*`-style
   model-name fallback — embedding-only providers surface "not supported"
   instead of being mis-routed onto chat traffic.
-- `reasoning_dialect`: `openai` (default) or `deepseek`. Selects the
-  field-name dialect used on Chat Completions handling. The gateway-internal
-  protocol is OpenAI-shape; the dialect is applied at the chat-completions
-  target boundary only.
+- `enabled_fixes`: opt-in flag ids the admin wants applied to this upstream.
+  The full catalog is served by `GET /api/upstream-fixes`; each entry has an
+  `appliesTo` list of endpoints (`messages`, `responses`, `chat_completions`)
+  documenting where an interceptor exists for the flag. Validation only
+  hard-rejects unknown ids (typo catch); a known flag is accepted regardless
+  of `supported_endpoints` overlap — flags whose endpoints aren't actually
+  served simply no-op at the assembler. Copilot-only structural workarounds
+  (under each target's `interceptors/copilot/` subdir) are never exposed
+  here — they attach by upstream kind, not by flag.
 
-Copilot upstream paths, supported endpoints, and reasoning dialect are not
+Copilot upstream paths, supported endpoints, and `enabled_fixes` are not
 admin-configurable. Copilot's `/models` response is authoritative per SKU; a
 missing `supported_endpoints` field on a Copilot entry means "not declared"
 rather than "all endpoints". As a narrow exception, legacy Copilot chat SKUs
@@ -382,33 +387,39 @@ Current placement:
     part so clients can echo it next turn
 - `src/data-plane/llm/sources/gemini/respond.ts`
   - translate source errors into Google RPC Status envelopes
-- `src/data-plane/llm/targets/messages/interceptors/promote-thinking-display.ts`
-  - promote Claude 4.x default thinking display so clients see summarized or
-    full thinking text rather than upstream's omitted summary
-- `src/data-plane/llm/targets/messages/interceptors/fix-beta-header.ts`
-  - whitelist `anthropic-beta`
-  - auto-add `interleaved-thinking-2025-05-14` when required
-- `src/data-plane/llm/targets/messages/interceptors/strip-done-sentinel.ts`
-  - strip stray `[DONE]` sentinels
-- `src/data-plane/llm/targets/messages/interceptors/strip-eager-input-streaming.ts`
-  - drop per-tool `eager_input_streaming` Copilot upstream rejects
-- `src/data-plane/llm/targets/responses/interceptors/strip-service-tier.ts`
-  - strip unsupported `service_tier`
-- `src/data-plane/llm/targets/responses/interceptors/retry-connection-mismatch.ts`
-  - detect expired connection-bound input IDs
-  - deterministically rewrite IDs
-  - retry once
+- `src/data-plane/llm/targets/messages/interceptors/copilot/`
+  (assembler picks these up only when `upstream.kind === "copilot"`)
+  - `promote-thinking-display.ts` — promote Claude 4.x default thinking
+    display so clients see summarized or full thinking text rather than
+    upstream's omitted summary
+  - `fix-beta-header.ts` — whitelist `anthropic-beta` and auto-add
+    `interleaved-thinking-2025-05-14` when required
+  - `strip-done-sentinel.ts` — strip stray `[DONE]` sentinels
+  - `strip-eager-input-streaming.ts` — drop per-tool `eager_input_streaming`
+    Copilot upstream rejects
+- `src/data-plane/llm/targets/responses/interceptors/copilot/`
+  (assembler picks these up only when `upstream.kind === "copilot"`)
+  - `strip-service-tier.ts` — strip unsupported `service_tier`
+  - `retry-connection-mismatch.ts` — detect expired connection-bound input
+    IDs, deterministically rewrite IDs, and retry once
+  - `synchronize-output-item-ids.ts` — synchronize mismatched stream item IDs
 - `src/data-plane/llm/targets/responses/interceptors/retry-cyber-policy.ts`
-  - retry on Copilot upstream `cyber_policy` failures up to a fixed cap
-- `src/data-plane/llm/targets/responses/interceptors/synchronize-output-item-ids.ts`
-  - synchronize mismatched stream item IDs
+  - opt-in interceptor bound to flag `retry-cyber-policy`; defaulted on for
+    Copilot via the flag's `defaultFor: ["copilot"]` declaration in
+    `targets/optional-fixes.ts`, admin-toggleable for custom upstreams that
+    surface the same `cyber_policy` failure envelope
 - `src/data-plane/llm/targets/chat-completions/interceptors/include-usage-stream-options.ts`
-  - ensure streaming usage options needed by native chat handling
+  - always-on base interceptor: ensure streaming usage options needed by
+    the gateway's usage-tracking pipeline
+- `src/data-plane/llm/targets/chat-completions/interceptors/normalize-usage.ts`
+  - always-on base interceptor: normalize OpenAI / DeepSeek / Kimi `usage`
+    variants into the OpenAI standard shape so translation and accounting
+    read one contract
 - `src/data-plane/llm/targets/chat-completions/interceptors/normalize-reasoning-dialect.ts`
-  - rename OpenAI-shape `reasoning_text` to DeepSeek's legacy
-    `reasoning_content` on outbound requests, and back on inbound chunks and
-    JSON results, when the upstream config selects the `deepseek` dialect
-  - drop `reasoning_opaque` and `reasoning_items` for that dialect since
+  - opt-in interceptor bound to flag `deepseek-reasoning-dialect` (default
+    off): rename OpenAI-shape `reasoning_text` to DeepSeek's legacy
+    `reasoning_content` on outbound requests, and back on inbound chunks
+    and JSON results; drop `reasoning_opaque` and `reasoning_items` since
     DeepSeek has no concept of an opaque reasoning chain
 - `src/data-plane/llm/targets/chat-completions/interceptors/normalize-usage.ts`
   - rewrite vendor cache-token field variants (DeepSeek `prompt_cache_hit_tokens`,
@@ -420,6 +431,19 @@ Current placement:
     carrier chunk
 - shared translation event helpers
   - guard against infinite whitespace in tool/function arguments
+
+Target interceptor assembly: each
+`src/data-plane/llm/targets/<x>/interceptors/index.ts` exposes a single
+`interceptorsFor<X>(upstream)` function that returns
+`base ++ (copilot/ if upstream.kind === "copilot") ++ filter(optional
+interceptors by upstream.enabledFixes)`. The flag catalog lives in
+`src/data-plane/llm/targets/optional-fixes.ts` and is the single source of
+truth for `GET /api/upstream-fixes` and for the Copilot default fix set
+applied by `createCopilotUpstream`. Each optional interceptor declares
+`{ fixId, run }` only — flag metadata (`label`, `description`, `defaultFor`,
+`appliesTo`) lives exclusively in the catalog; the dependency goes
+interceptor → flag, never the other way. Multiple interceptors (e.g. across
+targets) can share the same `fixId` to bind to one flag.
 
 Do not spread the same workaround across route handlers, target emitters, and
 translation code at the same time.

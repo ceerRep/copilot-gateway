@@ -1,7 +1,7 @@
-import { getRepo } from "../../../../../repo/index.ts";
-import type { ResponsesPayload } from "../../../../../lib/responses-types.ts";
-import type { ResponsesResult } from "../../../../../lib/responses-types.ts";
-import type { TargetInterceptor } from "../../run-interceptors.ts";
+import { getRepo } from "../../../../../../repo/index.ts";
+import type { ResponsesPayload } from "../../../../../../lib/responses-types.ts";
+import type { ResponsesResult } from "../../../../../../lib/responses-types.ts";
+import type { TargetInterceptor } from "../../../run-interceptors.ts";
 
 /**
  * Copilot's `/responses` input items can be connection-bound in three ways:

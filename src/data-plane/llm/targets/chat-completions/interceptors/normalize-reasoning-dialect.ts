@@ -5,21 +5,25 @@ import type {
   Message,
 } from "../../../../../lib/chat-completions-types.ts";
 import { jsonFrame, sseFrame } from "../../../shared/stream/types.ts";
-import type { Upstream } from "../../../../../lib/upstream/types.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 
 /**
  * DeepSeek's reasoner endpoints predate OpenAI's `reasoning_text` / opaque
  * split — they keep the legacy `reasoning_content` scalar both in responses
  * and in the assistant messages a client must replay during multi-turn tool
- * calls. The gateway's internal protocol is the OpenAI shape, so when an
- * upstream is configured with `reasoningDialect: "deepseek"` we rename
- * fields on the way out (`reasoning_text` → `reasoning_content`) and on the
- * way back in (`reasoning_content` → `reasoning_text`).
+ * calls. The gateway's internal protocol is the OpenAI shape, so on upstreams
+ * with this fix enabled we rename fields on the way out (`reasoning_text` →
+ * `reasoning_content`) and on the way back in (`reasoning_content` →
+ * `reasoning_text`).
  *
  * This is required for correctness, not just aesthetics: DeepSeek 400s if
  * the assistant message that produced a tool call is replayed without its
  * `reasoning_content`, since the model's tool-call rationale lives there.
+ *
+ * Gating: bound to the `deepseek-reasoning-dialect` flag (declared in
+ * ../../optional-fixes.ts) and enabled per-upstream via
+ * `Upstream.enabledFixes`. The assembler in ../index.ts only attaches this
+ * interceptor when the upstream opted in, so the body below is unconditional.
  *
  * References:
  * - https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
@@ -123,11 +127,9 @@ const rewriteInboundResponse = (
 };
 
 export const withDeepseekReasoningDialect: TargetInterceptor<
-  { payload: ChatCompletionsPayload; upstream: Upstream },
+  { payload: ChatCompletionsPayload },
   ChatCompletionResponse
 > = async (ctx, run) => {
-  if (ctx.upstream.reasoningDialect !== "deepseek") return await run();
-
   ctx.payload = rewriteOutboundPayload(ctx.payload);
 
   const result = await run();
