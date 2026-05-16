@@ -26,7 +26,10 @@ import {
 } from "../../shared/errors/result.ts";
 import { toInternalDebugError } from "../../shared/errors/internal-debug-error.ts";
 import type { ProtocolFrame } from "../../shared/stream/types.ts";
-import { runOnUpstream } from "../../shared/upstream-run.ts";
+import {
+  modelLoadErrorResult,
+  runOnUpstream,
+} from "../../shared/upstream-run.ts";
 import { resolveUpstreamForModel } from "../../../../lib/upstream/resolver.ts";
 import {
   type PerformanceTelemetryContext,
@@ -105,22 +108,29 @@ export const serveMessages = async (
         const modelId = await resolveModelForRequest(ctx.payload.model, intent);
         performanceFor(modelId, "messages");
 
-        const selection = await resolveUpstreamForModel(modelId);
-        if (!selection) {
+        const resolution = await resolveUpstreamForModel(modelId);
+        if (resolution.type === "not-found") {
           return {
             type: "upstream-error" as const,
             status: 404,
             headers: new Headers({ "content-type": "application/json" }),
             body: new TextEncoder().encode(JSON.stringify({
               error: {
-                message: `No upstream provides model ${modelId}. Configure an upstream that exposes this model in the dashboard.`,
+                message:
+                  `No upstream provides model ${modelId}. Configure an upstream that exposes this model in the dashboard.`,
                 type: "invalid_request_error",
               },
             })),
           };
         }
+        if (resolution.type === "upstream-error") {
+          return modelLoadErrorResult(resolution.error, lastPerformance);
+        }
 
-        return await runOnUpstream(selection, modelId, async (upstream) => {
+        return await runOnUpstream(
+          resolution.selection,
+          modelId,
+          async (upstream) => {
             const attemptPayload = structuredClone(ctx.payload);
             attemptPayload.model = modelId;
             const capabilities = await getModelCapabilities(
@@ -208,7 +218,8 @@ export const serveMessages = async (
               targetPayload.model,
               performance,
             );
-        });
+          },
+        );
       },
     );
 

@@ -2750,8 +2750,9 @@ Deno.test("/v1/messages routes native web search through translated /responses t
   assertExists(upstreamResponsesBody);
   // Shim rewrote the native tool into an ordinary client function tool before
   // the translator turned it into a Responses function tool.
-  const upstreamTools =
-    upstreamResponsesBody!.tools as Array<Record<string, unknown>>;
+  const upstreamTools = upstreamResponsesBody!.tools as Array<
+    Record<string, unknown>
+  >;
   assertEquals(upstreamTools.length, 1);
   assertEquals(upstreamTools[0].type, "function");
   assertEquals(upstreamTools[0].name, "web_search");
@@ -2856,8 +2857,9 @@ Deno.test("/v1/messages routes native web search through translated /chat/comple
   });
 
   assertExists(upstreamChatBody);
-  const upstreamTools =
-    upstreamChatBody!.tools as Array<Record<string, unknown>>;
+  const upstreamTools = upstreamChatBody!.tools as Array<
+    Record<string, unknown>
+  >;
   assertEquals(upstreamTools.length, 1);
   assertEquals(upstreamTools[0].type, "function");
   assertEquals(
@@ -2920,5 +2922,56 @@ Deno.test("/v1/messages rejects embedding-only custom upstream model instead of 
       body.error.message,
       "does not support the /messages endpoint",
     );
+  });
+});
+
+Deno.test("/v1/messages preserves custom upstream /models HTTP errors", async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  await repo.upstreamConfigs.save({
+    id: "up_custom",
+    name: "Custom Provider",
+    baseUrl: "https://custom.example.com",
+    bearerToken: "sk-custom",
+    supportedEndpoints: ["/chat/completions"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    reasoningDialect: "openai",
+  });
+
+  await withMockedFetch(async (request) => {
+    const url = new URL(request.url);
+
+    if (
+      url.hostname === "custom.example.com" &&
+      url.pathname === "/v1/models"
+    ) {
+      return jsonResponse({ error: { message: "bad custom key" } }, 401);
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp("/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey.key,
+      },
+      body: JSON.stringify({
+        model: "custom-chat-model",
+        max_tokens: 100,
+        stream: false,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    });
+
+    assertEquals(response.status, 401);
+    assertEquals(await response.json(), {
+      error: { message: "bad custom key" },
+    });
   });
 });

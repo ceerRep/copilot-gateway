@@ -6,7 +6,7 @@
 import type { Context } from "hono";
 
 import { isCopilotTokenFetchError } from "../../lib/copilot.ts";
-import { findModel } from "../../lib/models-cache.ts";
+import { findModel, ModelsFetchError } from "../../lib/models-cache.ts";
 import { resolveUpstreamForModel } from "../../lib/upstream/resolver.ts";
 import { resolveEffectiveSupportedEndpoints } from "../llm/shared/models/get-model-capabilities.ts";
 import { runOnUpstream } from "../llm/shared/upstream-run.ts";
@@ -61,6 +61,14 @@ const prepareEmbeddingsRequest = (body: string) => {
   }
 };
 
+const modelsLoadErrorResponse = (error: unknown): Response | null =>
+  error instanceof ModelsFetchError
+    ? new Response(error.body, {
+      status: error.status,
+      headers: new Headers(error.headers),
+    })
+    : null;
+
 export const embeddings = async (c: Context) => {
   try {
     const request = prepareEmbeddingsRequest(await c.req.text());
@@ -79,17 +87,22 @@ export const embeddings = async (c: Context) => {
       });
     }
 
-    const selection = await resolveUpstreamForModel(request.model);
-    if (!selection) {
+    const resolution = await resolveUpstreamForModel(request.model);
+    if (resolution.type === "not-found") {
       return apiErrorResponse(
         c,
         `No upstream provides model ${request.model}. Configure an upstream that exposes this model in the dashboard.`,
         404,
       );
     }
+    if (resolution.type === "upstream-error") {
+      const response = modelsLoadErrorResponse(resolution.error);
+      if (response) return response;
+      throw resolution.error;
+    }
 
     const resp = await runOnUpstream(
-      selection,
+      resolution.selection,
       request.model,
       async (upstream) => {
         const model = await findModel(request.model, upstream);

@@ -186,6 +186,56 @@ Deno.test("/v1/messages/count_tokens rejects custom-upstream-only models", async
   });
 });
 
+Deno.test("/v1/messages/count_tokens preserves custom upstream /models HTTP errors", async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  await repo.upstreamConfigs.save({
+    id: "up_custom",
+    name: "Custom Provider",
+    baseUrl: "https://custom.example.com",
+    bearerToken: "sk-custom",
+    supportedEndpoints: ["/chat/completions"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    reasoningDialect: "openai",
+  });
+
+  await withMockedFetch(async (request) => {
+    const url = new URL(request.url);
+
+    if (
+      url.hostname === "custom.example.com" &&
+      url.pathname === "/v1/models"
+    ) {
+      return jsonResponse({ error: { message: "bad custom key" } }, 401);
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp("/v1/messages/count_tokens", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey.key,
+      },
+      body: JSON.stringify({
+        model: "custom-chat-model",
+        max_tokens: 100,
+        messages: [{ role: "user", content: "hello" }],
+      }),
+    });
+
+    assertEquals(response.status, 401);
+    assertEquals(await response.json(), {
+      error: { message: "bad custom key" },
+    });
+  });
+});
+
 Deno.test("/v1/messages/count_tokens rewrites virtual model with thinking disabled and output_config stripped", async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.gatewayConfig.save({ codexAutoReviewModel: "claude-sonnet-4" });

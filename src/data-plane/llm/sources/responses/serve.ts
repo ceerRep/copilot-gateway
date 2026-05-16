@@ -27,7 +27,10 @@ import {
 import { toInternalDebugError } from "../../shared/errors/internal-debug-error.ts";
 import type { ProtocolFrame } from "../../shared/stream/types.ts";
 import type { SourceResponseStreamEvent } from "./events/protocol.ts";
-import { runOnUpstream } from "../../shared/upstream-run.ts";
+import {
+  modelLoadErrorResult,
+  runOnUpstream,
+} from "../../shared/upstream-run.ts";
 import { resolveUpstreamForModel } from "../../../../lib/upstream/resolver.ts";
 import {
   type PerformanceTelemetryContext,
@@ -154,49 +157,82 @@ export const serveResponses = async (
         const modelId = await resolveModelForRequest(ctx.payload.model, intent);
         performanceFor(modelId, "responses");
 
-        const selection = await resolveUpstreamForModel(modelId);
-        if (!selection) {
+        const resolution = await resolveUpstreamForModel(modelId);
+        if (resolution.type === "not-found") {
           return {
             type: "upstream-error" as const,
             status: 404,
             headers: new Headers({ "content-type": "application/json" }),
             body: new TextEncoder().encode(JSON.stringify({
               error: {
-                message: `No upstream provides model ${modelId}. Configure an upstream that exposes this model in the dashboard.`,
+                message:
+                  `No upstream provides model ${modelId}. Configure an upstream that exposes this model in the dashboard.`,
                 type: "invalid_request_error",
               },
             })),
           };
         }
+        if (resolution.type === "upstream-error") {
+          return modelLoadErrorResult(resolution.error, lastPerformance);
+        }
 
-        return await runOnUpstream(selection, modelId, async (upstream) => {
-          const attemptPayload = structuredClone(ctx.payload);
-          attemptPayload.model = modelId;
-          const capabilities = await getModelCapabilities(
-            modelId,
-            upstream,
-          );
-          const plan = planResponsesRequest(attemptPayload, capabilities);
-          if (!plan) {
-            const performance = performanceFor(
-              attemptPayload.model,
-              "responses",
+        return await runOnUpstream(
+          resolution.selection,
+          modelId,
+          async (upstream) => {
+            const attemptPayload = structuredClone(ctx.payload);
+            attemptPayload.model = modelId;
+            const capabilities = await getModelCapabilities(
+              modelId,
+              upstream,
             );
-            return unsupportedResponsesModelResult(
-              attemptPayload.model,
-              performance,
-            );
-          }
+            const plan = planResponsesRequest(attemptPayload, capabilities);
+            if (!plan) {
+              const performance = performanceFor(
+                attemptPayload.model,
+                "responses",
+              );
+              return unsupportedResponsesModelResult(
+                attemptPayload.model,
+                performance,
+              );
+            }
 
-          if (plan.target === "responses") {
-            const performance = performanceFor(
-              attemptPayload.model,
-              "responses",
-            );
-            return withResultMetadata(
-              await emitToResponses({
+            if (plan.target === "responses") {
+              const performance = performanceFor(
+                attemptPayload.model,
+                "responses",
+              );
+              return withResultMetadata(
+                await emitToResponses({
+                  sourceApi: "responses",
+                  payload: attemptPayload,
+                  upstream,
+                  apiKeyId,
+                  clientStream: wantsStream,
+                  runtimeLocation,
+                  scheduleBackground,
+                  fetchOptions: plan.fetchOptions,
+                  downstreamAbortSignal: downstreamAbortController?.signal,
+                }),
+                attemptPayload.model,
+                performance,
+              );
+            }
+
+            if (plan.target === "messages") {
+              performanceFor(attemptPayload.model, "messages");
+              const messagesPayload = await buildMessagesTargetRequest(
+                attemptPayload,
+                capabilities,
+              );
+              const performance = performanceFor(
+                messagesPayload.model,
+                "messages",
+              );
+              const result = await emitToMessages({
                 sourceApi: "responses",
-                payload: attemptPayload,
+                payload: messagesPayload,
                 upstream,
                 apiKeyId,
                 clientStream: wantsStream,
@@ -204,25 +240,34 @@ export const serveResponses = async (
                 scheduleBackground,
                 fetchOptions: plan.fetchOptions,
                 downstreamAbortSignal: downstreamAbortController?.signal,
-              }),
-              attemptPayload.model,
-              performance,
-            );
-          }
+              });
 
-          if (plan.target === "messages") {
-            performanceFor(attemptPayload.model, "messages");
-            const messagesPayload = await buildMessagesTargetRequest(
+              return withResultMetadata(
+                withTranslatedEvents(
+                  result,
+                  (events) =>
+                    translateToSourceEvents(
+                      events,
+                      createTranslatedResponseId(),
+                      messagesPayload.model,
+                    ),
+                ),
+                messagesPayload.model,
+                performance,
+              );
+            }
+
+            performanceFor(attemptPayload.model, "chat-completions");
+            const chatPayload = buildChatCompletionsTargetRequest(
               attemptPayload,
-              capabilities,
             );
             const performance = performanceFor(
-              messagesPayload.model,
-              "messages",
+              chatPayload.model,
+              "chat-completions",
             );
-            const result = await emitToMessages({
+            const result = await emitToChatCompletions({
               sourceApi: "responses",
-              payload: messagesPayload,
+              payload: chatPayload,
               upstream,
               apiKeyId,
               clientStream: wantsStream,
@@ -235,45 +280,13 @@ export const serveResponses = async (
             return withResultMetadata(
               withTranslatedEvents(
                 result,
-                (events) =>
-                  translateToSourceEvents(
-                    events,
-                    createTranslatedResponseId(),
-                    messagesPayload.model,
-                  ),
+                translateChatCompletionsToSourceEvents,
               ),
-              messagesPayload.model,
+              chatPayload.model,
               performance,
             );
-          }
-
-          performanceFor(attemptPayload.model, "chat-completions");
-          const chatPayload = buildChatCompletionsTargetRequest(attemptPayload);
-          const performance = performanceFor(
-            chatPayload.model,
-            "chat-completions",
-          );
-          const result = await emitToChatCompletions({
-            sourceApi: "responses",
-            payload: chatPayload,
-            upstream,
-            apiKeyId,
-            clientStream: wantsStream,
-            runtimeLocation,
-            scheduleBackground,
-            fetchOptions: plan.fetchOptions,
-            downstreamAbortSignal: downstreamAbortController?.signal,
-          });
-
-          return withResultMetadata(
-            withTranslatedEvents(
-              result,
-              translateChatCompletionsToSourceEvents,
-            ),
-            chatPayload.model,
-            performance,
-          );
-        });
+          },
+        );
       },
     );
 

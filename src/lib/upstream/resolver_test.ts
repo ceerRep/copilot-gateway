@@ -2,11 +2,17 @@ import { assertEquals } from "@std/assert";
 import { clearCopilotTokenCache } from "../copilot.ts";
 import { clearModelsCache } from "../models-cache.ts";
 import { listAllUpstreams, resolveUpstreamForModel } from "./resolver.ts";
-import { jsonResponse, setupAppTest, withMockedFetch } from "../../test-helpers.ts";
+import {
+  jsonResponse,
+  setupAppTest,
+  withMockedFetch,
+} from "../../test-helpers.ts";
 import { getRepo } from "../../repo/index.ts";
 import type { UpstreamConfig } from "../../repo/types.ts";
 
-const customConfig = (overrides: Partial<UpstreamConfig> = {}): UpstreamConfig => ({
+const customConfig = (
+  overrides: Partial<UpstreamConfig> = {},
+): UpstreamConfig => ({
   id: "up_test",
   name: "Test OpenAI",
   baseUrl: "https://oai.example.com",
@@ -19,7 +25,7 @@ const customConfig = (overrides: Partial<UpstreamConfig> = {}): UpstreamConfig =
   ...overrides,
 });
 
-Deno.test("resolveUpstreamForModel returns null when nothing is configured", async () => {
+Deno.test("resolveUpstreamForModel returns not-found when nothing is configured", async () => {
   const { repo } = await setupAppTest();
   // Strip the GitHub account that setupAppTest seeded.
   await repo.github.deleteAllAccounts();
@@ -27,7 +33,7 @@ Deno.test("resolveUpstreamForModel returns null when nothing is configured", asy
   await clearCopilotTokenCache();
 
   const resolution = await resolveUpstreamForModel("anything");
-  assertEquals(resolution, null);
+  assertEquals(resolution, { type: "not-found" });
 });
 
 Deno.test("resolveUpstreamForModel routes to a custom upstream when GitHub is absent", async () => {
@@ -49,10 +55,12 @@ Deno.test("resolveUpstreamForModel routes to a custom upstream when GitHub is ab
     throw new Error(`Unhandled fetch ${req.url}`);
   }, async () => {
     const resolution = await resolveUpstreamForModel("gpt-4-test");
-    assertEquals(resolution !== null, true);
-    assertEquals(resolution!.kind, "openai");
-    if (resolution!.kind === "openai") {
-      assertEquals(resolution!.upstream.id, "up_test");
+    assertEquals(resolution.type, "selected");
+    if (resolution.type === "selected") {
+      assertEquals(resolution.selection.kind, "openai");
+      if (resolution.selection.kind === "openai") {
+        assertEquals(resolution.selection.upstream.id, "up_test");
+      }
     }
   });
 });
@@ -66,11 +74,19 @@ Deno.test("resolveUpstreamForModel prefers Copilot when its /models declares the
 
   await withMockedFetch((req) => {
     const url = new URL(req.url);
-    if (url.hostname === "update.code.visualstudio.com") return jsonResponse(["1.110.1"]);
-    if (url.pathname === "/copilot_internal/v2/token") {
-      return jsonResponse({ token: "copilot-tok", expires_at: 4102444800, refresh_in: 3600 });
+    if (url.hostname === "update.code.visualstudio.com") {
+      return jsonResponse(["1.110.1"]);
     }
-    if (url.hostname === "api.githubcopilot.com" && url.pathname === "/models") {
+    if (url.pathname === "/copilot_internal/v2/token") {
+      return jsonResponse({
+        token: "copilot-tok",
+        expires_at: 4102444800,
+        refresh_in: 3600,
+      });
+    }
+    if (
+      url.hostname === "api.githubcopilot.com" && url.pathname === "/models"
+    ) {
       return jsonResponse({
         object: "list",
         data: [{ id: "shared-model", supported_endpoints: ["/v1/messages"] }],
@@ -85,8 +101,10 @@ Deno.test("resolveUpstreamForModel prefers Copilot when its /models declares the
     throw new Error(`Unhandled fetch ${req.url}`);
   }, async () => {
     const resolution = await resolveUpstreamForModel("shared-model");
-    assertEquals(resolution !== null, true);
-    assertEquals(resolution!.kind, "copilot");
+    assertEquals(resolution, {
+      type: "selected",
+      selection: { kind: "copilot" },
+    });
   });
 });
 
@@ -102,5 +120,29 @@ Deno.test("resolveUpstreamForModel skips disabled custom upstreams", async () =>
   assertEquals(upstreams.length, 0);
 
   const resolution = await resolveUpstreamForModel("gpt-4-test");
-  assertEquals(resolution, null);
+  assertEquals(resolution, { type: "not-found" });
+});
+
+Deno.test("resolveUpstreamForModel returns custom /models HTTP errors", async () => {
+  const { repo } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  await getRepo().upstreamConfigs.save(customConfig());
+
+  await withMockedFetch((req) => {
+    const url = new URL(req.url);
+    if (url.hostname === "oai.example.com" && url.pathname === "/v1/models") {
+      return jsonResponse({ error: { message: "bad key" } }, 401);
+    }
+    throw new Error(`Unhandled fetch ${req.url}`);
+  }, async () => {
+    const resolution = await resolveUpstreamForModel("gpt-4-test");
+    assertEquals(resolution.type, "upstream-error");
+    if (resolution.type === "upstream-error") {
+      assertEquals(resolution.error instanceof Error, true);
+      assertEquals((resolution.error as { status?: unknown }).status, 401);
+    }
+  });
 });

@@ -253,6 +253,55 @@ Deno.test("/v1/embeddings rejects model on custom upstream without /embeddings c
   });
 });
 
+Deno.test("/v1/embeddings preserves custom upstream /models HTTP errors", async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  await repo.upstreamConfigs.save({
+    id: "up_embed",
+    name: "Embedding Provider",
+    baseUrl: "https://embed.example.com",
+    bearerToken: "sk-embed",
+    supportedEndpoints: ["/embeddings"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    reasoningDialect: "openai",
+  });
+
+  await withMockedFetch(async (request) => {
+    const url = new URL(request.url);
+
+    if (
+      url.hostname === "embed.example.com" &&
+      url.pathname === "/v1/models"
+    ) {
+      return jsonResponse({ error: { message: "bad embed key" } }, 403);
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp("/v1/embeddings", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey.key,
+      },
+      body: JSON.stringify({
+        model: "custom-embed-model",
+        input: "hello",
+      }),
+    });
+
+    assertEquals(response.status, 403);
+    assertEquals(await response.json(), {
+      error: { message: "bad embed key" },
+    });
+  });
+});
+
 Deno.test("/v1/embeddings passes malformed body to Copilot for upstream validation", async () => {
   const { apiKey } = await setupAppTest();
   let copilotReceivedBody: string | undefined;

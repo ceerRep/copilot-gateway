@@ -1,5 +1,6 @@
 import type { Context } from "hono";
 import { isCopilotTokenFetchError } from "../../../../../lib/copilot.ts";
+import { ModelsFetchError } from "../../../../../lib/models-cache.ts";
 import type { MessagesPayload } from "../../../../../lib/messages-types.ts";
 import { resolveUpstreamForModel } from "../../../../../lib/upstream/resolver.ts";
 import { withAccountFallback } from "../../../../shared/account-pool/fallback.ts";
@@ -8,6 +9,12 @@ import {
   resolveModelForRequest,
 } from "../../../shared/models/resolve-model.ts";
 import { resolveVirtualModel } from "../../../shared/models/virtual-models.ts";
+
+const modelsLoadErrorResponse = (error: ModelsFetchError): Response =>
+  new Response(error.body, {
+    status: error.status,
+    headers: new Headers(error.headers),
+  });
 
 export const countTokens = async (c: Context) => {
   try {
@@ -29,8 +36,16 @@ export const countTokens = async (c: Context) => {
     const intent = messagesModelResolutionIntent(payload, rawBeta);
     const modelId = await resolveModelForRequest(payload.model, intent);
 
-    const selection = await resolveUpstreamForModel(modelId);
-    if (selection && selection.kind !== "copilot") {
+    const resolution = await resolveUpstreamForModel(modelId);
+    if (resolution.type === "upstream-error") {
+      if (resolution.error instanceof ModelsFetchError) {
+        return modelsLoadErrorResponse(resolution.error);
+      }
+      throw resolution.error;
+    }
+    if (
+      resolution.type === "selected" && resolution.selection.kind !== "copilot"
+    ) {
       return c.json({
         error: {
           type: "invalid_request_error",

@@ -38,12 +38,16 @@ const unsupportedChatModelResult = (
   headers: new Headers({ "content-type": "application/json" }),
   body: new TextEncoder().encode(JSON.stringify({
     error: {
-      message: `Model ${model} does not support the /chat/completions endpoint.`,
+      message:
+        `Model ${model} does not support the /chat/completions endpoint.`,
       type: "invalid_request_error",
     },
   })),
 });
-import { runOnUpstream } from "../../shared/upstream-run.ts";
+import {
+  modelLoadErrorResult,
+  runOnUpstream,
+} from "../../shared/upstream-run.ts";
 import { resolveUpstreamForModel } from "../../../../lib/upstream/resolver.ts";
 import {
   type PerformanceTelemetryContext,
@@ -110,108 +114,116 @@ export const serveChatCompletions = async (
         const modelId = await resolveModelForRequest(ctx.payload.model, intent);
         performanceFor(modelId, "chat-completions");
 
-        const selection = await resolveUpstreamForModel(modelId);
-        if (!selection) {
+        const resolution = await resolveUpstreamForModel(modelId);
+        if (resolution.type === "not-found") {
           return {
             type: "upstream-error" as const,
             status: 404,
             headers: new Headers({ "content-type": "application/json" }),
             body: new TextEncoder().encode(JSON.stringify({
               error: {
-                message: `No upstream provides model ${modelId}. Configure an upstream that exposes this model in the dashboard.`,
+                message:
+                  `No upstream provides model ${modelId}. Configure an upstream that exposes this model in the dashboard.`,
                 type: "invalid_request_error",
               },
             })),
           };
         }
+        if (resolution.type === "upstream-error") {
+          return modelLoadErrorResult(resolution.error, lastPerformance);
+        }
 
-        return await runOnUpstream(selection, modelId, async (upstream) => {
-          const attemptPayload = structuredClone(ctx.payload);
-          attemptPayload.model = modelId;
-          const capabilities = await getModelCapabilities(
-            modelId,
-            upstream,
-          );
-          const plan = planChatRequest(attemptPayload, capabilities);
-          if (!plan) {
-            return unsupportedChatModelResult(attemptPayload.model);
-          }
-
-          if (plan.target === "messages") {
-            performanceFor(attemptPayload.model, "messages");
-            const targetPayload = await buildMessagesTargetRequest(
-              attemptPayload,
-              capabilities,
-            );
-            const performance = performanceFor(
-              targetPayload.model,
-              "messages",
-            );
-            const result = await emitToMessages({
-              sourceApi: "chat-completions",
-              payload: targetPayload,
+        return await runOnUpstream(
+          resolution.selection,
+          modelId,
+          async (upstream) => {
+            const attemptPayload = structuredClone(ctx.payload);
+            attemptPayload.model = modelId;
+            const capabilities = await getModelCapabilities(
+              modelId,
               upstream,
-              apiKeyId,
-              clientStream: wantsStream,
-              runtimeLocation,
-              scheduleBackground,
-              fetchOptions: plan.fetchOptions,
-              downstreamAbortSignal: downstreamAbortController?.signal,
-            });
+            );
+            const plan = planChatRequest(attemptPayload, capabilities);
+            if (!plan) {
+              return unsupportedChatModelResult(attemptPayload.model);
+            }
 
+            if (plan.target === "messages") {
+              performanceFor(attemptPayload.model, "messages");
+              const targetPayload = await buildMessagesTargetRequest(
+                attemptPayload,
+                capabilities,
+              );
+              const performance = performanceFor(
+                targetPayload.model,
+                "messages",
+              );
+              const result = await emitToMessages({
+                sourceApi: "chat-completions",
+                payload: targetPayload,
+                upstream,
+                apiKeyId,
+                clientStream: wantsStream,
+                runtimeLocation,
+                scheduleBackground,
+                fetchOptions: plan.fetchOptions,
+                downstreamAbortSignal: downstreamAbortController?.signal,
+              });
+
+              return withResultMetadata(
+                withTranslatedEvents(result, translateMessagesToSourceEvents),
+                targetPayload.model,
+                performance,
+              );
+            }
+
+            if (plan.target === "responses") {
+              performanceFor(attemptPayload.model, "responses");
+              const targetPayload = buildResponsesTargetRequest(attemptPayload);
+              const performance = performanceFor(
+                targetPayload.model,
+                "responses",
+              );
+              const result = await emitToResponses({
+                sourceApi: "chat-completions",
+                payload: targetPayload,
+                upstream,
+                apiKeyId,
+                clientStream: wantsStream,
+                runtimeLocation,
+                scheduleBackground,
+                fetchOptions: plan.fetchOptions,
+                downstreamAbortSignal: downstreamAbortController?.signal,
+              });
+
+              return withResultMetadata(
+                withTranslatedEvents(result, translateResponsesToSourceEvents),
+                targetPayload.model,
+                performance,
+              );
+            }
+
+            const performance = performanceFor(
+              attemptPayload.model,
+              "chat-completions",
+            );
             return withResultMetadata(
-              withTranslatedEvents(result, translateMessagesToSourceEvents),
-              targetPayload.model,
+              await emitToChatCompletions({
+                sourceApi: "chat-completions",
+                payload: attemptPayload,
+                upstream,
+                apiKeyId,
+                clientStream: wantsStream,
+                runtimeLocation,
+                scheduleBackground,
+                fetchOptions: plan.fetchOptions,
+                downstreamAbortSignal: downstreamAbortController?.signal,
+              }),
+              attemptPayload.model,
               performance,
             );
-          }
-
-          if (plan.target === "responses") {
-            performanceFor(attemptPayload.model, "responses");
-            const targetPayload = buildResponsesTargetRequest(attemptPayload);
-            const performance = performanceFor(
-              targetPayload.model,
-              "responses",
-            );
-            const result = await emitToResponses({
-              sourceApi: "chat-completions",
-              payload: targetPayload,
-              upstream,
-              apiKeyId,
-              clientStream: wantsStream,
-              runtimeLocation,
-              scheduleBackground,
-              fetchOptions: plan.fetchOptions,
-              downstreamAbortSignal: downstreamAbortController?.signal,
-            });
-
-            return withResultMetadata(
-              withTranslatedEvents(result, translateResponsesToSourceEvents),
-              targetPayload.model,
-              performance,
-            );
-          }
-
-          const performance = performanceFor(
-            attemptPayload.model,
-            "chat-completions",
-          );
-          return withResultMetadata(
-            await emitToChatCompletions({
-              sourceApi: "chat-completions",
-              payload: attemptPayload,
-              upstream,
-              apiKeyId,
-              clientStream: wantsStream,
-              runtimeLocation,
-              scheduleBackground,
-              fetchOptions: plan.fetchOptions,
-              downstreamAbortSignal: downstreamAbortController?.signal,
-            }),
-            attemptPayload.model,
-            performance,
-          );
-        });
+          },
+        );
       },
     );
 

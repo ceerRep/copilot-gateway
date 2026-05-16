@@ -23,6 +23,11 @@ export type UpstreamSelection =
   | { kind: "copilot" }
   | { kind: "openai"; upstream: Upstream };
 
+export type UpstreamResolution =
+  | { type: "selected"; selection: UpstreamSelection }
+  | { type: "not-found" }
+  | { type: "upstream-error"; error: unknown };
+
 /**
  * Returns the list of currently usable upstreams.
  *
@@ -63,7 +68,7 @@ export const listAllUpstreams = async (): Promise<Upstream[]> => {
  */
 export const resolveUpstreamForModel = async (
   modelId: string,
-): Promise<UpstreamSelection | null> => {
+): Promise<UpstreamResolution> => {
   const accounts = await getRepo().github.listAccounts();
   let copilotSwitchableErrorOnly = accounts.length > 0;
 
@@ -71,7 +76,9 @@ export const resolveUpstreamForModel = async (
     const result = await loadModelsForAccount(account);
     if (result.type === "models") {
       copilotSwitchableErrorOnly = false;
-      if (findModelInModels(result.data, modelId)) return { kind: "copilot" };
+      if (findModelInModels(result.data, modelId)) {
+        return { type: "selected", selection: { kind: "copilot" } };
+      }
       continue;
     }
     if (!isSwitchableModelsLoadError(result.error)) {
@@ -87,7 +94,7 @@ export const resolveUpstreamForModel = async (
     const result = await loadModels(upstream);
     if (result.type === "models") {
       if (findModelInModels(result.data, modelId)) {
-        return { kind: "openai", upstream };
+        return { type: "selected", selection: { kind: "openai", upstream } };
       }
       continue;
     }
@@ -97,8 +104,12 @@ export const resolveUpstreamForModel = async (
     lastCustomError = result.error;
   }
 
-  if (copilotSwitchableErrorOnly) return { kind: "copilot" };
+  if (copilotSwitchableErrorOnly) {
+    return { type: "selected", selection: { kind: "copilot" } };
+  }
 
-  if (lastCustomError) throw lastCustomError;
-  return null;
+  if (lastCustomError) {
+    return { type: "upstream-error", error: lastCustomError };
+  }
+  return { type: "not-found" };
 };

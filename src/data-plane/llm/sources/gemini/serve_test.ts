@@ -1,4 +1,11 @@
-import { assertEquals, assertExists, assertFalse } from "@std/assert";
+import {
+  assertEquals,
+  assertExists,
+  assertFalse,
+  assertStringIncludes,
+} from "@std/assert";
+import { clearCopilotTokenCache } from "../../../../lib/copilot.ts";
+import { clearModelsCache } from "../../../../lib/models-cache.ts";
 import {
   copilotModels,
   jsonResponse,
@@ -562,5 +569,55 @@ Deno.test("/v1beta/models/:model:generateContent accepts admin playground access
     assertEquals(response.status, 200);
     const body = await response.json();
     assertEquals(body.candidates[0].content.parts, [{ text: "playground" }]);
+  });
+});
+
+Deno.test("/v1beta/models/:model:generateContent preserves custom upstream /models HTTP errors", async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  await repo.upstreamConfigs.save({
+    id: "up_custom",
+    name: "Custom Provider",
+    baseUrl: "https://custom.example.com",
+    bearerToken: "sk-custom",
+    supportedEndpoints: ["/chat/completions"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    reasoningDialect: "openai",
+  });
+
+  await withMockedFetch(async (request) => {
+    const url = new URL(request.url);
+
+    if (
+      url.hostname === "custom.example.com" &&
+      url.pathname === "/v1/models"
+    ) {
+      return jsonResponse({ error: { message: "bad custom key" } }, 401);
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp(
+      "/v1beta/models/custom-gemini-model:generateContent",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": apiKey.key,
+        },
+        body: JSON.stringify(geminiRequest("custom-gemini-model")),
+      },
+    );
+
+    assertEquals(response.status, 401);
+    const body = await response.json();
+    assertEquals(body.error.code, 401);
+    assertEquals(body.error.status, "UNAUTHENTICATED");
+    assertStringIncludes(body.error.message, "bad custom key");
   });
 });

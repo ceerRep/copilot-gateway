@@ -17,7 +17,10 @@ import { respondGemini } from "./respond.ts";
 import { geminiModelResolutionIntent, planGeminiRequest } from "./plan.ts";
 import { getModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
 import { resolveModelForRequest } from "../../shared/models/resolve-model.ts";
-import { runOnUpstream } from "../../shared/upstream-run.ts";
+import {
+  modelLoadErrorResult,
+  runOnUpstream,
+} from "../../shared/upstream-run.ts";
 import { resolveUpstreamForModel } from "../../../../lib/upstream/resolver.ts";
 import { resolveVirtualModel } from "../../shared/models/virtual-models.ts";
 import { emitToMessages } from "../../targets/messages/emit.ts";
@@ -105,82 +108,126 @@ export const serveGemini = async (
         );
         performanceFor(modelId, "gemini");
 
-        const selection = await resolveUpstreamForModel(modelId);
-        if (!selection) {
+        const resolution = await resolveUpstreamForModel(modelId);
+        if (resolution.type === "not-found") {
           return {
             type: "upstream-error" as const,
             status: 404,
             headers: new Headers({ "content-type": "application/json" }),
             body: new TextEncoder().encode(JSON.stringify({
-              error: { code: 404, message: `Model ${modelId} is not available on any configured upstream.`, status: "NOT_FOUND" },
+              error: {
+                code: 404,
+                message:
+                  `Model ${modelId} is not available on any configured upstream.`,
+                status: "NOT_FOUND",
+              },
             })),
           };
         }
+        if (resolution.type === "upstream-error") {
+          return modelLoadErrorResult(resolution.error, lastPerformance);
+        }
 
-        return await runOnUpstream(selection, modelId, async (upstream) => {
-          const attemptPayload = structuredClone(ctx.payload);
-          const capabilities = await getModelCapabilities(
-            modelId,
-            upstream,
-          );
-          const plan = planGeminiRequest(
-            attemptPayload,
-            modelId,
-            capabilities,
-            wantsStream,
-          );
-          if (!plan) {
-            return {
-              type: "upstream-error" as const,
-              status: 400,
-              headers: new Headers({ "content-type": "application/json" }),
-              body: new TextEncoder().encode(JSON.stringify({
-                error: { code: 400, message: `Model ${modelId} does not support generateContent.`, status: "INVALID_ARGUMENT" },
-              })),
-            };
-          }
-
-          if (plan.target === "messages") {
-            const targetPayload = buildMessagesTargetRequest(
+        return await runOnUpstream(
+          resolution.selection,
+          modelId,
+          async (upstream) => {
+            const attemptPayload = structuredClone(ctx.payload);
+            const capabilities = await getModelCapabilities(
+              modelId,
+              upstream,
+            );
+            const plan = planGeminiRequest(
               attemptPayload,
               modelId,
-              wantsStream,
               capabilities,
+              wantsStream,
             );
-            const performance = performanceFor(
-              targetPayload.model,
-              "messages",
-            );
-            const result = await emitToMessages({
-              sourceApi: "gemini",
-              payload: targetPayload,
-              upstream,
-              apiKeyId,
-              clientStream: wantsStream,
-              runtimeLocation,
-              scheduleBackground,
-              fetchOptions: plan.fetchOptions,
-              downstreamAbortSignal: downstreamAbortController?.signal,
-            });
+            if (!plan) {
+              return {
+                type: "upstream-error" as const,
+                status: 400,
+                headers: new Headers({ "content-type": "application/json" }),
+                body: new TextEncoder().encode(JSON.stringify({
+                  error: {
+                    code: 400,
+                    message:
+                      `Model ${modelId} does not support generateContent.`,
+                    status: "INVALID_ARGUMENT",
+                  },
+                })),
+              };
+            }
 
-            return withResultMetadata(
-              withTranslatedEvents(result, translateMessagesToSourceEvents),
-              targetPayload.model,
-              performance,
-            );
-          }
+            if (plan.target === "messages") {
+              const targetPayload = buildMessagesTargetRequest(
+                attemptPayload,
+                modelId,
+                wantsStream,
+                capabilities,
+              );
+              const performance = performanceFor(
+                targetPayload.model,
+                "messages",
+              );
+              const result = await emitToMessages({
+                sourceApi: "gemini",
+                payload: targetPayload,
+                upstream,
+                apiKeyId,
+                clientStream: wantsStream,
+                runtimeLocation,
+                scheduleBackground,
+                fetchOptions: plan.fetchOptions,
+                downstreamAbortSignal: downstreamAbortController?.signal,
+              });
 
-          if (plan.target === "responses") {
-            const targetPayload = buildResponsesTargetRequest(
+              return withResultMetadata(
+                withTranslatedEvents(result, translateMessagesToSourceEvents),
+                targetPayload.model,
+                performance,
+              );
+            }
+
+            if (plan.target === "responses") {
+              const targetPayload = buildResponsesTargetRequest(
+                attemptPayload,
+                modelId,
+                wantsStream,
+              );
+              const performance = performanceFor(
+                targetPayload.model,
+                "responses",
+              );
+              const result = await emitToResponses({
+                sourceApi: "gemini",
+                payload: targetPayload,
+                upstream,
+                apiKeyId,
+                clientStream: wantsStream,
+                runtimeLocation,
+                scheduleBackground,
+                fetchOptions: plan.fetchOptions,
+                downstreamAbortSignal: downstreamAbortController?.signal,
+              });
+
+              return withResultMetadata(
+                withTranslatedEvents(result, translateResponsesToSourceEvents),
+                targetPayload.model,
+                performance,
+              );
+            }
+
+            const targetPayload = buildChatCompletionsTargetRequest(
               attemptPayload,
               modelId,
               wantsStream,
             );
             const performance = performanceFor(
               targetPayload.model,
-              "responses",
+              "chat-completions",
             );
-            const result = await emitToResponses({
+            const result = await emitToChatCompletions({
               sourceApi: "gemini",
               payload: targetPayload,
               upstream,
@@ -193,42 +240,15 @@ export const serveGemini = async (
             });
 
             return withResultMetadata(
-              withTranslatedEvents(result, translateResponsesToSourceEvents),
+              withTranslatedEvents(
+                result,
+                translateChatCompletionsToSourceEvents,
+              ),
               targetPayload.model,
               performance,
             );
-          }
-
-          const targetPayload = buildChatCompletionsTargetRequest(
-            attemptPayload,
-            modelId,
-            wantsStream,
-          );
-          const performance = performanceFor(
-            targetPayload.model,
-            "chat-completions",
-          );
-          const result = await emitToChatCompletions({
-            sourceApi: "gemini",
-            payload: targetPayload,
-            upstream,
-            apiKeyId,
-            clientStream: wantsStream,
-            runtimeLocation,
-            scheduleBackground,
-            fetchOptions: plan.fetchOptions,
-            downstreamAbortSignal: downstreamAbortController?.signal,
-          });
-
-          return withResultMetadata(
-            withTranslatedEvents(
-              result,
-              translateChatCompletionsToSourceEvents,
-            ),
-            targetPayload.model,
-            performance,
-          );
-        });
+          },
+        );
       },
     );
 
