@@ -111,7 +111,10 @@ export const serveChatCompletions = async (
       chatCompletionsSourceInterceptors,
       async () => {
         const intent = chatModelResolutionIntent(ctx.payload);
-        const modelId = await resolveModelForRequest(ctx.payload.model, intent);
+        const { id: modelId } = await resolveModelForRequest(
+          ctx.payload.model,
+          intent,
+        );
         performanceFor(modelId, "chat-completions");
 
         const resolution = await resolveUpstreamForModel(modelId);

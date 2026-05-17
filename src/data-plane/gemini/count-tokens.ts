@@ -12,7 +12,6 @@ import { geminiModelResolutionIntent } from "../llm/sources/gemini/plan.ts";
 import { buildTargetRequest as buildMessagesTargetRequest } from "../llm/translate/gemini-via-messages/build-target-request.ts";
 import { getModelCapabilities } from "../llm/shared/models/get-model-capabilities.ts";
 import { resolveModelForRequest } from "../llm/shared/models/resolve-model.ts";
-import { resolveVirtualModel } from "../llm/shared/models/virtual-models.ts";
 import { resolveUpstreamForModel } from "../../lib/upstream/resolver.ts";
 import { withAccountFallback } from "../shared/account-pool/fallback.ts";
 
@@ -98,17 +97,8 @@ export const countGeminiTokens = async (
     );
     normalizeCountTokensRequest(generateContentRequest);
 
-    const virtualResolution = await resolveVirtualModel(model);
-    const resolvedModel = virtualResolution?.targetModel ?? model;
-    if (
-      virtualResolution?.disableReasoning &&
-      generateContentRequest.generationConfig
-    ) {
-      delete generateContentRequest.generationConfig.thinkingConfig;
-    }
-
-    const modelId = await resolveModelForRequest(
-      resolvedModel,
+    const { id: modelId } = await resolveModelForRequest(
+      model,
       geminiModelResolutionIntent(generateContentRequest),
     );
 

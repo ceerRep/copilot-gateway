@@ -236,7 +236,7 @@ Deno.test("/v1/messages/count_tokens preserves custom upstream /models HTTP erro
   });
 });
 
-Deno.test("/v1/messages/count_tokens rewrites virtual model with thinking disabled and output_config stripped", async () => {
+Deno.test("/v1/messages/count_tokens rewrites virtual model id and forwards thinking and output_config unchanged", async () => {
   const { apiKey, repo } = await setupAppTest();
   await repo.gatewayConfig.save({ codexAutoReviewModel: "claude-sonnet-4" });
 
@@ -293,6 +293,9 @@ Deno.test("/v1/messages/count_tokens rewrites virtual model with thinking disabl
 
   assertExists(upstreamBody);
   assertEquals(upstreamBody.model, "claude-sonnet-4");
-  assertEquals(upstreamBody.thinking, { type: "disabled" });
-  assertEquals("output_config" in upstreamBody, false);
+  assertEquals(upstreamBody.thinking, {
+    type: "enabled",
+    budget_tokens: 5000,
+  });
+  assertEquals(upstreamBody.output_config, { effort: "high" });
 });

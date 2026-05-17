@@ -22,7 +22,6 @@ import {
   runOnUpstream,
 } from "../../shared/upstream-run.ts";
 import { resolveUpstreamForModel } from "../../../../lib/upstream/resolver.ts";
-import { resolveVirtualModel } from "../../shared/models/virtual-models.ts";
 import { emitToMessages } from "../../targets/messages/emit.ts";
 import { emitToResponses } from "../../targets/responses/emit.ts";
 import { emitToChatCompletions } from "../../targets/chat-completions/emit.ts";
@@ -70,15 +69,6 @@ export const serveGemini = async (
     const payload = await c.req.json<GeminiGenerateContentRequest>();
     const apiKeyId = c.get("apiKeyId") as string | undefined;
 
-    const virtualResolution = await resolveVirtualModel(model);
-    let resolvedModel = model;
-    if (virtualResolution) {
-      resolvedModel = virtualResolution.targetModel;
-      if (virtualResolution.disableReasoning && payload.generationConfig) {
-        delete payload.generationConfig.thinkingConfig;
-      }
-    }
-
     downstreamAbortController = wantsStream ? new AbortController() : undefined;
     const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
     const scheduleBackground = backgroundSchedulerFromContext(c);
@@ -102,8 +92,8 @@ export const serveGemini = async (
       ctx,
       geminiSourceInterceptors,
       async () => {
-        const modelId = await resolveModelForRequest(
-          resolvedModel,
+        const { id: modelId } = await resolveModelForRequest(
+          model,
           geminiModelResolutionIntent(ctx.payload),
         );
         performanceFor(modelId, "gemini");

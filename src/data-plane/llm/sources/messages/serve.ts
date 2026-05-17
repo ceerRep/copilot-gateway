@@ -105,7 +105,10 @@ export const serveMessages = async (
       messagesSourceInterceptors,
       async () => {
         const intent = messagesModelResolutionIntent(ctx.payload, rawBeta);
-        const modelId = await resolveModelForRequest(ctx.payload.model, intent);
+        const { id: modelId } = await resolveModelForRequest(
+          ctx.payload.model,
+          intent,
+        );
         performanceFor(modelId, "messages");
 
         const resolution = await resolveUpstreamForModel(modelId);

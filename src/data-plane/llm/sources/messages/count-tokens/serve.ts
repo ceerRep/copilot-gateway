@@ -8,7 +8,6 @@ import {
   messagesModelResolutionIntent,
   resolveModelForRequest,
 } from "../../../shared/models/resolve-model.ts";
-import { resolveVirtualModel } from "../../../shared/models/virtual-models.ts";
 
 const modelsLoadErrorResponse = (error: ModelsFetchError): Response =>
   new Response(error.body, {
@@ -18,23 +17,11 @@ const modelsLoadErrorResponse = (error: ModelsFetchError): Response =>
 
 export const countTokens = async (c: Context) => {
   try {
-    let payload = await c.req.json<MessagesPayload>();
-
-    const virtualResolution = await resolveVirtualModel(payload.model);
-    if (virtualResolution) {
-      // Match the generation path: strip output_config and disable thinking
-      // so the token count reflects what the upstream will actually receive.
-      const { output_config: _outputConfig, ...rest } = payload;
-      payload = {
-        ...rest,
-        model: virtualResolution.targetModel,
-        thinking: { type: "disabled" as const },
-      };
-    }
+    const payload = await c.req.json<MessagesPayload>();
 
     const rawBeta = c.req.header("anthropic-beta");
     const intent = messagesModelResolutionIntent(payload, rawBeta);
-    const modelId = await resolveModelForRequest(payload.model, intent);
+    const { id: modelId } = await resolveModelForRequest(payload.model, intent);
 
     const resolution = await resolveUpstreamForModel(modelId);
     if (resolution.type === "upstream-error") {

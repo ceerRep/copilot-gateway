@@ -13,6 +13,7 @@ import { getMessagesRequestedReasoningEffort } from "../../../../lib/reasoning.t
 import type { ResponsesPayload } from "../../../../lib/responses-types.ts";
 import { getRepo } from "../../../../repo/index.ts";
 import { createOpenAiUpstream } from "../../../../lib/upstream/openai.ts";
+import { resolveVirtualModel } from "./virtual-models.ts";
 
 const CONTEXT_1M_BETA = "context-1m-2025-08-07";
 const CLAUDE_DATE_SUFFIX = /-\d{8}$/;
@@ -163,10 +164,17 @@ export const resolveModelInModels = (
   return chooseClaudeVariant(candidates, exactBase, intent);
 };
 
+export interface ResolvedModel {
+  id: string;
+}
+
 export const resolveModelForRequest = async (
   modelId: string,
   intent: ModelResolutionIntent = {},
-): Promise<string> => {
+): Promise<ResolvedModel> => {
+  const virtual = await resolveVirtualModel(modelId);
+  const effectiveId = virtual?.targetModel ?? modelId;
+
   const byId = new Map<string, ModelInfo>();
 
   // Model IDs are treated as global upstream contracts: if multiple accounts
@@ -201,9 +209,9 @@ export const resolveModelForRequest = async (
 
   const info = resolveModelInModels(
     { object: "list", data: [...byId.values()] },
-    modelId,
+    effectiveId,
     intent,
   );
 
-  return info?.id ?? fallbackModelId(modelId);
+  return { id: info?.id ?? fallbackModelId(effectiveId) };
 };

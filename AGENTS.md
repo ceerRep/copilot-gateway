@@ -272,9 +272,9 @@ true.
 
 The `codex-auto-review` virtual model and any other gateway-level mappings
 live in the `gatewayConfig` repo and are admin-configured via the dashboard
-Settings tab. Source interceptors resolve the mapping before plan() looks at
-the model so every source API agrees on the routed upstream model and
-reasoning is disabled for that turn.
+Settings tab. `resolveModelForRequest` applies the mapping as the first step
+of every source's model resolution so every source API agrees on the routed
+upstream model.
 
 ## Data Plane Routing Rules
 
@@ -341,12 +341,15 @@ Current placement:
 - `src/data-plane/llm/shared/models/resolve-model.ts`
   - resolve Claude compatibility aliases and variants before account fallback
   - keep account fallback model-fixed after one final upstream ID is selected
+  - apply the virtual-model mapping (`codex-auto-review` → admin-configured
+    target) as the first step, so all sources share one model-id resolution
+    entry point
 - `src/data-plane/llm/shared/models/virtual-models.ts`
-  - rewrite the gateway-virtual `codex-auto-review` model to the admin-mapped
-    target model and disable reasoning for that turn; source interceptors call
-    in so every source API sees the same mapping
+  - declare the `codex-auto-review` → target-model mapping and expose
+    `resolveVirtualModel` for `resolveModelForRequest`
+  - export source-shape reasoning strippers (`stripMessagesReasoning`,
+    `stripResponsesReasoning`, `stripChatCompletionsReasoning`)
 - `src/data-plane/llm/sources/messages/interceptors/`
-  - apply the virtual-model rewrite before any other source workaround
   - rewrite native Anthropic `web_search_*` server tools into a
     gateway-executed shim that runs once at the source layer, so every
     Messages routing path (native messages, via responses, via
@@ -363,15 +366,12 @@ Current placement:
   - rewrite upstream context-window errors into the Anthropic compact
     `invalid_request_error` envelope expected by Messages clients
 - `src/data-plane/llm/sources/responses/interceptors/`
-  - apply the virtual-model rewrite before any tool fix-up
   - rewrite Codex's `apply_patch` Freeform tool (and a forced `apply_patch`
     `tool_choice`) into a function tool before stripping
   - strip hosted Responses tool entries Copilot upstream cannot serve
     (`image_generation`, `web_search`, `tool_search`, `namespace`) and any
     remaining Freeform `custom` tool with no shim, including forced
     `tool_choice` entries that target a removed tool
-- `src/data-plane/llm/sources/chat-completions/interceptors/`
-  - apply the virtual-model rewrite before any other source workaround
 - `src/data-plane/llm/sources/gemini/interceptors/`
   - strip unsupported Gemini file/code part fields
   - strip unsupported Gemini tool capabilities, including `googleSearch`, until
@@ -379,9 +379,6 @@ Current placement:
   - strip `safetySettings`
   - hide `thought: true` summary parts by default; only expose Gemini thought
     summaries when `generationConfig.thinkingConfig.includeThoughts === true`
-- `src/data-plane/llm/sources/gemini/serve.ts`
-  - apply the virtual-model rewrite inline (Gemini source has no virtual-model
-    interceptor; the rewrite happens before plan() reads the model)
 - `src/data-plane/llm/translate/gemini-via-chat-completions/translate-to-source-events.ts`
   - preserve `thoughtSignature` on the next visible text or function-call action
     part so clients can echo it next turn

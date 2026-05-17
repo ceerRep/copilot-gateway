@@ -154,7 +154,10 @@ export const serveResponses = async (
       responsesSourceInterceptors,
       async () => {
         const intent = responsesModelResolutionIntent(ctx.payload);
-        const modelId = await resolveModelForRequest(ctx.payload.model, intent);
+        const { id: modelId } = await resolveModelForRequest(
+          ctx.payload.model,
+          intent,
+        );
         performanceFor(modelId, "responses");
 
         const resolution = await resolveUpstreamForModel(modelId);
