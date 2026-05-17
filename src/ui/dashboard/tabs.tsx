@@ -2145,54 +2145,6 @@ export function renderSettingsTab() {
             </div>
 
             <div class="glass-card p-5 sm:p-6 animate-in delay-2">
-              <div class="mb-4">
-                <h3 class="text-white font-semibold mb-1">Model Mapping</h3>
-                <p class="text-sm text-gray-400">
-                  Route virtual model names to real upstream models.
-                </p>
-              </div>
-              <template x-if="!gatewayConfigLoaded">
-                <div class="flex items-center gap-2 text-xs text-gray-500">
-                  ${spinner("h-3.5 w-3.5 text-gray-500")}
-                  <span>Loading...</span>
-                </div>
-              </template>
-              <template x-if="gatewayConfigLoaded">
-                <div class="space-y-4">
-                  <div>
-                    <label
-                      class="block text-xs font-medium text-gray-500 uppercase tracking-widest mb-2"
-                    >
-                      codex-auto-review
-                    </label>
-                    <select
-                      class="w-full rounded-lg border border-white/10 bg-surface-600 px-3 py-2 text-sm text-white focus:border-accent-cyan/50 focus:outline-none"
-                      x-model="gatewayConfig.codexAutoReviewModel"
-                    >
-                      <option value="">Disabled</option>
-                      <template x-for="m in generationModels" :key="m.id">
-                        <option :value="m.id" x-text="m.id"></option>
-                      </template>
-                    </select>
-                  </div>
-                  <button
-                    class="btn-primary text-xs w-full sm:w-auto"
-                    @click="saveGatewayConfig()"
-                    :disabled="gatewayConfigSaving"
-                  >
-                    <span x-show="!gatewayConfigSaving">Save</span>
-                    <span
-                      x-show="gatewayConfigSaving"
-                      class="flex items-center gap-1.5"
-                    >
-                      ${spinner("h-3.5 w-3.5")} Saving...
-                    </span>
-                  </button>
-                </div>
-              </template>
-            </div>
-
-            <div class="glass-card p-5 sm:p-6 animate-in delay-2">
               <h3 class="text-white font-semibold mb-1">Export Data</h3>
               <p class="text-sm text-gray-400 mb-4">
                 Download all API keys, GitHub accounts, and usage data as a JSON

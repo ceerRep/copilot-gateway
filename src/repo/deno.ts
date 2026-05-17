@@ -4,7 +4,6 @@ import type {
   ApiKey,
   ApiKeyRepo,
   CacheRepo,
-  GatewayConfigRepo,
   GitHubAccount,
   GitHubRepo,
   PerformanceDimensions,
@@ -26,7 +25,6 @@ import { assertWebSearchProviderName } from "../lib/web-search-types.ts";
 import { latencyBucketForMs } from "../lib/performance-histogram.ts";
 
 const SEARCH_CONFIG_KEY: Deno.KvKey = ["config", "search_config"];
-const GATEWAY_CONFIG_KEY: Deno.KvKey = ["config", "gateway_config"];
 const GITHUB_ACCOUNT_ORDER_KEY: Deno.KvKey = ["config", "github_account_order"];
 
 class DenoKvApiKeyRepo implements ApiKeyRepo {
@@ -769,19 +767,6 @@ class DenoKvSearchConfigRepo implements SearchConfigRepo {
   }
 }
 
-class DenoKvGatewayConfigRepo implements GatewayConfigRepo {
-  constructor(private kv: Deno.Kv) {}
-
-  async get(): Promise<unknown | null> {
-    const entry = await this.kv.get(GATEWAY_CONFIG_KEY);
-    return entry.value === undefined ? null : entry.value;
-  }
-
-  async save(config: unknown): Promise<void> {
-    await this.kv.set(GATEWAY_CONFIG_KEY, config === undefined ? null : config);
-  }
-}
-
 class DenoKvUpstreamConfigRepo implements UpstreamConfigRepo {
   constructor(private kv: Deno.Kv) {}
 
@@ -836,7 +821,6 @@ export class DenoKvRepo implements Repo {
   cache: CacheRepo;
   accountModelBackoffs: AccountModelBackoffRepo;
   searchConfig: SearchConfigRepo;
-  gatewayConfig: GatewayConfigRepo;
   upstreamConfigs: UpstreamConfigRepo;
 
   constructor(kv: Deno.Kv) {
@@ -848,7 +832,6 @@ export class DenoKvRepo implements Repo {
     this.cache = new DenoKvCacheRepo(kv);
     this.accountModelBackoffs = new DenoKvAccountModelBackoffRepo(kv);
     this.searchConfig = new DenoKvSearchConfigRepo(kv);
-    this.gatewayConfig = new DenoKvGatewayConfigRepo(kv);
     this.upstreamConfigs = new DenoKvUpstreamConfigRepo(kv);
   }
 }

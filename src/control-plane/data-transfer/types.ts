@@ -1,5 +1,4 @@
 import type { SearchConfig } from "../../data-plane/tools/web-search/types.ts";
-import type { GatewayConfig } from "../../lib/gateway-config.ts";
 import type {
   ApiKey,
   GitHubAccount,
@@ -20,7 +19,6 @@ export interface ExportPayload {
     performance?: PerformanceTelemetryRecord[];
     performanceIncluded?: boolean;
     searchConfig: SearchConfig;
-    gatewayConfig?: GatewayConfig;
     upstreamConfigs: UpstreamConfig[];
   };
 }

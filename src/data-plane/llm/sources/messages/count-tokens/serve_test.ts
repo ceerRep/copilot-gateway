@@ -1,4 +1,4 @@
-import { assertEquals, assertExists } from "@std/assert";
+import { assertEquals } from "@std/assert";
 import { clearCopilotTokenCache } from "../../../../../lib/copilot.ts";
 import { clearModelsCache } from "../../../../../lib/models-cache.ts";
 import {
@@ -234,68 +234,4 @@ Deno.test("/v1/messages/count_tokens preserves custom upstream /models HTTP erro
       error: { message: "bad custom key" },
     });
   });
-});
-
-Deno.test("/v1/messages/count_tokens rewrites virtual model id and forwards thinking and output_config unchanged", async () => {
-  const { apiKey, repo } = await setupAppTest();
-  await repo.gatewayConfig.save({ codexAutoReviewModel: "claude-sonnet-4" });
-
-  let upstreamBody: Record<string, unknown> | undefined;
-
-  await withMockedFetch(async (request) => {
-    const url = new URL(request.url);
-
-    if (url.hostname === "update.code.visualstudio.com") {
-      return jsonResponse(["1.110.1"]);
-    }
-    if (url.pathname === "/copilot_internal/v2/token") {
-      return jsonResponse({
-        token: "copilot-access-token",
-        expires_at: 4102444800,
-        refresh_in: 3600,
-      });
-    }
-    if (url.pathname === "/models") {
-      return jsonResponse(copilotModels([
-        {
-          id: "claude-sonnet-4",
-          supported_endpoints: ["/v1/messages"],
-        },
-      ]));
-    }
-    if (url.pathname === "/v1/messages/count_tokens") {
-      upstreamBody = JSON.parse(await request.text()) as Record<
-        string,
-        unknown
-      >;
-      return jsonResponse({ input_tokens: 42 });
-    }
-
-    throw new Error(`Unhandled fetch ${request.url}`);
-  }, async () => {
-    const response = await requestApp("/v1/messages/count_tokens", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey.key,
-      },
-      body: JSON.stringify({
-        model: "codex-auto-review",
-        max_tokens: 100,
-        output_config: { effort: "high" },
-        thinking: { type: "enabled", budget_tokens: 5000 },
-        messages: [{ role: "user", content: "review this" }],
-      }),
-    });
-
-    assertEquals(response.status, 200);
-  });
-
-  assertExists(upstreamBody);
-  assertEquals(upstreamBody.model, "claude-sonnet-4");
-  assertEquals(upstreamBody.thinking, {
-    type: "enabled",
-    budget_tokens: 5000,
-  });
-  assertEquals(upstreamBody.output_config, { effort: "high" });
 });

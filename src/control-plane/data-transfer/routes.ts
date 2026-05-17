@@ -2,10 +2,6 @@
 
 import type { Context } from "hono";
 import { normalizeSearchConfig } from "../../data-plane/tools/web-search/search-config.ts";
-import {
-  normalizeGatewayConfig,
-  saveGatewayConfig,
-} from "../../lib/gateway-config.ts";
 import { isWebSearchProviderName } from "../../lib/web-search-types.ts";
 import { invalidateUpstreamModels } from "../../lib/models-cache.ts";
 import { getRepo } from "../../repo/index.ts";
@@ -181,7 +177,6 @@ export const exportData = async (c: Context) => {
     searchUsage,
     performance,
     rawSearchConfig,
-    rawGatewayConfig,
     upstreamConfigs,
   ] = await Promise.all([
     repo.apiKeys.list(),
@@ -190,7 +185,6 @@ export const exportData = async (c: Context) => {
     repo.searchUsage.listAll(),
     includePerformance ? repo.performance.listAll() : Promise.resolve([]),
     repo.searchConfig.get(),
-    repo.gatewayConfig.get(),
     repo.upstreamConfigs.list(),
   ]);
 
@@ -204,7 +198,6 @@ export const exportData = async (c: Context) => {
       searchUsage,
       performanceIncluded: includePerformance,
       searchConfig: normalizeSearchConfig(rawSearchConfig),
-      gatewayConfig: normalizeGatewayConfig(rawGatewayConfig),
       upstreamConfigs,
     },
   };
@@ -272,7 +265,6 @@ export const importData = async (c: Context) => {
     );
     await Promise.all([
       repo.searchConfig.save(normalizeSearchConfig(data.searchConfig)),
-      saveGatewayConfig(data.gatewayConfig ?? {}),
     ]);
   }
 
@@ -314,14 +306,6 @@ export const importData = async (c: Context) => {
     data.searchConfig !== null
   ) {
     await repo.searchConfig.save(normalizeSearchConfig(data.searchConfig));
-  }
-
-  if (
-    mode !== "replace" &&
-    typeof data.gatewayConfig === "object" &&
-    data.gatewayConfig !== null
-  ) {
-    await saveGatewayConfig(data.gatewayConfig);
   }
 
   return c.json({

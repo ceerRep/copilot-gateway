@@ -172,11 +172,6 @@ export interface SearchConfigRepo {
   save(config: unknown): Promise<void>;
 }
 
-export interface GatewayConfigRepo {
-  get(): Promise<unknown | null>;
-  save(config: unknown): Promise<void>;
-}
-
 // Logical endpoint keys used by the gateway-internal upstream dispatcher.
 // `messages_count_tokens` is intentionally a logical key: it is a sub-path of
 // `messages` and follows whatever path the admin chose for messages, so the
@@ -228,6 +223,5 @@ export interface Repo {
   cache: CacheRepo;
   accountModelBackoffs: AccountModelBackoffRepo;
   searchConfig: SearchConfigRepo;
-  gatewayConfig: GatewayConfigRepo;
   upstreamConfigs: UpstreamConfigRepo;
 }

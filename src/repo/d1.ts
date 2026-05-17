@@ -4,7 +4,6 @@ import type {
   ApiKey,
   ApiKeyRepo,
   CacheRepo,
-  GatewayConfigRepo,
   GitHubAccount,
   GitHubRepo,
   PerformanceDimensions,
@@ -45,7 +44,6 @@ export interface D1Database {
 }
 
 const SEARCH_CONFIG_KEY = "search_config";
-const GATEWAY_CONFIG_KEY = "gateway_config";
 const GITHUB_ACCOUNT_ORDER_KEY = "github_account_order";
 
 const serializeStoredConfig = (value: unknown): string =>
@@ -1013,34 +1011,6 @@ class D1SearchConfigRepo implements SearchConfigRepo {
   }
 }
 
-class D1GatewayConfigRepo implements GatewayConfigRepo {
-  constructor(private db: D1Database) {}
-
-  async get(): Promise<unknown | null> {
-    const row = await this.db
-      .prepare("SELECT value FROM config WHERE key = ?")
-      .bind(GATEWAY_CONFIG_KEY)
-      .first<{ value: string }>();
-
-    if (!row?.value) return null;
-    try {
-      return JSON.parse(row.value);
-    } catch {
-      return null;
-    }
-  }
-
-  async save(config: unknown): Promise<void> {
-    await this.db
-      .prepare(
-        `INSERT INTO config (key, value) VALUES (?, ?)
-         ON CONFLICT (key) DO UPDATE SET value = excluded.value`,
-      )
-      .bind(GATEWAY_CONFIG_KEY, serializeStoredConfig(config))
-      .run();
-  }
-}
-
 class D1UpstreamConfigRepo implements UpstreamConfigRepo {
   constructor(private db: D1Database) {}
 
@@ -1197,7 +1167,6 @@ export class D1Repo implements Repo {
   cache: CacheRepo;
   accountModelBackoffs: AccountModelBackoffRepo;
   searchConfig: SearchConfigRepo;
-  gatewayConfig: GatewayConfigRepo;
   upstreamConfigs: UpstreamConfigRepo;
 
   constructor(db: D1Database) {
@@ -1209,7 +1178,6 @@ export class D1Repo implements Repo {
     this.cache = new D1CacheRepo(db);
     this.accountModelBackoffs = new D1AccountModelBackoffRepo(db);
     this.searchConfig = new D1SearchConfigRepo(db);
-    this.gatewayConfig = new D1GatewayConfigRepo(db);
     this.upstreamConfigs = new D1UpstreamConfigRepo(db);
   }
 }

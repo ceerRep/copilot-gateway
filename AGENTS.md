@@ -299,12 +299,6 @@ field at all, so when `capabilities.type === "chat"` the resolver infers
 `supportsChatCompletions`, not through the legacy `claude*` fallback — Copilot
 chat models route correctly without `hasExplicitCapabilities` ever being true.
 
-The `codex-auto-review` virtual model and any other gateway-level mappings live
-in the `gatewayConfig` repo and are admin-configured via the dashboard Settings
-tab. `resolveModelForRequest` applies the mapping as the first step of every
-source's model resolution so every source API agrees on the routed upstream
-model.
-
 ## Data Plane Routing Rules
 
 `/v1/messages` chooses among:
@@ -370,12 +364,6 @@ Current placement:
 - `src/data-plane/llm/shared/models/resolve-model.ts`
   - resolve Claude compatibility aliases and variants before account fallback
   - keep account fallback model-fixed after one final upstream ID is selected
-  - apply the virtual-model mapping (`codex-auto-review` → admin-configured
-    target) as the first step, so all sources share one model-id resolution
-    entry point
-- `src/data-plane/llm/shared/models/virtual-models.ts`
-  - declare the `codex-auto-review` → target-model mapping and expose
-    `resolveVirtualModel` for `resolveModelForRequest`
 - `src/data-plane/llm/sources/messages/interceptors/`
   - rewrite native Anthropic `web_search_*` server tools into a gateway-executed
     shim that runs once at the source layer, so every Messages routing path
