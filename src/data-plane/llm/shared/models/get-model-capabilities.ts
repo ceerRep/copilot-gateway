@@ -1,5 +1,11 @@
 import { findModel, type ModelInfo } from "../../../../lib/models-cache.ts";
 import type { Upstream } from "../../../../lib/upstream/types.ts";
+import { resolveEffectiveSupportedEndpoints } from "../../../shared/models/resolve-endpoints.ts";
+
+// Re-export so existing LLM-side callers don't have to chase the new
+// neutral path. Canonical definition lives in
+// `data-plane/shared/models/resolve-endpoints.ts`.
+export { resolveEffectiveSupportedEndpoints };
 
 interface ModelCapabilitiesModel {
   id: string;
@@ -44,28 +50,6 @@ export const inferredChatCompletionsSupport = (
   model !== undefined &&
   model.supported_endpoints === undefined &&
   model.capabilities?.type === "chat";
-
-// Resolve the effective supported_endpoints for a model on a given upstream.
-//
-// Custom OpenAI-compatible upstreams have admin-configured capabilities that
-// are trusted and tight — when the provider's /models entry omits per-model
-// supported_endpoints, the upstream-level config fills in.
-//
-// Copilot's /models is authoritative per SKU; a missing field means "not
-// declared", not "all of the above". We return an empty list so embedding-only
-// SKUs are not promoted into the chat/responses/messages routing surface.
-// The caller's planning layer is still allowed to layer on legacy model-name
-// heuristics (see `inferredChatCompletionsSupport`) when the field is missing.
-export const resolveEffectiveSupportedEndpoints = (
-  modelEndpoints: string[] | undefined,
-  upstream: { kind: Upstream["kind"]; supportedEndpoints: string[] },
-): { endpoints: string[]; explicit: boolean } => {
-  if (modelEndpoints) return { endpoints: modelEndpoints, explicit: true };
-  if (upstream.kind === "openai") {
-    return { endpoints: upstream.supportedEndpoints, explicit: true };
-  }
-  return { endpoints: [], explicit: false };
-};
 
 const LLM_ENDPOINTS = new Set(["/v1/messages", "/responses", "/chat/completions"]);
 

@@ -471,6 +471,18 @@ helper — so the assembler always reads `defaults ∪ admin opt-ins` from
 `upstream.enabledFixes`, but the catalog import only crosses into
 data-plane code.
 
+`data-plane/shared/` holds neutral request-path infrastructure shared
+by LLM and non-LLM endpoints (`upstream-run.ts` for the
+openai/copilot-fallback dispatch, `models/resolve-endpoints.ts` for
+generic supported_endpoints semantics). LLM-specific layering wraps
+the neutral pieces in `data-plane/llm/shared/` — e.g. the LLM-flavoured
+`runOnUpstream` adds `withDefaultFixes` on top, and
+`get-model-capabilities.ts` re-exports the neutral
+`resolveEffectiveSupportedEndpoints` while owning the LLM-shape
+`ModelCapabilities` interface. Non-LLM endpoints like `/v1/embeddings`
+import only from `data-plane/shared/` so they never transitively
+depend on the LLM target fix catalog.
+
 The catalog can also declare data-only flags with no bound
 `OptionalInterceptor` — typically vendor-style flags like
 `vendor-deepseek` / `vendor-qwen` that mark the upstream as following

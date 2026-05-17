@@ -1,13 +1,15 @@
-// Run a per-attempt callback against a resolved upstream, applying account
-// fallback only for Copilot. Custom OpenAI-compatible upstreams are served
-// by their single configured connection — there is no account pool to swap
-// through, so we execute the attempt once.
+// LLM-flavoured wrapper around the neutral `runOnUpstream`. Adds the
+// per-kind default-fix merge so the target interceptor assembler always
+// sees `defaults ∪ admin opt-ins` on `upstream.enabledFixes`. Non-LLM
+// endpoints (e.g. embeddings) should import the neutral version from
+// `data-plane/shared/upstream-run.ts` directly — they don't run target
+// interceptors and don't need the catalog.
 
-import type { UpstreamSelection } from "../../../lib/upstream/resolver.ts";
-import type { Upstream } from "../../../lib/upstream/types.ts";
 import { ModelsFetchError } from "../../../lib/models-cache.ts";
 import type { PerformanceTelemetryContext } from "../../../lib/performance-telemetry.ts";
-import { withAccountFallback } from "../../shared/account-pool/fallback.ts";
+import type { UpstreamSelection } from "../../../lib/upstream/resolver.ts";
+import type { Upstream } from "../../../lib/upstream/types.ts";
+import { runOnUpstream as runOnUpstreamNeutral } from "../../shared/upstream-run.ts";
 import { defaultFixesFor } from "../targets/optional-fixes.ts";
 import type { UpstreamErrorResult } from "./errors/result.ts";
 
@@ -24,17 +26,16 @@ export const withDefaultFixes = (upstream: Upstream): Upstream => {
   };
 };
 
-export const runOnUpstream = async <T>(
+export const runOnUpstream = <T>(
   selection: UpstreamSelection,
   model: string,
   run: (upstream: Upstream) => Promise<T>,
-): Promise<T> => {
-  if (selection.kind === "openai") {
-    return run(withDefaultFixes(selection.upstream));
-  }
-  return withAccountFallback(model, ({ upstream }) =>
-    run(withDefaultFixes(upstream)));
-};
+): Promise<T> =>
+  runOnUpstreamNeutral(
+    selection,
+    model,
+    (upstream) => run(withDefaultFixes(upstream)),
+  );
 
 export const modelLoadErrorResult = (
   error: unknown,

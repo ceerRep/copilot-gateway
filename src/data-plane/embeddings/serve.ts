@@ -8,8 +8,8 @@ import type { Context } from "hono";
 import { isCopilotTokenFetchError } from "../../lib/copilot.ts";
 import { findModel, ModelsFetchError } from "../../lib/models-cache.ts";
 import { resolveUpstreamForModel } from "../../lib/upstream/resolver.ts";
-import { resolveEffectiveSupportedEndpoints } from "../llm/shared/models/get-model-capabilities.ts";
-import { runOnUpstream } from "../llm/shared/upstream-run.ts";
+import { resolveEffectiveSupportedEndpoints } from "../shared/models/resolve-endpoints.ts";
+import { runOnUpstream } from "../shared/upstream-run.ts";
 import { withAccountFallback } from "../shared/account-pool/fallback.ts";
 import { withUsageResponseMetadata } from "../../middleware/usage-response-metadata.ts";
 import {
