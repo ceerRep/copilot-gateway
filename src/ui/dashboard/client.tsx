@@ -248,11 +248,20 @@ export function dashboardAssets() {
                 }
 
                 const CLAUDE_TIER = { opus: 0, sonnet: 1, haiku: 2 };
+                const LLM_ENDPOINTS = ['/v1/messages', '/responses', '/chat/completions'];
 
                 function modelContextWindow(model) {
                   const limits = model.capabilities?.limits;
                   return limits?.max_context_window_tokens
                     || ((limits?.max_prompt_tokens || 0) + (limits?.max_output_tokens || 0));
+                  }
+
+                  function modelSupportsGeneration(model) {
+                    if (model.supports_generation !== undefined) return model.supports_generation;
+                    if (Array.isArray(model.supported_endpoints)) {
+                      return model.supported_endpoints.some((endpoint) => LLM_ENDPOINTS.includes(endpoint));
+                    }
+                    return model.capabilities?.type !== 'embeddings';
                   }
 
                   function claudeTier(id) {
@@ -438,7 +447,7 @@ export function dashboardAssets() {
                     },
 
                     get generationModels() {
-                      return this.allModels.filter(m => m.supports_generation !== false);
+                      return this.allModels.filter(modelSupportsGeneration);
                     },
 
                     get filteredChatModels() {
@@ -655,12 +664,10 @@ export function dashboardAssets() {
                               return;
                             }
                             const { data: rawData } = await resp.json();
-                            const LLM_ENDPOINTS = ['/v1/messages', '/responses', '/chat/completions'];
                             const data = rawData.map(m => ({
                               ...m,
                               name: m.name || m.id,
-                              supports_generation: m.supports_generation ??
-                                (!m.supported_endpoints?.length || m.supported_endpoints.some(e => LLM_ENDPOINTS.includes(e))),
+                              supports_generation: modelSupportsGeneration(m),
                               }));
 
                               this.allModels = data;

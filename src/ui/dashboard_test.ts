@@ -1479,7 +1479,7 @@ Deno.test("dashboardApp model search does not crash when model.name is missing",
   }
 });
 
-Deno.test("dashboardApp filteredChatModels excludes embedding-only custom upstream models", async () => {
+Deno.test("dashboardApp filteredChatModels excludes embedding-only models", async () => {
   const originalFetch = globalThis.fetch;
   // deno-lint-ignore no-explicit-any
   globalThis.fetch = (input: any) => {
