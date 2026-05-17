@@ -10,7 +10,11 @@ import {
 import type { GeminiGenerationMethod, GeminiModel } from "../../lib/gemini-types.ts";
 import { getRepo } from "../../repo/index.ts";
 import { createOpenAiUpstream } from "../../lib/upstream/openai.ts";
-import { endpointsIncludeLlmGeneration, resolveEffectiveSupportedEndpoints } from "../llm/shared/models/get-model-capabilities.ts";
+import {
+  copilotSupportsGeneration,
+  endpointsIncludeLlmGeneration,
+  resolveEffectiveSupportedEndpoints,
+} from "../llm/shared/models/get-model-capabilities.ts";
 import { mergeClaudeVariants } from "../models/merge.ts";
 
 const supportsLlmGeneration = (model: ModelInfo): boolean =>
@@ -109,9 +113,7 @@ const loadMergedModels = async (): Promise<ModelsResponse> => {
       byId.set(model.id, {
         ...model,
         upstream_kind: "copilot",
-        supports_generation: model.supported_endpoints
-          ? endpointsIncludeLlmGeneration(model.supported_endpoints)
-          : true,
+        supports_generation: copilotSupportsGeneration(model),
       });
     }
   }

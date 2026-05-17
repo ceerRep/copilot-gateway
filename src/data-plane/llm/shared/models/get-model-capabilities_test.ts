@@ -1,5 +1,6 @@
 import { assertEquals } from "@std/assert";
 import {
+  copilotSupportsGeneration,
   modelCapabilitiesFromModel,
   resolveEffectiveSupportedEndpoints,
 } from "./get-model-capabilities.ts";
@@ -138,4 +139,48 @@ Deno.test("resolveEffectiveSupportedEndpoints returns empty for copilot without 
   );
   assertEquals(endpoints, []);
   assertEquals(explicit, false);
+});
+
+Deno.test("copilotSupportsGeneration: explicit endpoints with /chat/completions → true", () => {
+  const model = baseModel({ supported_endpoints: ["/chat/completions"] });
+  assertEquals(copilotSupportsGeneration(model), true);
+});
+
+Deno.test("copilotSupportsGeneration: explicit endpoints with only /embeddings → false", () => {
+  const model = baseModel({ supported_endpoints: ["/embeddings"] });
+  assertEquals(copilotSupportsGeneration(model), false);
+});
+
+Deno.test("copilotSupportsGeneration: missing endpoints + capabilities.type === 'chat' → true (legacy SKU)", () => {
+  const model = baseModel({
+    supported_endpoints: undefined,
+    capabilities: { family: "test", type: "chat", limits: {}, supports: {} },
+  });
+  assertEquals(copilotSupportsGeneration(model), true);
+});
+
+Deno.test("copilotSupportsGeneration: missing endpoints + capabilities.type === 'embeddings' → false", () => {
+  const model = baseModel({
+    supported_endpoints: undefined,
+    capabilities: {
+      family: "test",
+      type: "embeddings",
+      limits: {},
+      supports: {},
+    },
+  });
+  assertEquals(copilotSupportsGeneration(model), false);
+});
+
+Deno.test("copilotSupportsGeneration: missing endpoints + missing capabilities.type → false", () => {
+  // Defensive: a Copilot entry without supported_endpoints AND without a
+  // declared capabilities.type should be treated as not routable. Building
+  // a ModelInfo with capabilities.type defaulted to a non-chat value so the
+  // strict ModelInfo shape stays satisfied while still asserting the
+  // non-chat path.
+  const model = baseModel({
+    supported_endpoints: undefined,
+    capabilities: { family: "test", type: "", limits: {}, supports: {} },
+  });
+  assertEquals(copilotSupportsGeneration(model), false);
 });

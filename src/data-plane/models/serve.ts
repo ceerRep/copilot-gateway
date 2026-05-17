@@ -21,7 +21,11 @@ import {
   apiErrorResponse,
   getErrorMessage,
 } from "../shared/http/proxy-response.ts";
-import { endpointsIncludeLlmGeneration, resolveEffectiveSupportedEndpoints } from "../llm/shared/models/get-model-capabilities.ts";
+import {
+  copilotSupportsGeneration,
+  endpointsIncludeLlmGeneration,
+  resolveEffectiveSupportedEndpoints,
+} from "../llm/shared/models/get-model-capabilities.ts";
 import { mergeClaudeVariants } from "./merge.ts";
 
 const errorResponse = (error: unknown): Response | null => {
@@ -61,9 +65,7 @@ export const models = async (c: Context) => {
         byId.set(model.id, {
           ...model,
           upstream_kind: "copilot",
-          supports_generation: model.supported_endpoints
-            ? endpointsIncludeLlmGeneration(model.supported_endpoints)
-            : true,
+          supports_generation: copilotSupportsGeneration(model),
         });
       }
     }
