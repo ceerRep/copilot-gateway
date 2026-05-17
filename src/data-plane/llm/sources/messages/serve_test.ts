@@ -593,7 +593,11 @@ Deno.test("/v1/messages uses native endpoint and applies native request workarou
                 type: "redacted_thinking",
                 data: "opaque_blob",
               },
-              { type: "thinking", thinking: "second thought", signature: "sig_second" },
+              {
+                type: "thinking",
+                thinking: "second thought",
+                signature: "sig_second",
+              },
               { type: "text", text: "previous reply" },
             ],
           },
@@ -1606,7 +1610,11 @@ Deno.test("/v1/messages falls back to responses and preserves reasoning round-tr
     assertEquals(body.usage.input_tokens, 25);
     assertEquals(body.usage.cache_read_input_tokens, 5);
     assertEquals(body.content[0].type, "thinking");
-    assertEquals(body.content[0].signature, "enc_abc");
+    // Packed `${encrypted_content}@${id}` smuggles the Responses item id
+    // through the Anthropic signature slot so a next-turn submission survives
+    // Copilot's per-item signature verification. See
+    // `src/lib/translate/messages-responses-signature.ts`.
+    assertEquals(body.content[0].signature, "enc_abc@rs_1");
     assertEquals(body.content[1].text, "Answer text");
   });
 
