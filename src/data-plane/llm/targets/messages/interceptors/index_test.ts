@@ -6,12 +6,13 @@
 import { assertEquals } from "@std/assert";
 import { stubUpstream } from "../../../../../test-helpers.ts";
 import { messagesCopilotInterceptors } from "./copilot/index.ts";
+import { withReasoningDisabledOnForcedToolChoice } from "./disable-reasoning-on-forced-tool-choice.ts";
 import {
   interceptorsForMessages,
   messagesOptionalInterceptors,
 } from "./index.ts";
 
-Deno.test("interceptorsForMessages on copilot kind: copilot interceptors only (no base or optional today)", () => {
+Deno.test("interceptorsForMessages on copilot kind without opt-ins: copilot interceptors only", () => {
   const upstream = stubUpstream({
     kind: "copilot",
     enabledFixes: new Set<string>(),
@@ -21,7 +22,7 @@ Deno.test("interceptorsForMessages on copilot kind: copilot interceptors only (n
   assertEquals(assembled, [...messagesCopilotInterceptors]);
 });
 
-Deno.test("interceptorsForMessages on openai kind: empty assembly (no base, no copilot, no optional today)", () => {
+Deno.test("interceptorsForMessages on openai kind without opt-ins: empty assembly", () => {
   const upstream = stubUpstream({
     kind: "openai",
     enabledFixes: new Set<string>(),
@@ -38,8 +39,20 @@ Deno.test("interceptorsForMessages on openai kind: empty assembly (no base, no c
   }
 });
 
-Deno.test("interceptorsForMessages includes opted-in optional interceptors after copilot block", () => {
-  // No Messages-target optional interceptors exist today; verify the slot
-  // is empty so future additions explicitly update this test.
-  assertEquals(messagesOptionalInterceptors.length, 0);
+Deno.test("interceptorsForMessages picks up disable-reasoning-on-forced-tool-choice when opted in", () => {
+  const upstream = stubUpstream({
+    kind: "openai",
+    enabledFixes: new Set(["disable-reasoning-on-forced-tool-choice"]),
+  });
+  assertEquals(
+    interceptorsForMessages(upstream),
+    [withReasoningDisabledOnForcedToolChoice],
+  );
+});
+
+Deno.test("messagesOptionalInterceptors registers disable-reasoning-on-forced-tool-choice", () => {
+  const descriptor = messagesOptionalInterceptors.find(
+    (d) => d.fixId === "disable-reasoning-on-forced-tool-choice",
+  );
+  if (!descriptor) throw new Error("expected interceptor to be registered");
 });

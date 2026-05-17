@@ -7,6 +7,7 @@ import type { EmitInput } from "../../emit-types.ts";
 import type { OptionalInterceptor } from "../../optional-fix.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 import { responsesCopilotInterceptors } from "./copilot/index.ts";
+import { withReasoningDisabledOnForcedToolChoice } from "./disable-reasoning-on-forced-tool-choice.ts";
 import { withCyberPolicyRetried } from "./retry-cyber-policy.ts";
 
 // Always-on Responses target interceptors. None currently apply.
@@ -19,6 +20,10 @@ const baseInterceptors: readonly TargetInterceptor<
 // function to a flag id declared in ../../optional-fixes.ts.
 export const responsesOptionalInterceptors = [
   { fixId: "retry-cyber-policy", run: withCyberPolicyRetried },
+  {
+    fixId: "disable-reasoning-on-forced-tool-choice",
+    run: withReasoningDisabledOnForcedToolChoice,
+  },
 ] as const satisfies readonly OptionalInterceptor<
   EmitInput<ResponsesPayload>,
   ResponsesResult

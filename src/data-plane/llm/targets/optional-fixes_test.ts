@@ -82,3 +82,24 @@ Deno.test("optional-fixes: deepseek-reasoning-dialect is in catalog and chat_com
   assertEquals(entry.appliesTo, ["chat_completions"]);
   assertEquals(entry.defaultFor.length, 0);
 });
+
+Deno.test("optional-fixes: vendor-style flags are present, default off, span all LLM endpoints", () => {
+  const vendorIds = [
+    "vendor-deepseek",
+    "vendor-qwen",
+  ];
+  for (const id of vendorIds) {
+    const entry = getFixCatalog().find((e) => e.id === id);
+    assertExists(entry, `vendor flag ${id} missing from catalog`);
+    assertEquals(
+      entry.defaultFor.length,
+      0,
+      `vendor flag ${id} must default off`,
+    );
+    assertEquals(
+      [...entry.appliesTo].sort(),
+      ["chat_completions", "messages", "responses"],
+      `vendor flag ${id} must apply to all LLM endpoints (so it can be enabled on any LLM upstream)`,
+    );
+  }
+});

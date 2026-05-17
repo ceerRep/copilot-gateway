@@ -9,6 +9,12 @@
 // "one flag drives multiple interceptors" trivial (each target
 // registers an OptionalInterceptor with the same fixId) and keeps the
 // catalog free of runtime closures.
+//
+// Vendor-style flags (e.g. `vendor-deepseek`) are data-only — they have
+// no OptionalInterceptor of their own. Other interceptors read
+// `upstream.enabledFixes` and dispatch on these flags to decide which
+// vendor-specific protocol extension to emit. With no vendor flag set,
+// behavior defaults to the OpenAI standard (no extensions).
 
 import type { UpstreamKind } from "../../../lib/upstream/types.ts";
 
@@ -28,11 +34,30 @@ export interface Flag {
 }
 
 export const OPTIONAL_FIXES = [
+  // ── Vendor-style flags (data-only; consumers dispatch on these) ──
+  {
+    id: "vendor-deepseek",
+    label: "Vendor: DeepSeek style",
+    description:
+      "Marks this upstream as DeepSeek-compatible. Affects some fixes below.",
+    defaultFor: [],
+    appliesTo: ["messages", "responses", "chat_completions"],
+  },
+  {
+    id: "vendor-qwen",
+    label: "Vendor: Qwen style",
+    description:
+      "Marks this upstream as Qwen-compatible. Affects some fixes below.",
+    defaultFor: [],
+    appliesTo: ["messages", "responses", "chat_completions"],
+  },
+
+  // ── Behaviour flags (have bound OptionalInterceptors) ──
   {
     id: "retry-cyber-policy",
     label: "Retry on upstream cyber-policy block",
     description:
-      "Responses: retry up to 10 times when the upstream returns a cyber_policy error code.",
+      "Retry cyber_policy 4xx errors from the upstream (up to 10 attempts).",
     defaultFor: ["copilot"],
     appliesTo: ["responses"],
   },
@@ -40,9 +65,17 @@ export const OPTIONAL_FIXES = [
     id: "deepseek-reasoning-dialect",
     label: "DeepSeek reasoning dialect",
     description:
-      "Chat Completions: rename reasoning_text ↔ reasoning_content and drop reasoning_opaque / reasoning_items for upstreams that follow DeepSeek's legacy reasoner shape.",
+      "On Chat Completions, use DeepSeek's legacy reasoning_content field instead of OpenAI's reasoning_text.",
     defaultFor: [],
     appliesTo: ["chat_completions"],
+  },
+  {
+    id: "disable-reasoning-on-forced-tool-choice",
+    label: "Disable reasoning when caller forces a tool",
+    description:
+      "Disable reasoning in the outbound request when the caller forces a specific tool. Combine with a vendor flag above to also emit that vendor's disable signal.",
+    defaultFor: [],
+    appliesTo: ["messages", "responses", "chat_completions"],
   },
 ] as const satisfies readonly Flag[];
 

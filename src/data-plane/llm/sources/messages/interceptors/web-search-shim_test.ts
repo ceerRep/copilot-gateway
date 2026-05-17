@@ -286,7 +286,7 @@ Deno.test("prepareMessagesWebSearchShimRequest rewrites both native tool version
   }
 });
 
-Deno.test("prepareMessagesWebSearchShimRequest disables thinking on active turns to avoid reasoning + forced tool_choice conflicts", () => {
+Deno.test("prepareMessagesWebSearchShimRequest leaves thinking and output_config untouched on active turns", () => {
   const prepared = prepareMessagesWebSearchShimRequest({
     model: "claude-test",
     max_tokens: 64,
@@ -300,12 +300,11 @@ Deno.test("prepareMessagesWebSearchShimRequest disables thinking on active turns
   assertEquals(prepared.type, "ok");
   if (prepared.type !== "ok") throw new Error("expected ok result");
   assertEquals(prepared.state.mode, "active");
-  assertEquals(prepared.payload.thinking, { type: "disabled" });
-  // output_config.effort takes precedence over thinking.disabled in
-  // getMessagesRequestedReasoningEffort, so it has to be stripped too or the
-  // Responses/Chat-Completions translated paths would still send a non-zero
-  // reasoning effort.
-  assertEquals(prepared.payload.output_config, undefined);
+  assertEquals(prepared.payload.thinking, {
+    type: "enabled",
+    budget_tokens: 1024,
+  });
+  assertEquals(prepared.payload.output_config, { effort: "high" });
 });
 
 Deno.test("prepareMessagesWebSearchShimRequest leaves thinking untouched in inactive mode", () => {

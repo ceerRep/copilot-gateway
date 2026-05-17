@@ -3,6 +3,7 @@ import type { Upstream } from "../../../../../lib/upstream/types.ts";
 import type { OptionalInterceptor } from "../../optional-fix.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 import type { EmitToChatCompletionsInput } from "../emit.ts";
+import { withReasoningDisabledOnForcedToolChoice } from "./disable-reasoning-on-forced-tool-choice.ts";
 import { withUsageStreamOptionsIncluded } from "./include-usage-stream-options.ts";
 import { withDeepseekReasoningDialect } from "./normalize-reasoning-dialect.ts";
 import { withUsageNormalized } from "./normalize-usage.ts";
@@ -30,6 +31,10 @@ export const chatCompletionsOptionalInterceptors = [
   {
     fixId: "deepseek-reasoning-dialect",
     run: withDeepseekReasoningDialect,
+  },
+  {
+    fixId: "disable-reasoning-on-forced-tool-choice",
+    run: withReasoningDisabledOnForcedToolChoice,
   },
 ] as const satisfies readonly OptionalInterceptor<
   EmitToChatCompletionsInput,

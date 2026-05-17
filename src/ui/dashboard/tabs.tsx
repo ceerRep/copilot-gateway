@@ -2114,9 +2114,6 @@ export function renderSettingsTab() {
                         <option :value="m.id" x-text="m.id"></option>
                       </template>
                     </select>
-                    <p class="mt-1 text-xs text-gray-500">
-                      Reasoning is disabled on mapped requests.
-                    </p>
                   </div>
                   <button
                     class="btn-primary text-xs w-full sm:w-auto"

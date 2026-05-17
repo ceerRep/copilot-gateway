@@ -347,8 +347,6 @@ Current placement:
 - `src/data-plane/llm/shared/models/virtual-models.ts`
   - declare the `codex-auto-review` → target-model mapping and expose
     `resolveVirtualModel` for `resolveModelForRequest`
-  - export source-shape reasoning strippers (`stripMessagesReasoning`,
-    `stripResponsesReasoning`, `stripChatCompletionsReasoning`)
 - `src/data-plane/llm/sources/messages/interceptors/`
   - rewrite native Anthropic `web_search_*` server tools into a
     gateway-executed shim that runs once at the source layer, so every
@@ -357,10 +355,6 @@ Current placement:
   - replay shim-owned search history back upstream as `search_result` blocks
   - rewrite upstream tool use, tool results, and citations back into native
     `web_search` blocks for downstream Messages clients
-  - force `thinking: { type: "disabled" }` on active web-search shim turns
-    since clients typically pair the native `web_search_*` tool with a forced
-    `tool_choice`, which most non-Anthropic upstreams reject when reasoning is
-    also enabled
   - strip `x-anthropic-billing-header` prompt attribution
   - strip `cache_control.scope`
   - rewrite upstream context-window errors into the Anthropic compact
@@ -405,6 +399,31 @@ Current placement:
     Copilot via the flag's `defaultFor: ["copilot"]` declaration in
     `targets/optional-fixes.ts`, admin-toggleable for custom upstreams that
     surface the same `cyber_policy` failure envelope
+- `src/data-plane/llm/shared/forced-tool-choice.ts`
+  - per-target shape detection helpers (`messagesHasForcedToolChoice`,
+    `responsesHasForcedToolChoice`, `chatHasForcedToolChoice`) consumed by
+    the `disable-reasoning-on-forced-tool-choice` interceptors below
+- `src/data-plane/llm/shared/disable-reasoning.ts`
+  - `disableMessagesReasoning` / `disableResponsesReasoning` /
+    `disableChatCompletionsReasoning` emit explicit-disable signals.
+    Messages uses Anthropic's native `thinking: { type: "disabled" }`.
+    Responses / Chat Completions strip `reasoning` / `reasoning_effort`
+    (OpenAI standard, no true off switch) and additionally emit
+    vendor-specific extensions when the upstream has the matching
+    vendor-style flag enabled — `vendor-deepseek` emits
+    `thinking: { type: "disabled" }` (the Anthropic schema copied into
+    the OpenAI request body); `vendor-qwen` emits
+    `enable_thinking: false`. Multiple vendor flags stack.
+- `src/data-plane/llm/targets/{messages,responses,chat-completions}/interceptors/disable-reasoning-on-forced-tool-choice.ts`
+  - three per-target interceptors bound to a single flag
+    `disable-reasoning-on-forced-tool-choice` (declared in
+    `targets/optional-fixes.ts`, default off). Each inspects its
+    target-shaped `tool_choice` (Messages `type === "tool" | "any"`;
+    Responses / Chat Completions `"required"` or object form); when
+    forced, calls the matching helper from `shared/disable-reasoning.ts`.
+    Flag → interceptor decoupling lets one admin toggle drive all three
+    targets simultaneously; vendor-style flags on the same upstream are
+    consumed by the helpers to layer in vendor extensions.
 - `src/data-plane/llm/targets/chat-completions/interceptors/include-usage-stream-options.ts`
   - always-on base interceptor: ensure streaming usage options needed by
     the gateway's usage-tracking pipeline
@@ -441,6 +460,15 @@ applied by `createCopilotUpstream`. Each optional interceptor declares
 `appliesTo`) lives exclusively in the catalog; the dependency goes
 interceptor → flag, never the other way. Multiple interceptors (e.g. across
 targets) can share the same `fixId` to bind to one flag.
+
+The catalog can also declare data-only flags with no bound
+`OptionalInterceptor` — typically vendor-style flags like
+`vendor-deepseek` / `vendor-qwen` that mark the upstream as following
+a known vendor's non-standard OpenAI protocol extensions. Toggling
+them alone does nothing; other
+interceptors read `upstream.enabledFixes` and dispatch on these to
+decide which vendor-specific fields to emit. Default (no vendor flag) =
+strict OpenAI standard.
 
 Do not spread the same workaround across route handlers, target emitters, and
 translation code at the same time.
