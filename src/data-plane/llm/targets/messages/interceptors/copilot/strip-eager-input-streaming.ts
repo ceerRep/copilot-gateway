@@ -4,8 +4,14 @@ import type { EmitToMessagesInput } from "../../emit.ts";
 
 /**
  * `eager_input_streaming` is a per-tool property in the Anthropic Messages API
- * that enables fine-grained tool input streaming. Copilot's upstream rejects it
- * with `"tools.N.custom.eager_input_streaming: Extra inputs are not permitted"`.
+ * that enables fine-grained tool input streaming. Copilot's native Messages
+ * target has been observed to reject it with
+ * `"tools.N.custom.eager_input_streaming: Extra inputs are not permitted"`, so
+ * strip it only at the Copilot target boundary and leave other upstream kinds
+ * untouched.
+ *
+ * References:
+ * - https://github.com/anthropics/anthropic-sdk-typescript/blob/a53f60d59ca904f3e79296586642aac3ce68ae02/src/resources/messages/messages.ts#L1761
  */
 export const withEagerInputStreamingStripped: TargetInterceptor<
   EmitToMessagesInput,

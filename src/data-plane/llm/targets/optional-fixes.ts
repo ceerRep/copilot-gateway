@@ -34,7 +34,6 @@ export interface Flag {
 }
 
 export const OPTIONAL_FIXES = [
-  // ── Vendor-style flags (data-only; consumers dispatch on these) ──
   {
     id: "vendor-deepseek",
     label: "Vendor: DeepSeek style",
@@ -52,7 +51,6 @@ export const OPTIONAL_FIXES = [
     appliesTo: ["messages", "responses", "chat_completions"],
   },
 
-  // ── Behaviour flags (have bound OptionalInterceptors) ──
   {
     id: "retry-cyber-policy",
     label: "Retry on upstream cyber-policy block",

@@ -4,9 +4,8 @@ import { messagesHasForcedToolChoice } from "../../../shared/forced-tool-choice.
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 import type { EmitToMessagesInput } from "../emit.ts";
 
-// Some upstreams reject the combination of forced `tool_choice` and
-// enabled reasoning/thinking. When opted in, explicitly disable
-// reasoning so the request is accepted.
+// Opt-in workaround for upstreams where forced `tool_choice` and enabled
+// thinking do not compose. Messages has a native `thinking: disabled` shape.
 export const withReasoningDisabledOnForcedToolChoice: TargetInterceptor<
   EmitToMessagesInput,
   MessagesResponse

@@ -4,11 +4,9 @@ import { chatHasForcedToolChoice } from "../../../shared/forced-tool-choice.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 import type { EmitToChatCompletionsInput } from "../emit.ts";
 
-// Some upstreams reject the combination of forced `tool_choice` and
-// enabled reasoning_effort. When opted in, explicitly disable
-// reasoning so the request is accepted. Vendor-style flags on the
-// upstream (`vendor-deepseek`, `vendor-qwen`) add vendor-specific
-// explicit-disable signals on top of the OpenAI strip.
+// Opt-in workaround for upstreams where forced `tool_choice` and enabled
+// reasoning do not compose. Vendor field mapping and references live in
+// shared/disable-reasoning.ts.
 export const withReasoningDisabledOnForcedToolChoice: TargetInterceptor<
   EmitToChatCompletionsInput,
   ChatCompletionResponse

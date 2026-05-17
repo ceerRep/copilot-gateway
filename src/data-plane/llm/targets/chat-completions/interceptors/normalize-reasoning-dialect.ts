@@ -8,17 +8,17 @@ import { jsonFrame, sseFrame } from "../../../shared/stream/types.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 
 /**
- * DeepSeek's reasoner endpoints predate OpenAI's `reasoning_text` / opaque
- * split — they keep the legacy `reasoning_content` scalar both in responses
- * and in the assistant messages a client must replay during multi-turn tool
- * calls. The gateway's internal protocol is the OpenAI shape, so on upstreams
- * with this fix enabled we rename fields on the way out (`reasoning_text` →
- * `reasoning_content`) and on the way back in (`reasoning_content` →
- * `reasoning_text`).
+ * DeepSeek's reasoner endpoints expose thinking text through the legacy
+ * `reasoning_content` scalar both in responses and in the assistant messages a
+ * client must replay during multi-turn tool calls. The gateway's internal
+ * protocol is the OpenAI shape, so on upstreams with this fix enabled we rename
+ * fields on the way out (`reasoning_text` → `reasoning_content`) and on the way
+ * back in (`reasoning_content` → `reasoning_text`).
  *
- * This is required for correctness, not just aesthetics: DeepSeek 400s if
- * the assistant message that produced a tool call is replayed without its
- * `reasoning_content`, since the model's tool-call rationale lives there.
+ * This is required for correctness, not just aesthetics: DeepSeek documents
+ * `reasoning_content` as part of the assistant message clients replay during
+ * multi-turn tool-call loops, and its integration notes report 400s when that
+ * field is omitted.
  *
  * Gating: bound to the `deepseek-reasoning-dialect` flag (declared in
  * ../../optional-fixes.ts) and enabled per-upstream via
@@ -27,6 +27,7 @@ import type { TargetInterceptor } from "../../run-interceptors.ts";
  *
  * References:
  * - https://api-docs.deepseek.com/zh-cn/guides/thinking_mode
+ * - https://api-docs.deepseek.com/quick_start/agent_integrations/oh_my_pi
  */
 
 type AnyRecord = Record<string, unknown>;
@@ -43,10 +44,10 @@ const synthesizeFromItems = (
 };
 
 const rewriteOutboundMessage = (message: Message): Message => {
-  // DeepSeek does not understand reasoning_opaque or reasoning_items — strip
-  // them unconditionally, regardless of whether reasoning_text is present.
-  // When reasoning_text is absent, synthesize from reasoning_items summaries
-  // so the visible reasoning chain survives the dialect hop.
+  // DeepSeek documents only the scalar reasoning_content field. Strip the
+  // OpenAI-only fields regardless of whether reasoning_text is present; when
+  // reasoning_text is absent, synthesize from reasoning_items summaries so the
+  // visible reasoning chain survives the dialect hop.
   const {
     reasoning_text,
     reasoning_opaque: _opaque,

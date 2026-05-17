@@ -19,16 +19,16 @@ import type { TargetInterceptor } from "../../run-interceptors.ts";
  *    `prompt_tokens_details.cached_tokens` (the standard). Variants observed:
  *    - DeepSeek: `prompt_cache_hit_tokens` / `prompt_cache_miss_tokens`
  *      (https://api-docs.deepseek.com/guides/kv_cache)
- *    - Kimi / Moonshot: flat `cached_tokens` on usage
- *      (https://platform.moonshot.cn/docs/api/caching)
+ *    - Kimi / Moonshot: flat `cached_tokens` on usage in examples
+ *      (https://platform.kimi.com/docs/api/chat)
  *    The standard shape itself (already-correct upstreams) is left untouched.
  *
  * 2. Final-usage chunk position: the OpenAI spec puts the final `usage` on a
  *    `choices: []` carrier chunk
  *    (https://platform.openai.com/docs/api-reference/chat-streaming).
- *    Some vendors (notably DeepSeek) attach `usage` to the same chunk that
- *    carries the final delta and `finish_reason`. We strip `usage` from such
- *    a chunk and re-emit it on a synthesized spec-compliant carrier chunk
+ *    Some upstreams have been observed to attach `usage` to the same chunk
+ *    that carries the final delta and `finish_reason`. We strip `usage` from
+ *    such a chunk and re-emit it on a synthesized spec-compliant carrier chunk
  *    immediately after.
  */
 

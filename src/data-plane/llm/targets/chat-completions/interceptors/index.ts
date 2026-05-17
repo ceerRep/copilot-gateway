@@ -25,8 +25,6 @@ const baseInterceptors = [
   ChatCompletionResponse
 >[];
 
-// Optional interceptors for the Chat Completions target. Each entry binds
-// a run function to a flag id declared in ../../optional-fixes.ts.
 export const chatCompletionsOptionalInterceptors = [
   {
     fixId: "deepseek-reasoning-dialect",
@@ -48,8 +46,6 @@ export const interceptorsForChatCompletions = (
   ChatCompletionResponse
 >[] => [
   ...baseInterceptors,
-  // No Copilot-only chat-completions workarounds today; the subdir is omitted
-  // until a first one shows up.
   ...chatCompletionsOptionalInterceptors
     .filter(({ fixId }) => upstream.enabledFixes.has(fixId))
     .map(({ run }) => run),

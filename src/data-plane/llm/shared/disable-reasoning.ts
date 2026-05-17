@@ -1,22 +1,24 @@
-// Vendor-aware reasoning-disable helpers. Each takes the upstream's
-// `enabledFixes` set and emits explicit-disable signals on top of the
-// OpenAI-standard strip.
+// Vendor-aware reasoning-disable helpers for forced tool-call requests. The
+// target interceptors decide when to apply the workaround; this file owns how
+// "turn reasoning off" is spelled for each upstream dialect.
 //
-// Why disable at all: DeepSeek's reasoner models and vLLM-served
-// reasoning models are known to reject the combination of forced
-// `tool_choice` + reasoning. Other upstreams may accept the
-// combination — the consuming flag is admin opt-in per upstream.
+// Some reasoning-capable upstreams do not compose forced `tool_choice` with
+// active reasoning. DeepSeek documents one such case for its thinking mode;
+// other vendors and self-hosted deployments are provider-specific, so the
+// consuming fix stays admin opt-in per upstream.
+// Reference:
+//   - https://api-docs.deepseek.com/quick_start/agent_integrations/oh_my_pi
 //
 // Signals emitted:
 //
 //   Default (no vendor flag): just remove `reasoning_effort` /
 //     `reasoning`. Works for non-reasoning models; reasoning-only
-//     models keep their model-default effort because OpenAI standard
-//     has no off switch.
+//     models keep their model-default effort because the OpenAI-style
+//     request shape has no portable off switch.
 //
 //   `vendor-deepseek`: also emit `thinking: { type: "disabled" }` as a
-//     top-level field. DeepSeek copied Anthropic's schema verbatim into
-//     its OpenAI-compatible request body.
+//     top-level field. DeepSeek documents this as an OpenAI-compatible
+//     `extra_body` field.
 //     Reference:
 //       - https://api-docs.deepseek.com/guides/thinking_mode
 //
@@ -26,8 +28,8 @@
 //       - https://www.alibabacloud.com/help/en/model-studio/deep-thinking
 //
 // Multiple vendor flags may be on simultaneously; emitted fields stack.
-// Strict upstreams that reject unknown fields will 400 — admins must
-// only enable vendor flags matching the actual upstream protocol.
+// Upstreams may reject unknown fields, so admins must only enable vendor
+// flags matching the actual upstream protocol.
 
 import type { ChatCompletionsPayload } from "../../../lib/chat-completions-types.ts";
 import type { MessagesPayload } from "../../../lib/messages-types.ts";

@@ -10,14 +10,11 @@ import { responsesCopilotInterceptors } from "./copilot/index.ts";
 import { withReasoningDisabledOnForcedToolChoice } from "./disable-reasoning-on-forced-tool-choice.ts";
 import { withCyberPolicyRetried } from "./retry-cyber-policy.ts";
 
-// Always-on Responses target interceptors. None currently apply.
 const baseInterceptors: readonly TargetInterceptor<
   EmitInput<ResponsesPayload>,
   ResponsesResult
 >[] = [];
 
-// Optional interceptors for the Responses target. Each entry binds a run
-// function to a flag id declared in ../../optional-fixes.ts.
 export const responsesOptionalInterceptors = [
   { fixId: "retry-cyber-policy", run: withCyberPolicyRetried },
   {

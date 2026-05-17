@@ -36,8 +36,6 @@ const SPOTTED_EC_PREFIX = "spotted_invalid_ec:";
 
 type AnyItem = Record<string, unknown>;
 
-// ── Helpers ──
-
 const isBase64Id = (id: string): boolean => {
   if (id.length < 20) return false;
   try {
@@ -109,7 +107,6 @@ const isConnectionMismatchUpstreamError = (body: Uint8Array): boolean => {
   }
 };
 
-// ── ID handling ──
 // Regular items with a spotted ID get the ID replaced with a hash-derived
 // short ID. item_reference items with a spotted ID are dropped entirely
 // (they have no inline content to preserve). Both share the same cache space.
@@ -167,8 +164,6 @@ const collectBase64Ids = (items: AnyItem[]): string[] =>
     return typeof id === "string" && isBase64Id(id) ? [id] : [];
   });
 
-// ── encrypted_content handling ──
-
 const stripSpottedEncryptedContent = async (
   items: AnyItem[],
 ): Promise<boolean> => {
@@ -213,8 +208,6 @@ const collectEncryptedContentHashes = async (
   );
 };
 
-// ── Pre-flight: apply all cached fixes ──
-
 const applySpottedFixes = async (
   payload: ResponsesPayload,
 ): Promise<void> => {
@@ -226,8 +219,6 @@ const applySpottedFixes = async (
     stripSpottedEncryptedContent(items),
   ]);
 };
-
-// ── On error: collect, cache, fix, retry ──
 
 const collectAndFixAll = async (
   payload: ResponsesPayload,
@@ -249,8 +240,6 @@ const collectAndFixAll = async (
   await applySpottedFixes(payload);
   return true;
 };
-
-// ── Interceptor ──
 
 export const withConnectionMismatchRetried: TargetInterceptor<
   { payload: ResponsesPayload },
