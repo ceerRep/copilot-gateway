@@ -51,7 +51,11 @@ export const inferredChatCompletionsSupport = (
   model.supported_endpoints === undefined &&
   model.capabilities?.type === "chat";
 
-const LLM_ENDPOINTS = new Set(["/v1/messages", "/responses", "/chat/completions"]);
+const LLM_ENDPOINTS = new Set([
+  "/v1/messages",
+  "/responses",
+  "/chat/completions",
+]);
 
 export const endpointsIncludeLlmGeneration = (
   endpoints: string[],

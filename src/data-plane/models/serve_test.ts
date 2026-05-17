@@ -46,7 +46,9 @@ Deno.test("/v1/models returns merged model list from Copilot and custom upstream
         refresh_in: 3600,
       });
     }
-    if (url.pathname === "/models" && url.hostname === "api.githubcopilot.com") {
+    if (
+      url.pathname === "/models" && url.hostname === "api.githubcopilot.com"
+    ) {
       return jsonResponse(copilotModels([
         { id: "claude-sonnet-4", supported_endpoints: ["/v1/messages"] },
       ]));

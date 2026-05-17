@@ -14,11 +14,10 @@ export const normalizeGatewayConfig = (raw: unknown): GatewayConfig => {
   }
   const obj = raw as Record<string, unknown>;
   return {
-    codexAutoReviewModel:
-      typeof obj.codexAutoReviewModel === "string" &&
+    codexAutoReviewModel: typeof obj.codexAutoReviewModel === "string" &&
         obj.codexAutoReviewModel.length > 0
-        ? obj.codexAutoReviewModel
-        : null,
+      ? obj.codexAutoReviewModel
+      : null,
   };
 };
 

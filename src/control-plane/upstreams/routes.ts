@@ -75,15 +75,19 @@ const validateEndpoints = (
   value: unknown,
 ): { ok: true; value: string[] } | { ok: false; error: string } => {
   if (!Array.isArray(value) || value.length === 0) {
-    return { ok: false, error: "supported_endpoints must be a non-empty array" };
+    return {
+      ok: false,
+      error: "supported_endpoints must be a non-empty array",
+    };
   }
   const result: string[] = [];
   for (const v of value) {
     if (typeof v !== "string" || !ALLOWED_ENDPOINTS.has(v)) {
       return {
         ok: false,
-        error:
-          `Each supported_endpoints entry must be one of: ${[...ALLOWED_ENDPOINTS].join(", ")}`,
+        error: `Each supported_endpoints entry must be one of: ${
+          [...ALLOWED_ENDPOINTS].join(", ")
+        }`,
       };
     }
     if (!result.includes(v)) result.push(v);
@@ -147,8 +151,9 @@ const validatePathOverrides = (
     if (!OVERRIDABLE_ENDPOINTS.has(k as never)) {
       return {
         ok: false,
-        error:
-          `path_overrides keys must be one of: ${[...OVERRIDABLE_ENDPOINTS].join(", ")}`,
+        error: `path_overrides keys must be one of: ${
+          [...OVERRIDABLE_ENDPOINTS].join(", ")
+        }`,
       };
     }
     const path = validateUpstreamPath(v, `path_overrides.${k}`);
@@ -305,9 +310,16 @@ export const testUpstream = async (c: Context) => {
     }
     const data = await resp.json() as { data?: Array<{ id: string }> };
     const ids = Array.isArray(data?.data)
-      ? data.data.map((m) => m.id).filter((v): v is string => typeof v === "string")
+      ? data.data.map((m) => m.id).filter((v): v is string =>
+        typeof v === "string"
+      )
       : [];
-    return c.json({ ok: true, status: resp.status, model_count: ids.length, models: ids.slice(0, 50) });
+    return c.json({
+      ok: true,
+      status: resp.status,
+      model_count: ids.length,
+      models: ids.slice(0, 50),
+    });
   } catch (e) {
     return c.json({
       ok: false,

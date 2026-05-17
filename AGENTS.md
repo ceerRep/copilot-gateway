@@ -98,6 +98,36 @@ The LLM subtree is role-organized:
 - `src/data-plane/llm/translate/`
 - `src/data-plane/llm/shared/`
 
+`src/data-plane/llm/translate/` is organized by source API and selected target
+API, using `<source>-via-<target>` directories such as `messages-via-responses`
+and `gemini-via-chat-completions`. Each pair directory uses the same production
+layout:
+
+- `request.ts`: source request -> selected target request; this file exports
+  `buildTargetRequest` for source pipelines.
+- `result.ts`: selected target complete result or terminal result helper ->
+  source result shape.
+- `events.ts`: selected target protocol event stream -> source protocol event
+  stream; this file exports `translateToSourceEvents` and may import `result.ts`
+  for terminal JSON fallback.
+- optional `utils.ts`: pair-local helpers only when `request.ts` and `result.ts`
+  / `events.ts` both need the same rule.
+
+Only cross-pair primitives belong in `src/data-plane/llm/translate/shared/`.
+Current shared modules are intentionally narrow:
+
+- `chat-responses-reasoning.ts`: Chat Completions <-> Responses reasoning-item
+  projection, used only by those two pair directions.
+- `messages-responses-signature.ts`: Messages <-> Responses reasoning signature
+  packing and unpacking.
+- `remote-images.ts`: remote image loading and conversion to Messages image
+  blocks, used by source APIs that target Messages.
+- `responses-stream-order.ts`: Responses output-order tracking for sources that
+  consume Responses streams.
+- `json.ts`: safe JSON-object parsing for tool-call arguments.
+- `tool-arguments.ts`: shared tool-argument stream guards such as whitespace
+  overflow detection.
+
 `sources`, `targets`, and `translate` under `src/data-plane/llm/` are only for
 Messages, Responses, Chat Completions, and Gemini LLM generation routing. Do not
 place `models`, `embeddings`, data-plane tools, Gemini model listing, or Gemini
@@ -234,30 +264,30 @@ Gemini-compatible routes:
 Custom OpenAI-compatible upstreams are admin-configured via `/api/upstreams`.
 Each upstream stores:
 
-- `base_url`: stitched directly with the per-endpoint path (no automatic
-  `/v1` prefix). The final URL is exactly `base_url + path`.
+- `base_url`: stitched directly with the per-endpoint path (no automatic `/v1`
+  prefix). The final URL is exactly `base_url + path`.
 - `path_overrides`: optional per-endpoint override map keyed by the logical
   endpoint name (`chat_completions`, `responses`, `messages`, `embeddings`,
   `models`). Use this when a provider mounts the API under a subpath while
   keeping `/models` at the host root, or any other path divergence.
-  `messages_count_tokens` is not separately configurable; it follows
-  `messages` and resolves to `<messages-path>/count_tokens`.
-- `supported_endpoints`: admin-declared capability list used when the
-  provider's `/models` response omits per-model `supported_endpoints`. The
-  capability resolver treats this as authoritative (`hasExplicitCapabilities`
-  is true) so planning routes strictly through declared endpoints. Custom
-  upstreams therefore never participate in the legacy `claude*`-style
-  model-name fallback — embedding-only providers surface "not supported"
-  instead of being mis-routed onto chat traffic.
-- `enabled_fixes`: opt-in flag ids the admin wants applied to this upstream.
-  The full catalog is served by `GET /api/upstream-fixes`; each entry has an
+  `messages_count_tokens` is not separately configurable; it follows `messages`
+  and resolves to `<messages-path>/count_tokens`.
+- `supported_endpoints`: admin-declared capability list used when the provider's
+  `/models` response omits per-model `supported_endpoints`. The capability
+  resolver treats this as authoritative (`hasExplicitCapabilities` is true) so
+  planning routes strictly through declared endpoints. Custom upstreams
+  therefore never participate in the legacy `claude*`-style model-name fallback
+  — embedding-only providers surface "not supported" instead of being mis-routed
+  onto chat traffic.
+- `enabled_fixes`: opt-in flag ids the admin wants applied to this upstream. The
+  full catalog is served by `GET /api/upstream-fixes`; each entry has an
   `appliesTo` list of endpoints (`messages`, `responses`, `chat_completions`)
   documenting where an interceptor exists for the flag. Validation only
-  hard-rejects unknown ids (typo catch); a known flag is accepted regardless
-  of `supported_endpoints` overlap — flags whose endpoints aren't actually
-  served simply no-op at the assembler. Copilot-only structural workarounds
-  (under each target's `interceptors/copilot/` subdir) are never exposed
-  here — they attach by upstream kind, not by flag.
+  hard-rejects unknown ids (typo catch); a known flag is accepted regardless of
+  `supported_endpoints` overlap — flags whose endpoints aren't actually served
+  simply no-op at the assembler. Copilot-only structural workarounds (under each
+  target's `interceptors/copilot/` subdir) are never exposed here — they attach
+  by upstream kind, not by flag.
 
 Copilot upstream paths, supported endpoints, and `enabled_fixes` are not
 admin-configurable. Copilot's `/models` response is authoritative per SKU; a
@@ -267,14 +297,13 @@ rather than "all endpoints". As a narrow exception, legacy Copilot chat SKUs
 field at all, so when `capabilities.type === "chat"` the resolver infers
 `/chat/completions` support. This inference happens through
 `supportsChatCompletions`, not through the legacy `claude*` fallback — Copilot
-chat models route correctly without `hasExplicitCapabilities` ever being
-true.
+chat models route correctly without `hasExplicitCapabilities` ever being true.
 
-The `codex-auto-review` virtual model and any other gateway-level mappings
-live in the `gatewayConfig` repo and are admin-configured via the dashboard
-Settings tab. `resolveModelForRequest` applies the mapping as the first step
-of every source's model resolution so every source API agrees on the routed
-upstream model.
+The `codex-auto-review` virtual model and any other gateway-level mappings live
+in the `gatewayConfig` repo and are admin-configured via the dashboard Settings
+tab. `resolveModelForRequest` applies the mapping as the first step of every
+source's model resolution so every source API agrees on the routed upstream
+model.
 
 ## Data Plane Routing Rules
 
@@ -303,9 +332,9 @@ If no capability-backed target is available, `/v1/chat/completions` keeps its
 legacy model-name fallback only when the resolved upstream did not declare
 capabilities explicitly (`hasExplicitCapabilities` false): `claude*` models
 route through `/v1/messages`, and other models route through native
-`/chat/completions`. Custom upstreams with declared
-`supported_endpoints` skip the fallback and surface "not supported" instead,
-so embedding-only providers never receive chat traffic.
+`/chat/completions`. Custom upstreams with declared `supported_endpoints` skip
+the fallback and surface "not supported" instead, so embedding-only providers
+never receive chat traffic.
 
 `/v1beta/models/:model:generateContent` and
 `/v1beta/models/:model:streamGenerateContent` use the same target preference as
@@ -373,31 +402,31 @@ Current placement:
   - strip `safetySettings`
   - hide `thought: true` summary parts by default; only expose Gemini thought
     summaries when `generationConfig.thinkingConfig.includeThoughts === true`
-- `src/data-plane/llm/translate/gemini-via-chat-completions/translate-to-source-events.ts`
+- `src/data-plane/llm/translate/gemini-via-chat-completions/events.ts`
   - preserve `thoughtSignature` on the next visible text or function-call action
     part so clients can echo it next turn
-- `src/lib/translate/messages-responses-signature.ts`
+- `src/data-plane/llm/translate/shared/messages-responses-signature.ts`
   - pack Responses reasoning item ids into Anthropic `thinking.signature` /
     `redacted_thinking.data` for Messages <-> Responses translation, and unpack
     them on the reverse path so Copilot encrypted-content verification sees the
     original item id
 - `src/data-plane/llm/sources/gemini/respond.ts`
   - translate source errors into Google RPC Status envelopes
-- `src/data-plane/llm/targets/messages/interceptors/copilot/`
-  (assembler picks these up only when `upstream.kind === "copilot"`)
-  - `promote-thinking-display.ts` — promote Claude 4.x default thinking
-    display so clients see summarized or full thinking text rather than
-    upstream's omitted summary
+- `src/data-plane/llm/targets/messages/interceptors/copilot/` (assembler picks
+  these up only when `upstream.kind === "copilot"`)
+  - `promote-thinking-display.ts` — promote Claude 4.x default thinking display
+    so clients see summarized or full thinking text rather than upstream's
+    omitted summary
   - `fix-beta-header.ts` — whitelist `anthropic-beta` and auto-add
     `interleaved-thinking-2025-05-14` when required
   - `strip-done-sentinel.ts` — strip stray `[DONE]` sentinels
   - `strip-eager-input-streaming.ts` — drop per-tool `eager_input_streaming`
     Copilot upstream rejects
-- `src/data-plane/llm/targets/responses/interceptors/copilot/`
-  (assembler picks these up only when `upstream.kind === "copilot"`)
+- `src/data-plane/llm/targets/responses/interceptors/copilot/` (assembler picks
+  these up only when `upstream.kind === "copilot"`)
   - `strip-service-tier.ts` — strip unsupported `service_tier`
-  - `retry-connection-mismatch.ts` — detect expired connection-bound input
-    IDs, deterministically rewrite IDs, and retry once
+  - `retry-connection-mismatch.ts` — detect expired connection-bound input IDs,
+    deterministically rewrite IDs, and retry once
   - `synchronize-output-item-ids.ts` — synchronize mismatched stream item IDs
 - `src/data-plane/llm/targets/responses/interceptors/retry-cyber-policy.ts`
   - opt-in interceptor bound to flag `retry-cyber-policy`; defaulted on for
@@ -406,96 +435,87 @@ Current placement:
     surface the same `cyber_policy` failure envelope
 - `src/data-plane/llm/shared/forced-tool-choice.ts`
   - per-target shape detection helpers (`messagesHasForcedToolChoice`,
-    `responsesHasForcedToolChoice`, `chatHasForcedToolChoice`) consumed by
-    the `disable-reasoning-on-forced-tool-choice` interceptors below
+    `responsesHasForcedToolChoice`, `chatHasForcedToolChoice`) consumed by the
+    `disable-reasoning-on-forced-tool-choice` interceptors below
 - `src/data-plane/llm/shared/disable-reasoning.ts`
   - `disableMessagesReasoning` / `disableResponsesReasoning` /
-    `disableChatCompletionsReasoning` emit explicit-disable signals.
-    Messages uses Anthropic's native `thinking: { type: "disabled" }`.
-    Responses / Chat Completions strip `reasoning` / `reasoning_effort`
-    (OpenAI standard, no true off switch) and additionally emit
-    vendor-specific extensions when the upstream has the matching
-    vendor-style flag enabled — `vendor-deepseek` emits
-    `thinking: { type: "disabled" }` (the Anthropic schema copied into
-    the OpenAI request body); `vendor-qwen` emits
-    `enable_thinking: false`. Multiple vendor flags stack.
+    `disableChatCompletionsReasoning` emit explicit-disable signals. Messages
+    uses Anthropic's native `thinking: { type: "disabled" }`. Responses / Chat
+    Completions strip `reasoning` / `reasoning_effort` (OpenAI standard, no true
+    off switch) and additionally emit vendor-specific extensions when the
+    upstream has the matching vendor-style flag enabled — `vendor-deepseek`
+    emits `thinking: { type: "disabled" }` (the Anthropic schema copied into the
+    OpenAI request body); `vendor-qwen` emits `enable_thinking: false`. Multiple
+    vendor flags stack.
 - `src/data-plane/llm/targets/{messages,responses,chat-completions}/interceptors/disable-reasoning-on-forced-tool-choice.ts`
   - three per-target interceptors bound to a single flag
     `disable-reasoning-on-forced-tool-choice` (declared in
-    `targets/optional-fixes.ts`, default off). Each inspects its
-    target-shaped `tool_choice` (Messages `type === "tool" | "any"`;
-    Responses / Chat Completions `"required"` or object form); when
-    forced, calls the matching helper from `shared/disable-reasoning.ts`.
-    Flag → interceptor decoupling lets one admin toggle drive all three
-    targets simultaneously; vendor-style flags on the same upstream are
-    consumed by the helpers to layer in vendor extensions.
+    `targets/optional-fixes.ts`, default off). Each inspects its target-shaped
+    `tool_choice` (Messages `type === "tool" | "any"`; Responses / Chat
+    Completions `"required"` or object form); when forced, calls the matching
+    helper from `shared/disable-reasoning.ts`. Flag → interceptor decoupling
+    lets one admin toggle drive all three targets simultaneously; vendor-style
+    flags on the same upstream are consumed by the helpers to layer in vendor
+    extensions.
 - `src/data-plane/llm/targets/chat-completions/interceptors/include-usage-stream-options.ts`
-  - always-on base interceptor: ensure streaming usage options needed by
-    the gateway's usage-tracking pipeline
+  - always-on base interceptor: ensure streaming usage options needed by the
+    gateway's usage-tracking pipeline
 - `src/data-plane/llm/targets/chat-completions/interceptors/normalize-usage.ts`
-  - always-on base interceptor: normalize OpenAI / DeepSeek / Kimi `usage`
-    variants into the OpenAI standard shape so translation and accounting
-    read one contract
-- `src/data-plane/llm/targets/chat-completions/interceptors/normalize-reasoning-dialect.ts`
-  - opt-in interceptor bound to flag `deepseek-reasoning-dialect` (default
-    off): rename OpenAI-shape `reasoning_text` to DeepSeek's legacy
-    `reasoning_content` on outbound requests, and back on inbound chunks
-    and JSON results; drop `reasoning_opaque` and `reasoning_items` since
-    DeepSeek has no concept of an opaque reasoning chain
-- `src/data-plane/llm/targets/chat-completions/interceptors/normalize-usage.ts`
-  - rewrite vendor cache-token field variants (DeepSeek `prompt_cache_hit_tokens`,
-    Kimi flat `cached_tokens`, ...) into the OpenAI standard
-    `prompt_tokens_details.cached_tokens` on both non-stream responses and
-    stream chunks
+  - always-on base interceptor: rewrite vendor cache-token field variants
+    (DeepSeek `prompt_cache_hit_tokens`, Kimi flat `cached_tokens`, ...) into
+    the OpenAI standard `prompt_tokens_details.cached_tokens` on both non-stream
+    responses and stream chunks, so translation and accounting read one contract
   - relocate `usage` from a non-spec chunk (vendors that attach it to a chunk
     with non-empty `choices`) to a synthesized spec-compliant `choices: []`
     carrier chunk
-- shared translation event helpers
+- `src/data-plane/llm/targets/chat-completions/interceptors/normalize-reasoning-dialect.ts`
+  - opt-in interceptor bound to flag `deepseek-reasoning-dialect` (default off):
+    rename OpenAI-shape `reasoning_text` to DeepSeek's legacy
+    `reasoning_content` on outbound requests, and back on inbound chunks and
+    JSON results; drop `reasoning_opaque` and `reasoning_items` since DeepSeek
+    has no concept of an opaque reasoning chain
+- `src/data-plane/llm/translate/shared/tool-arguments.ts`
   - guard against infinite whitespace in tool/function arguments
 
 Target interceptor assembly: each
 `src/data-plane/llm/targets/<x>/interceptors/index.ts` exposes a single
 `interceptorsFor<X>(upstream)` function that returns
 `base ++ (copilot/ if upstream.kind === "copilot") ++ filter(optional
-interceptors by upstream.enabledFixes)`. The flag catalog lives in
-`src/data-plane/llm/targets/optional-fixes.ts` and is the single source of
-truth for `GET /api/upstream-fixes` and for the per-kind default fix set.
-Each optional interceptor declares `{ fixId, run }` only — flag metadata
-(`label`, `description`, `defaultFor`, `appliesTo`) lives exclusively in
-the catalog; the dependency goes interceptor → flag, never the other way.
-Multiple interceptors (e.g. across targets) can share the same `fixId` to
-bind to one flag.
+interceptors by upstream.enabledFixes)`.
+The flag catalog lives in `src/data-plane/llm/targets/optional-fixes.ts` and is
+the single source of truth for `GET /api/upstream-fixes` and for the per-kind
+default fix set. Each optional interceptor declares `{ fixId, run }` only — flag
+metadata (`label`, `description`, `defaultFor`, `appliesTo`) lives exclusively
+in the catalog; the dependency goes interceptor → flag, never the other way.
+Multiple interceptors (e.g. across targets) can share the same `fixId` to bind
+to one flag.
 
-`lib/upstream/*` adapters (`copilot.ts`, `openai.ts`) stay
-catalog-agnostic. The Upstream they construct carries only the admin's
-explicit opt-in fix ids (empty for built-in Copilot, JSON-decoded for
-custom upstreams). Per-kind defaults are merged into the effective set
-inside the data-plane, at `runOnUpstream` in
-`src/data-plane/llm/shared/upstream-run.ts` via the `withDefaultFixes`
-helper — so the assembler always reads `defaults ∪ admin opt-ins` from
-`upstream.enabledFixes`, but the catalog import only crosses into
-data-plane code.
+`lib/upstream/*` adapters (`copilot.ts`, `openai.ts`) stay catalog-agnostic. The
+Upstream they construct carries only the admin's explicit opt-in fix ids (empty
+for built-in Copilot, JSON-decoded for custom upstreams). Per-kind defaults are
+merged into the effective set inside the data-plane, at `runOnUpstream` in
+`src/data-plane/llm/shared/upstream-run.ts` via the `withDefaultFixes` helper —
+so the assembler always reads `defaults ∪ admin opt-ins` from
+`upstream.enabledFixes`, but the catalog import only crosses into data-plane
+code.
 
-`data-plane/shared/` holds neutral request-path infrastructure shared
-by LLM and non-LLM endpoints (`upstream-run.ts` for the
-openai/copilot-fallback dispatch, `models/resolve-endpoints.ts` for
-generic supported_endpoints semantics). LLM-specific layering wraps
-the neutral pieces in `data-plane/llm/shared/` — e.g. the LLM-flavoured
-`runOnUpstream` adds `withDefaultFixes` on top, and
+`data-plane/shared/` holds neutral request-path infrastructure shared by LLM and
+non-LLM endpoints (`upstream-run.ts` for the openai/copilot-fallback dispatch,
+`models/resolve-endpoints.ts` for generic supported_endpoints semantics).
+LLM-specific layering wraps the neutral pieces in `data-plane/llm/shared/` —
+e.g. the LLM-flavoured `runOnUpstream` adds `withDefaultFixes` on top, and
 `get-model-capabilities.ts` re-exports the neutral
 `resolveEffectiveSupportedEndpoints` while owning the LLM-shape
-`ModelCapabilities` interface. Non-LLM endpoints like `/v1/embeddings`
-import only from `data-plane/shared/` so they never transitively
-depend on the LLM target fix catalog.
+`ModelCapabilities` interface. Non-LLM endpoints like `/v1/embeddings` import
+only from `data-plane/shared/` so they never transitively depend on the LLM
+target fix catalog.
 
-The catalog can also declare data-only flags with no bound
-`OptionalInterceptor` — typically vendor-style flags like
-`vendor-deepseek` / `vendor-qwen` that mark the upstream as following
-a known vendor's non-standard OpenAI protocol extensions. Toggling
-them alone does nothing; other
-interceptors read `upstream.enabledFixes` and dispatch on these to
-decide which vendor-specific fields to emit. Default (no vendor flag) =
-strict OpenAI standard.
+The catalog can also declare data-only flags with no bound `OptionalInterceptor`
+— typically vendor-style flags like `vendor-deepseek` / `vendor-qwen` that mark
+the upstream as following a known vendor's non-standard OpenAI protocol
+extensions. Toggling them alone does nothing; other interceptors read
+`upstream.enabledFixes` and dispatch on these to decide which vendor-specific
+fields to emit. Default (no vendor flag) = strict OpenAI standard.
 
 Do not spread the same workaround across route handlers, target emitters, and
 translation code at the same time.
@@ -679,7 +699,12 @@ These rules apply project-wide, not only to the data plane.
 - Target-owned request/response/retry fixes belong in
   `src/data-plane/llm/targets/<target>/interceptors/` and are registered in that
   directory's `index.ts`.
-- Pairwise translators belong in `src/data-plane/llm/translate/`.
+- Pairwise translators belong in
+  `src/data-plane/llm/translate/<source>-via-<target>/`.
+- Pair directories should expose `request.ts`, `result.ts`, and `events.ts` as
+  their production modules; tests should stay in the same directory.
+- Shared translation primitives belong in `src/data-plane/llm/translate/shared/`
+  only when more than one pair needs the same boundary rule.
 - Models endpoint work belongs in `src/data-plane/models/`.
 - Embeddings endpoint work belongs in `src/data-plane/embeddings/`.
 - Gemini model listing and count-token endpoints belong in
@@ -692,9 +717,8 @@ These rules apply project-wide, not only to the data plane.
 - Source-specific request cleanup, planning, response assembly, and
   orchestration belong under that source API's subtree.
 - Keep final source protocol collection and response shaping source-local.
-- If you are reorganizing pair modules, prefer
-  `src/data-plane/llm/translate/<source>-via-<target>/` over split request/event
-  directories.
+- Do not reintroduce flat `src/lib/translate` translator modules or split
+  request/event directory trees outside the source-via-target pair directories.
 
 When in doubt, prefer the location that matches the boundary where the logic is
 true.

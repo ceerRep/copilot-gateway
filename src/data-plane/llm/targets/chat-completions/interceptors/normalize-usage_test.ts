@@ -28,23 +28,26 @@ const collectFrames = async (
 };
 
 Deno.test("withUsageNormalized rewrites DeepSeek prompt_cache_hit_tokens on non-stream responses", async () => {
-  const result = await withUsageNormalized(baseCtx(), () =>
-    Promise.resolve(eventResult((async function* () {
-      yield jsonFrame({
-        id: "x",
-        object: "chat.completion",
-        created: 0,
-        model: "deepseek-test",
-        choices: [],
-        usage: {
-          prompt_tokens: 100,
-          completion_tokens: 20,
-          total_tokens: 120,
-          prompt_cache_hit_tokens: 70,
-          prompt_cache_miss_tokens: 30,
-        },
-      } as unknown as ChatCompletionResponse);
-    })())));
+  const result = await withUsageNormalized(
+    baseCtx(),
+    () =>
+      Promise.resolve(eventResult((async function* () {
+        yield jsonFrame({
+          id: "x",
+          object: "chat.completion",
+          created: 0,
+          model: "deepseek-test",
+          choices: [],
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 120,
+            prompt_cache_hit_tokens: 70,
+            prompt_cache_miss_tokens: 30,
+          },
+        } as unknown as ChatCompletionResponse);
+      })())),
+  );
 
   const frames = await collectFrames(result);
   assertEquals(frames.length, 1);
@@ -58,22 +61,25 @@ Deno.test("withUsageNormalized rewrites DeepSeek prompt_cache_hit_tokens on non-
 });
 
 Deno.test("withUsageNormalized rewrites Kimi flat cached_tokens on non-stream responses", async () => {
-  const result = await withUsageNormalized(baseCtx(), () =>
-    Promise.resolve(eventResult((async function* () {
-      yield jsonFrame({
-        id: "x",
-        object: "chat.completion",
-        created: 0,
-        model: "kimi-test",
-        choices: [],
-        usage: {
-          prompt_tokens: 100,
-          completion_tokens: 20,
-          total_tokens: 120,
-          cached_tokens: 50,
-        },
-      } as unknown as ChatCompletionResponse);
-    })())));
+  const result = await withUsageNormalized(
+    baseCtx(),
+    () =>
+      Promise.resolve(eventResult((async function* () {
+        yield jsonFrame({
+          id: "x",
+          object: "chat.completion",
+          created: 0,
+          model: "kimi-test",
+          choices: [],
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 120,
+            cached_tokens: 50,
+          },
+        } as unknown as ChatCompletionResponse);
+      })())),
+  );
 
   const frames = await collectFrames(result);
   const usage = (frames[0] as { type: "json"; data: unknown }).data as {
@@ -84,22 +90,25 @@ Deno.test("withUsageNormalized rewrites Kimi flat cached_tokens on non-stream re
 });
 
 Deno.test("withUsageNormalized leaves standard prompt_tokens_details untouched", async () => {
-  const result = await withUsageNormalized(baseCtx(), () =>
-    Promise.resolve(eventResult((async function* () {
-      yield jsonFrame({
-        id: "x",
-        object: "chat.completion",
-        created: 0,
-        model: "gpt-test",
-        choices: [],
-        usage: {
-          prompt_tokens: 100,
-          completion_tokens: 20,
-          total_tokens: 120,
-          prompt_tokens_details: { cached_tokens: 60, audio_tokens: 0 },
-        },
-      } as unknown as ChatCompletionResponse);
-    })())));
+  const result = await withUsageNormalized(
+    baseCtx(),
+    () =>
+      Promise.resolve(eventResult((async function* () {
+        yield jsonFrame({
+          id: "x",
+          object: "chat.completion",
+          created: 0,
+          model: "gpt-test",
+          choices: [],
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 120,
+            prompt_tokens_details: { cached_tokens: 60, audio_tokens: 0 },
+          },
+        } as unknown as ChatCompletionResponse);
+      })())),
+  );
 
   const frames = await collectFrames(result);
   const usage = (frames[0] as { type: "json"; data: unknown }).data as {
@@ -120,33 +129,39 @@ Deno.test("withUsageNormalized passes responses without usage through unchanged"
     choices: [{ index: 0, message: { role: "assistant", content: "hi" } }],
   } as unknown as ChatCompletionResponse;
 
-  const result = await withUsageNormalized(baseCtx(), () =>
-    Promise.resolve(eventResult((async function* () {
-      yield jsonFrame(original);
-    })())));
+  const result = await withUsageNormalized(
+    baseCtx(),
+    () =>
+      Promise.resolve(eventResult((async function* () {
+        yield jsonFrame(original);
+      })())),
+  );
 
   const frames = await collectFrames(result);
   assertEquals((frames[0] as { type: "json"; data: unknown }).data, original);
 });
 
 Deno.test("withUsageNormalized relocates DeepSeek usage from a non-empty choices chunk to a synthesized carrier", async () => {
-  const result = await withUsageNormalized(baseCtx(), () =>
-    Promise.resolve(eventResult((async function* () {
-      yield sseFrame(JSON.stringify({
-        id: "chatcmpl_1",
-        object: "chat.completion.chunk",
-        created: 1,
-        model: "deepseek-test",
-        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-        usage: {
-          prompt_tokens: 100,
-          completion_tokens: 20,
-          total_tokens: 120,
-          prompt_cache_hit_tokens: 70,
-          prompt_cache_miss_tokens: 30,
-        },
-      }));
-    })())));
+  const result = await withUsageNormalized(
+    baseCtx(),
+    () =>
+      Promise.resolve(eventResult((async function* () {
+        yield sseFrame(JSON.stringify({
+          id: "chatcmpl_1",
+          object: "chat.completion.chunk",
+          created: 1,
+          model: "deepseek-test",
+          choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 120,
+            prompt_cache_hit_tokens: 70,
+            prompt_cache_miss_tokens: 30,
+          },
+        }));
+      })())),
+  );
 
   const frames = await collectFrames(result);
   assertEquals(frames.length, 2);
@@ -167,22 +182,25 @@ Deno.test("withUsageNormalized relocates DeepSeek usage from a non-empty choices
 });
 
 Deno.test("withUsageNormalized rewrites usage in-place on a spec-compliant carrier chunk", async () => {
-  const result = await withUsageNormalized(baseCtx(), () =>
-    Promise.resolve(eventResult((async function* () {
-      yield sseFrame(JSON.stringify({
-        id: "chatcmpl_2",
-        object: "chat.completion.chunk",
-        created: 1,
-        model: "kimi-test",
-        choices: [],
-        usage: {
-          prompt_tokens: 80,
-          completion_tokens: 10,
-          total_tokens: 90,
-          cached_tokens: 25,
-        },
-      }));
-    })())));
+  const result = await withUsageNormalized(
+    baseCtx(),
+    () =>
+      Promise.resolve(eventResult((async function* () {
+        yield sseFrame(JSON.stringify({
+          id: "chatcmpl_2",
+          object: "chat.completion.chunk",
+          created: 1,
+          model: "kimi-test",
+          choices: [],
+          usage: {
+            prompt_tokens: 80,
+            completion_tokens: 10,
+            total_tokens: 90,
+            cached_tokens: 25,
+          },
+        }));
+      })())),
+  );
 
   const frames = await collectFrames(result);
   assertEquals(frames.length, 1);
@@ -201,10 +219,13 @@ Deno.test("withUsageNormalized leaves stream chunks without usage untouched", as
     choices: [{ index: 0, delta: { content: "hi" }, finish_reason: null }],
   });
 
-  const result = await withUsageNormalized(baseCtx(), () =>
-    Promise.resolve(eventResult((async function* () {
-      yield sseFrame(chunk);
-    })())));
+  const result = await withUsageNormalized(
+    baseCtx(),
+    () =>
+      Promise.resolve(eventResult((async function* () {
+        yield sseFrame(chunk);
+      })())),
+  );
 
   const frames = await collectFrames(result);
   assertEquals(frames.length, 1);
@@ -212,10 +233,13 @@ Deno.test("withUsageNormalized leaves stream chunks without usage untouched", as
 });
 
 Deno.test("withUsageNormalized passes [DONE] sentinel through verbatim", async () => {
-  const result = await withUsageNormalized(baseCtx(), () =>
-    Promise.resolve(eventResult((async function* () {
-      yield sseFrame("[DONE]");
-    })())));
+  const result = await withUsageNormalized(
+    baseCtx(),
+    () =>
+      Promise.resolve(eventResult((async function* () {
+        yield sseFrame("[DONE]");
+      })())),
+  );
 
   const frames = await collectFrames(result);
   assertEquals(frames.length, 1);

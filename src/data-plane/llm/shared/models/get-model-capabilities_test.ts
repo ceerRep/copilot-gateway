@@ -117,7 +117,10 @@ Deno.test("resolveEffectiveSupportedEndpoints returns per-model endpoints when p
 Deno.test("resolveEffectiveSupportedEndpoints returns per-model endpoints when present (openai)", () => {
   const { endpoints, explicit } = resolveEffectiveSupportedEndpoints(
     ["/v1/messages"],
-    { kind: "openai", supportedEndpoints: ["/chat/completions", "/embeddings"] },
+    {
+      kind: "openai",
+      supportedEndpoints: ["/chat/completions", "/embeddings"],
+    },
   );
   assertEquals(endpoints, ["/v1/messages"]);
   assertEquals(explicit, true);
@@ -126,7 +129,10 @@ Deno.test("resolveEffectiveSupportedEndpoints returns per-model endpoints when p
 Deno.test("resolveEffectiveSupportedEndpoints falls back to upstream config for openai", () => {
   const { endpoints, explicit } = resolveEffectiveSupportedEndpoints(
     undefined,
-    { kind: "openai", supportedEndpoints: ["/chat/completions", "/embeddings"] },
+    {
+      kind: "openai",
+      supportedEndpoints: ["/chat/completions", "/embeddings"],
+    },
   );
   assertEquals(endpoints, ["/chat/completions", "/embeddings"]);
   assertEquals(explicit, true);

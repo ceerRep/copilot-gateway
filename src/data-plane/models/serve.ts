@@ -93,7 +93,9 @@ export const models = async (c: Context) => {
           ...model,
           supported_endpoints,
           upstream_kind: "openai",
-          supports_generation: endpointsIncludeLlmGeneration(supported_endpoints),
+          supports_generation: endpointsIncludeLlmGeneration(
+            supported_endpoints,
+          ),
         });
       }
     }

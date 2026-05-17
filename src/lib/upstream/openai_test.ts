@@ -25,7 +25,10 @@ Deno.test("createOpenAiUpstream uses default /v1/* paths", async () => {
     await upstream.fetch("chat_completions", { method: "POST", body: "{}" });
     await upstream.fetch("responses", { method: "POST", body: "{}" });
     await upstream.fetch("messages", { method: "POST", body: "{}" });
-    await upstream.fetch("messages_count_tokens", { method: "POST", body: "{}" });
+    await upstream.fetch("messages_count_tokens", {
+      method: "POST",
+      body: "{}",
+    });
     await upstream.fetch("embeddings", { method: "POST", body: "{}" });
     await upstream.fetch("models", { method: "GET" });
   });
@@ -54,7 +57,10 @@ Deno.test("createOpenAiUpstream applies path overrides without an automatic /v1 
     return new Response("{}", { status: 200 });
   }, async () => {
     await upstream.fetch("messages", { method: "POST", body: "{}" });
-    await upstream.fetch("messages_count_tokens", { method: "POST", body: "{}" });
+    await upstream.fetch("messages_count_tokens", {
+      method: "POST",
+      body: "{}",
+    });
     await upstream.fetch("models", { method: "GET" });
     await upstream.fetch("chat_completions", { method: "POST", body: "{}" });
   });

@@ -7,7 +7,10 @@ import {
   ModelsFetchError,
   type ModelsResponse,
 } from "../../lib/models-cache.ts";
-import type { GeminiGenerationMethod, GeminiModel } from "../../lib/gemini-types.ts";
+import type {
+  GeminiGenerationMethod,
+  GeminiModel,
+} from "../../lib/gemini-types.ts";
 import { getRepo } from "../../repo/index.ts";
 import { createOpenAiUpstream } from "../../lib/upstream/openai.ts";
 import {

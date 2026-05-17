@@ -4,7 +4,8 @@ import type { ChatCompletionsSourceContext } from "./types.ts";
 
 export type { ChatCompletionsSourceContext };
 
-export const chatCompletionsSourceInterceptors = [] satisfies readonly SourceInterceptor<
-  ChatCompletionsSourceContext,
-  ChatCompletionChunk
->[];
+export const chatCompletionsSourceInterceptors =
+  [] satisfies readonly SourceInterceptor<
+    ChatCompletionsSourceContext,
+    ChatCompletionChunk
+  >[];

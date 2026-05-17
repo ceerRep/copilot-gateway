@@ -42,7 +42,13 @@ Deno.test("recordCostUsd splits prefill/cache-read/cache-write/output", () => {
   //   cacheWrite: 10000 * 6.25  =  62500
   //   output:     50000 * 25    = 1250000
   // total = 1492500 / 1e6 = 1.4925
-  const cost = recordCostUsd("claude-opus-4.7", 100_000, 50_000, 60_000, 10_000);
+  const cost = recordCostUsd(
+    "claude-opus-4.7",
+    100_000,
+    50_000,
+    60_000,
+    10_000,
+  );
   assertAlmostEquals(cost, 1.4925, 1e-9);
 });
 

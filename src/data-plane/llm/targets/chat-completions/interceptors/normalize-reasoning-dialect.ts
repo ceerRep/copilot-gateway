@@ -38,9 +38,7 @@ const synthesizeFromItems = (
   items: ChatReasoningItem[] | null | undefined,
 ): string | undefined => {
   if (!items?.length) return undefined;
-  const parts = items.flatMap((item) =>
-    item.summary?.map((s) => s.text) ?? []
-  );
+  const parts = items.flatMap((item) => item.summary?.map((s) => s.text) ?? []);
   return parts.length > 0 ? parts.join("") : undefined;
 };
 

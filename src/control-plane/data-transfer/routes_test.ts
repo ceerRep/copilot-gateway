@@ -813,7 +813,10 @@ Deno.test("export includes gatewayConfig", async () => {
   await repo.gatewayConfig.save({ codexAutoReviewModel: "claude-sonnet-4" });
 
   const exported = await doExport(app);
-  assertEquals(exported.data.gatewayConfig.codexAutoReviewModel, "claude-sonnet-4");
+  assertEquals(
+    exported.data.gatewayConfig.codexAutoReviewModel,
+    "claude-sonnet-4",
+  );
 });
 
 Deno.test("export returns default gatewayConfig when none is saved", async () => {

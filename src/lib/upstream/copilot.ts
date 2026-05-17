@@ -32,10 +32,16 @@ export const COPILOT_SUPPORTED_ENDPOINTS = [
 // Encode the active token into the upstream id so the per-upstream models
 // cache is invalidated when the GitHub account or accountType changes. The
 // hash keeps the id stable across requests with the same credentials.
-const tokenHash = async (token: string, accountType: string): Promise<string> => {
+const tokenHash = async (
+  token: string,
+  accountType: string,
+): Promise<string> => {
   const bytes = new TextEncoder().encode(`${accountType}:${token}`);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, "0"))
+  return Array.from(
+    new Uint8Array(digest),
+    (b) => b.toString(16).padStart(2, "0"),
+  )
     .join("")
     .slice(0, 16);
 };
@@ -59,7 +65,13 @@ export const createCopilotUpstream = async (
     // they don't appear here.
     enabledFixes: new Set<string>(),
     fetch: (endpoint, init, options?: UpstreamFetchOptions) =>
-      copilotFetch(COPILOT_PATHS[endpoint], init, githubToken, accountType, options),
+      copilotFetch(
+        COPILOT_PATHS[endpoint],
+        init,
+        githubToken,
+        accountType,
+        options,
+      ),
   };
 };
 

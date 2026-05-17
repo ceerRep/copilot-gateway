@@ -17,7 +17,10 @@
 
 import { getRepo } from "../repo/index.ts";
 import type { GitHubAccount } from "../repo/types.ts";
-import { isAccountSwitchableStatus, isCopilotTokenFetchError } from "./copilot.ts";
+import {
+  isAccountSwitchableStatus,
+  isCopilotTokenFetchError,
+} from "./copilot.ts";
 import { dateSuffixedClaudeModelAliasTarget } from "./model-name.ts";
 import { createCopilotUpstream } from "./upstream/copilot.ts";
 import type { Upstream } from "./upstream/types.ts";

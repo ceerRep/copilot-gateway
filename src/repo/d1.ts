@@ -1137,7 +1137,9 @@ function toUpstreamConfig(row: UpstreamConfigRow): UpstreamConfig {
       const parsed = JSON.parse(row.path_overrides);
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         const result: Record<string, string> = {};
-        for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        for (
+          const [k, v] of Object.entries(parsed as Record<string, unknown>)
+        ) {
           if (typeof v === "string") result[k] = v;
         }
         if (Object.keys(result).length > 0) {

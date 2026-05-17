@@ -788,7 +788,9 @@ class DenoKvUpstreamConfigRepo implements UpstreamConfigRepo {
   async list(): Promise<UpstreamConfig[]> {
     const items: UpstreamConfig[] = [];
     for await (
-      const entry of this.kv.list<UpstreamConfig>({ prefix: ["upstream_configs"] })
+      const entry of this.kv.list<UpstreamConfig>({
+        prefix: ["upstream_configs"],
+      })
     ) {
       if (entry.value) items.push(entry.value);
     }

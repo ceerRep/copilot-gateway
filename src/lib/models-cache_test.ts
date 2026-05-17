@@ -306,8 +306,14 @@ Deno.test("findModel applies dated Claude aliases only after exact model misses"
     throw new Error(`Unhandled fetch ${request.url}`);
   }, async () => {
     const exact = await findModel("claude-haiku-4.5-20251001", upstream);
-    const fallbackDotted = await findModel("claude-opus-4.7-20251001", upstream);
-    const fallbackDashed = await findModel("claude-sonnet-4-5-20251001", upstream);
+    const fallbackDotted = await findModel(
+      "claude-opus-4.7-20251001",
+      upstream,
+    );
+    const fallbackDashed = await findModel(
+      "claude-sonnet-4-5-20251001",
+      upstream,
+    );
 
     assertEquals(exact?.id, "claude-haiku-4.5-20251001");
     assertEquals(fallbackDotted?.id, "claude-opus-4.7");
@@ -334,7 +340,11 @@ Deno.test("invalidateUpstreamModels clears both L1 and L2 cache for a given upst
       return jsonResponse(["1.110.1"]);
     }
     if (url.pathname === "/copilot_internal/v2/token") {
-      return jsonResponse({ token: "copilot-access-token", expires_at: 4102444800, refresh_in: 3600 });
+      return jsonResponse({
+        token: "copilot-access-token",
+        expires_at: 4102444800,
+        refresh_in: 3600,
+      });
     }
     if (url.pathname === "/models") {
       modelsFetches++;

@@ -73,7 +73,9 @@ const mergeVariantGroup = (variants: ModelInfo[]): ModelInfo => {
       limits: {
         ...limits,
         max_context_window_tokens: maxOf(
-          ...variants.map((v) => v.capabilities?.limits?.max_context_window_tokens),
+          ...variants.map((v) =>
+            v.capabilities?.limits?.max_context_window_tokens
+          ),
         ),
         max_prompt_tokens: maxOf(
           ...variants.map((v) => v.capabilities?.limits?.max_prompt_tokens),

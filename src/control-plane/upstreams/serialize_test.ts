@@ -1,8 +1,5 @@
 import { assertEquals } from "@std/assert";
-import {
-  upstreamConfigToJson,
-  upstreamConfigToFullJson,
-} from "./serialize.ts";
+import { upstreamConfigToFullJson, upstreamConfigToJson } from "./serialize.ts";
 import type { UpstreamConfig } from "../../repo/types.ts";
 
 const sampleConfig: UpstreamConfig = {
@@ -54,7 +51,10 @@ Deno.test("upstreamConfigToJson surfaces enabled_fixes and path_overrides when s
 });
 
 Deno.test("upstreamConfigToFullJson includes bearer token", () => {
-  const result = upstreamConfigToFullJson(sampleConfig) as Record<string, unknown>;
+  const result = upstreamConfigToFullJson(sampleConfig) as Record<
+    string,
+    unknown
+  >;
 
   assertEquals(result.id, "up_test123");
   assertEquals(result.bearer_token, "sk-secret-token-12345");

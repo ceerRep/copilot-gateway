@@ -50,7 +50,9 @@ const collectFrames = async (
 Deno.test("withDeepseekReasoningDialect renames outbound reasoning_text on a deepseek upstream", async () => {
   const ctx = {
     payload: baseRequest(),
-    upstream: stubUpstream({ enabledFixes: new Set(["deepseek-reasoning-dialect"]) }),
+    upstream: stubUpstream({
+      enabledFixes: new Set(["deepseek-reasoning-dialect"]),
+    }),
   };
 
   let observed: ChatCompletionsPayload | null = null;
@@ -95,7 +97,9 @@ Deno.test("withDeepseekReasoningDialect synthesizes reasoning_content from reaso
         { role: "tool" as const, tool_call_id: "call_1", content: "result" },
       ],
     } satisfies ChatCompletionsPayload,
-    upstream: stubUpstream({ enabledFixes: new Set(["deepseek-reasoning-dialect"]) }),
+    upstream: stubUpstream({
+      enabledFixes: new Set(["deepseek-reasoning-dialect"]),
+    }),
   };
 
   let observed: ChatCompletionsPayload | null = null;
@@ -128,7 +132,9 @@ Deno.test("withDeepseekReasoningDialect strips reasoning_items even when no summ
         },
       ],
     } satisfies ChatCompletionsPayload,
-    upstream: stubUpstream({ enabledFixes: new Set(["deepseek-reasoning-dialect"]) }),
+    upstream: stubUpstream({
+      enabledFixes: new Set(["deepseek-reasoning-dialect"]),
+    }),
   };
 
   let observed: ChatCompletionsPayload | null = null;
@@ -147,7 +153,9 @@ Deno.test("withDeepseekReasoningDialect strips reasoning_items even when no summ
 Deno.test("withDeepseekReasoningDialect renames inbound SSE reasoning_content to reasoning_text", async () => {
   const ctx = {
     payload: baseRequest(),
-    upstream: stubUpstream({ enabledFixes: new Set(["deepseek-reasoning-dialect"]) }),
+    upstream: stubUpstream({
+      enabledFixes: new Set(["deepseek-reasoning-dialect"]),
+    }),
   };
   const upstreamChunk = JSON.stringify({
     id: "chunk_1",
@@ -157,18 +165,20 @@ Deno.test("withDeepseekReasoningDialect renames inbound SSE reasoning_content to
     choices: [{ index: 0, delta: { reasoning_content: "thinking..." } }],
   });
 
-  const result = await withDeepseekReasoningDialect(ctx, async () =>
-    eventResult((async function* () {
-      yield sseFrame(upstreamChunk);
-    })()));
+  const result = await withDeepseekReasoningDialect(
+    ctx,
+    async () =>
+      eventResult((async function* () {
+        yield sseFrame(upstreamChunk);
+      })()),
+  );
 
   const frames = await collectFrames(result);
   assertEquals(frames.length, 1);
   const frame = frames[0];
   if (frame.type !== "sse") throw new Error("expected SSE frame");
   const decoded = JSON.parse(frame.data) as Record<string, unknown>;
-  const choice =
-    (decoded.choices as Array<Record<string, unknown>>)[0];
+  const choice = (decoded.choices as Array<Record<string, unknown>>)[0];
   const delta = choice.delta as Record<string, unknown>;
   assertEquals(delta.reasoning_text, "thinking...");
   assertEquals(delta.reasoning_content, undefined);
@@ -177,7 +187,9 @@ Deno.test("withDeepseekReasoningDialect renames inbound SSE reasoning_content to
 Deno.test("withDeepseekReasoningDialect renames inbound non-stream message.reasoning_content", async () => {
   const ctx = {
     payload: baseRequest(),
-    upstream: stubUpstream({ enabledFixes: new Set(["deepseek-reasoning-dialect"]) }),
+    upstream: stubUpstream({
+      enabledFixes: new Set(["deepseek-reasoning-dialect"]),
+    }),
   };
   const upstreamResponse = {
     id: "chatcmpl_1",
@@ -195,10 +207,13 @@ Deno.test("withDeepseekReasoningDialect renames inbound non-stream message.reaso
     }],
   } as unknown as ChatCompletionResponse;
 
-  const result = await withDeepseekReasoningDialect(ctx, async () =>
-    eventResult((async function* () {
-      yield jsonFrame(upstreamResponse);
-    })()));
+  const result = await withDeepseekReasoningDialect(
+    ctx,
+    async () =>
+      eventResult((async function* () {
+        yield jsonFrame(upstreamResponse);
+      })()),
+  );
 
   const frames = await collectFrames(result);
   const frame = frames[0];

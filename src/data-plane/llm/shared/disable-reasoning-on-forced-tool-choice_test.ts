@@ -27,8 +27,7 @@ const upstreamWith = (enabledFixes: ReadonlySet<string>) => ({
 
 const noVendor = new Set<string>();
 
-const okEvents = () =>
-  Promise.resolve(eventResult((async function* () {})()));
+const okEvents = () => Promise.resolve(eventResult((async function* () {})()));
 
 // ── Messages: vendor flags don't apply; always thinking: disabled ──
 Deno.test("messages: forced tool_choice → thinking disabled, output_config stripped", async () => {

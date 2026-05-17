@@ -286,7 +286,11 @@ Deno.test("dashboardApp renders performance chart with 4h buckets for 7d range",
   app.performanceRange = "7d";
   app.performancePercentile = "p95Ms";
   app.performanceSeries = [
-    { bucket: app.local4hBucketKey(start), group: "claude-opus-4-7", p95Ms: 600 },
+    {
+      bucket: app.local4hBucketKey(start),
+      group: "claude-opus-4-7",
+      p95Ms: 600,
+    },
   ];
 
   app.renderPerformanceChart();
@@ -1199,11 +1203,16 @@ Deno.test("DashboardPage merges Upstream into leftmost Settings tab and places M
     html,
     "const TABS = isAdmin ? ['settings', 'models', 'keys', 'usage', 'performance'] : ['models', 'keys', 'usage', 'performance'];",
   );
-  assertStringIncludes(html, "const defaultTab = isAdmin ? 'settings' : 'models';");
+  assertStringIncludes(
+    html,
+    "const defaultTab = isAdmin ? 'settings' : 'models';",
+  );
   assertFalse(html.includes("switchTab('upstream')"));
   assertFalse(html.includes("tab === 'upstream'"));
 
-  const settings = html.indexOf(">\n              Settings\n            </button>");
+  const settings = html.indexOf(
+    ">\n              Settings\n            </button>",
+  );
   const models = html.indexOf(">\n            Models\n          </button>");
   const apiKeys = html.indexOf(">\n            API Keys\n          </button>");
   assert(settings >= 0);
@@ -1278,7 +1287,7 @@ Deno.test("DashboardPage uses frontend-only selected GitHub account for quota di
   assertStringIncludes(html, "selectedGithubAccountId === acct.id");
   assertStringIncludes(html, "'/api/copilot-quota?user_id='");
   assertStringIncludes(html, "async selectGithubAccount(userId)");
-  assertStringIncludes(html, "class=\"ml-1 min-w-0 truncate text-gray-500\"");
+  assertStringIncludes(html, 'class="ml-1 min-w-0 truncate text-gray-500"');
   assertStringIncludes(html, "'· @' + (githubAccounts.find");
   assertStringIncludes(html, "usageData.copilot_plan");
   assertFalse(html.includes("Selected account:"));

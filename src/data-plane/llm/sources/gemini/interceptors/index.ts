@@ -13,4 +13,7 @@ export const geminiSourceInterceptors = [
   stripUnsupportedTools,
   stripSafetySettings,
   suppressThoughtParts,
-] satisfies readonly SourceInterceptor<GeminiSourceContext, GeminiStreamEvent>[];
+] satisfies readonly SourceInterceptor<
+  GeminiSourceContext,
+  GeminiStreamEvent
+>[];

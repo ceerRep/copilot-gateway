@@ -25,7 +25,11 @@ Deno.test("interceptorsForChatCompletions on openai kind with deepseek dialect e
   });
   assertEquals(
     interceptorsForChatCompletions(upstream),
-    [withUsageStreamOptionsIncluded, withUsageNormalized, withDeepseekReasoningDialect],
+    [
+      withUsageStreamOptionsIncluded,
+      withUsageNormalized,
+      withDeepseekReasoningDialect,
+    ],
   );
 });
 

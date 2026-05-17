@@ -4,7 +4,11 @@
 import type { Context, Next } from "hono";
 import { recordUsage } from "../lib/usage-tracker.ts";
 import { touchApiKeyLastUsed } from "../lib/api-keys.ts";
-import { asJsonObject, type JsonObject, readJsonNumber } from "../lib/json-helpers.ts";
+import {
+  asJsonObject,
+  type JsonObject,
+  readJsonNumber,
+} from "../lib/json-helpers.ts";
 import {
   getUsageResponseMetadata,
   type UsageResponseMetadata,

@@ -2,7 +2,11 @@ import type {
   ChatCompletionResponse,
   ChatCompletionsPayload,
 } from "../../../../../lib/chat-completions-types.ts";
-import { asJsonObject, type JsonObject, readJsonNumber } from "../../../../../lib/json-helpers.ts";
+import {
+  asJsonObject,
+  type JsonObject,
+  readJsonNumber,
+} from "../../../../../lib/json-helpers.ts";
 import { jsonFrame, sseFrame } from "../../../shared/stream/types.ts";
 import type { Upstream } from "../../../../../lib/upstream/types.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";

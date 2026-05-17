@@ -55,9 +55,11 @@ export async function getGithubCredentials(
     ? (await repo.listAccounts())[0] ?? null
     : await repo.getAccount(userId);
   if (!account) {
-    throw new Error(userId === undefined
-      ? "No GitHub account connected — add one via the dashboard"
-      : "GitHub account not found");
+    throw new Error(
+      userId === undefined
+        ? "No GitHub account connected — add one via the dashboard"
+        : "GitHub account not found",
+    );
   }
   return { token: account.token, accountType: account.accountType };
 }
