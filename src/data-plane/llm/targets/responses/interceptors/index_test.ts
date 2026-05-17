@@ -10,9 +10,11 @@ import {
 import { withCyberPolicyRetried } from "./retry-cyber-policy.ts";
 
 Deno.test("interceptorsForResponses on copilot kind: copilot block then retry-cyber-policy (Copilot default)", () => {
-  // Copilot's enabledFixes is populated by defaultFixesFor("copilot") in
-  // createCopilotUpstream, so retry-cyber-policy should land in the
-  // optional tail.
+  // The merged set (defaults ∪ admin opt-ins) is materialized in
+  // `runOnUpstream` (data-plane/llm/shared/upstream-run.ts) via
+  // `withDefaultFixes` before the assembler runs, so by the time
+  // `interceptorsForResponses` sees an upstream its `enabledFixes`
+  // already includes `retry-cyber-policy` for Copilot.
   const upstream = stubUpstream({
     kind: "copilot",
     enabledFixes: new Set(["retry-cyber-policy"]),

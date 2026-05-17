@@ -8,15 +8,32 @@ import type { Upstream } from "../../../lib/upstream/types.ts";
 import { ModelsFetchError } from "../../../lib/models-cache.ts";
 import type { PerformanceTelemetryContext } from "../../../lib/performance-telemetry.ts";
 import { withAccountFallback } from "../../shared/account-pool/fallback.ts";
+import { defaultFixesFor } from "../targets/optional-fixes.ts";
 import type { UpstreamErrorResult } from "./errors/result.ts";
+
+// `lib/upstream/*` adapters carry only the admin's explicit opt-in fix ids
+// (empty for built-in Copilot). The flag catalog is data-plane territory,
+// so per-kind defaults are merged here at the request-path boundary
+// instead of inside the adapter — keeping lib/upstream catalog-agnostic.
+export const withDefaultFixes = (upstream: Upstream): Upstream => {
+  const defaults = defaultFixesFor(upstream.kind);
+  if (defaults.size === 0) return upstream;
+  return {
+    ...upstream,
+    enabledFixes: new Set([...defaults, ...upstream.enabledFixes]),
+  };
+};
 
 export const runOnUpstream = async <T>(
   selection: UpstreamSelection,
   model: string,
   run: (upstream: Upstream) => Promise<T>,
 ): Promise<T> => {
-  if (selection.kind === "openai") return run(selection.upstream);
-  return withAccountFallback(model, ({ upstream }) => run(upstream));
+  if (selection.kind === "openai") {
+    return run(withDefaultFixes(selection.upstream));
+  }
+  return withAccountFallback(model, ({ upstream }) =>
+    run(withDefaultFixes(upstream)));
 };
 
 export const modelLoadErrorResult = (

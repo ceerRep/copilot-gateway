@@ -454,12 +454,22 @@ Target interceptor assembly: each
 `base ++ (copilot/ if upstream.kind === "copilot") ++ filter(optional
 interceptors by upstream.enabledFixes)`. The flag catalog lives in
 `src/data-plane/llm/targets/optional-fixes.ts` and is the single source of
-truth for `GET /api/upstream-fixes` and for the Copilot default fix set
-applied by `createCopilotUpstream`. Each optional interceptor declares
-`{ fixId, run }` only — flag metadata (`label`, `description`, `defaultFor`,
-`appliesTo`) lives exclusively in the catalog; the dependency goes
-interceptor → flag, never the other way. Multiple interceptors (e.g. across
-targets) can share the same `fixId` to bind to one flag.
+truth for `GET /api/upstream-fixes` and for the per-kind default fix set.
+Each optional interceptor declares `{ fixId, run }` only — flag metadata
+(`label`, `description`, `defaultFor`, `appliesTo`) lives exclusively in
+the catalog; the dependency goes interceptor → flag, never the other way.
+Multiple interceptors (e.g. across targets) can share the same `fixId` to
+bind to one flag.
+
+`lib/upstream/*` adapters (`copilot.ts`, `openai.ts`) stay
+catalog-agnostic. The Upstream they construct carries only the admin's
+explicit opt-in fix ids (empty for built-in Copilot, JSON-decoded for
+custom upstreams). Per-kind defaults are merged into the effective set
+inside the data-plane, at `runOnUpstream` in
+`src/data-plane/llm/shared/upstream-run.ts` via the `withDefaultFixes`
+helper — so the assembler always reads `defaults ∪ admin opt-ins` from
+`upstream.enabledFixes`, but the catalog import only crosses into
+data-plane code.
 
 The catalog can also declare data-only flags with no bound
 `OptionalInterceptor` — typically vendor-style flags like

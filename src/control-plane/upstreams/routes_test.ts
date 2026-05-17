@@ -1,7 +1,7 @@
-// End-to-end validation of POST/PATCH /api/upstreams body validation around
-// the new enabled_fixes field: unknown ids hard-reject (400), fixes whose
-// endpoint isn't claimed by supported_endpoints hard-reject (400), and valid
-// ids round-trip through serialize.
+// End-to-end validation of POST/PATCH /api/upstreams body validation
+// around the enabled_fixes field: unknown ids hard-reject (400),
+// known ids round-trip through serialize regardless of whether their
+// appliesTo overlaps supported_endpoints.
 
 import { assertEquals } from "@std/assert";
 import { requestApp, setupAppTest } from "../../test-helpers.ts";
