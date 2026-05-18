@@ -9,7 +9,6 @@ import {
   loadModelsForAccount,
 } from "../../../../lib/models-cache.ts";
 import { normalizeModelName } from "../../../../lib/model-name.ts";
-import { getMessagesRequestedReasoningEffort } from "../../../../lib/reasoning.ts";
 import type { ResponsesPayload } from "../../../../lib/responses-types.ts";
 import { getRepo } from "../../../../repo/index.ts";
 import { createOpenAiUpstream } from "../../../../lib/upstream/openai.ts";
@@ -32,6 +31,12 @@ export interface ModelResolutionIntent {
 const normalizeReasoningEffort = (effort: string | null | undefined) =>
   effort && effort !== "none" ? effort : undefined;
 
+const messagesReasoningEffortIntent = (payload: MessagesPayload) => {
+  if (payload.output_config?.effort) return payload.output_config.effort;
+  if (payload.thinking?.type === "disabled") return "none";
+  return undefined;
+};
+
 const hasContext1mBeta = (rawBeta: string | undefined): boolean =>
   rawBeta?.split(",").map((part) => part.trim()).includes(CONTEXT_1M_BETA) ===
     true;
@@ -42,7 +47,7 @@ export const messagesModelResolutionIntent = (
 ): ModelResolutionIntent => ({
   context1m: hasContext1mBeta(rawBeta),
   reasoningEffort: normalizeReasoningEffort(
-    getMessagesRequestedReasoningEffort(payload),
+    messagesReasoningEffortIntent(payload),
   ),
 });
 

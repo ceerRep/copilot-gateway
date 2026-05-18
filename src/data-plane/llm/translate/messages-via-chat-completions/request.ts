@@ -20,8 +20,6 @@ import type {
   MessagesWebSearchToolResultBlock,
 } from "../../../../lib/messages-types.ts";
 
-import { getMessagesRequestedReasoningEffort } from "../../../../lib/reasoning.ts";
-
 const toChatCompletionsContent = (
   content:
     | string
@@ -336,19 +334,28 @@ const translateMessagesToolChoice = (
   }
 };
 
+const translateMessagesReasoningEffort = (
+  payload: MessagesPayload,
+): string | undefined => {
+  if (payload.output_config?.effort) return payload.output_config.effort;
+  if (payload.thinking?.type === "disabled") return "none";
+  return undefined;
+};
+
 export const translateMessagesToChatCompletions = (
   payload: MessagesPayload,
 ): ChatCompletionsPayload => {
   const clientTools = getClientTools(payload.tools);
-  const effort = getMessagesRequestedReasoningEffort(payload);
   // Pass effort through verbatim; per-upstream enum acceptance (e.g. some
   // backends rejecting `xhigh`/`max`) is the target interceptor's concern.
-  const reasoningEffort = effort && effort !== "none" ? effort : undefined;
+  const reasoningEffort = translateMessagesReasoningEffort(payload);
 
   return {
     model: payload.model,
     messages: translateMessagesInput(payload.messages, payload.system),
-    ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}),
+    ...(reasoningEffort !== undefined
+      ? { reasoning_effort: reasoningEffort }
+      : {}),
     max_tokens: payload.max_tokens,
     stop: payload.stop_sequences,
     stream: payload.stream,

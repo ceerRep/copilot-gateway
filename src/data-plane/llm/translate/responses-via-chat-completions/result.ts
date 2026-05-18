@@ -1,7 +1,6 @@
 import type {
   ChatCompletionResponse,
 } from "../../../../lib/chat-completions-types.ts";
-import { makeResponsesReasoningId } from "../../../../lib/reasoning.ts";
 import type {
   ResponseOutputFunctionCall,
   ResponseOutputItem,
@@ -10,9 +9,10 @@ import type {
   ResponsesResult,
 } from "../../../../lib/responses-types.ts";
 import {
+  makeResponsesReasoningId,
   scalarToResponseReasoningItem,
   translateChatReasoningItems,
-} from "../shared/chat-responses-reasoning.ts";
+} from "../shared/responses-reasoning.ts";
 
 export const mapChatCompletionsUsageToResponsesUsage = (
   usage: ChatCompletionResponse["usage"] | undefined,

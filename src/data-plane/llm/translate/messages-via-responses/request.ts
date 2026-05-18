@@ -11,11 +11,8 @@ import {
   type MessagesUserMessage,
   type MessagesWebSearchToolResultBlock,
 } from "../../../../lib/messages-types.ts";
-import {
-  getMessagesRequestedReasoningEffort,
-  makeResponsesReasoningId,
-} from "../../../../lib/reasoning.ts";
 import { unpackReasoningSignature } from "../shared/messages-responses-signature.ts";
+import { makeResponsesReasoningId } from "../shared/responses-reasoning.ts";
 import type {
   ResponseInputContent,
   ResponseInputItem,
@@ -257,13 +254,21 @@ const translateToolChoice = (
   }
 };
 
+const translateMessagesReasoningEffort = (
+  payload: MessagesPayload,
+): string | undefined => {
+  if (payload.output_config?.effort) return payload.output_config.effort;
+  if (payload.thinking?.type === "disabled") return "none";
+  return undefined;
+};
+
 export const translateMessagesToResponses = (
   payload: MessagesPayload,
 ): ResponsesPayload => {
   // Preserve the source `output_config.effort` value as-is, even if the chosen
   // Responses upstream may reject it. Translation stays pairwise and leaves
   // target-side validation to the selected upstream endpoint.
-  const effort = getMessagesRequestedReasoningEffort(payload);
+  const effort = translateMessagesReasoningEffort(payload);
   const reasoning = effort ? { effort } : undefined;
   const clientTools = getClientTools(payload.tools);
   const instructions = translateSystemPrompt(payload.system);

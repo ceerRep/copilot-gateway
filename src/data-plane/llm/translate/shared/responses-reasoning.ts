@@ -1,10 +1,12 @@
 import type { ChatReasoningItem } from "../../../../lib/chat-completions-types.ts";
-import { makeResponsesReasoningId } from "../../../../lib/reasoning.ts";
 import type {
   ResponseInputItem,
   ResponseInputReasoning,
   ResponseOutputReasoning,
 } from "../../../../lib/responses-types.ts";
+
+export const makeResponsesReasoningId = (index: number): string =>
+  `rs_${index}`;
 
 export type ChatReasoningSourceItem =
   | Extract<ResponseInputItem, { type: "reasoning" }>

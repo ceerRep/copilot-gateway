@@ -4,7 +4,7 @@ import type {
   ToolCall,
 } from "../../../../lib/chat-completions-types.ts";
 import type { ResponsesResult } from "../../../../lib/responses-types.ts";
-import { toChatReasoningItem } from "../shared/chat-responses-reasoning.ts";
+import { toChatReasoningItem } from "../shared/responses-reasoning.ts";
 
 export const mapResponsesFinishReasonToChatCompletionsFinishReason = (
   response: ResponsesResult,

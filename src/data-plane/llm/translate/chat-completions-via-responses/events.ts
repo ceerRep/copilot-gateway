@@ -15,7 +15,7 @@ import {
   type ResponsesOutputOrderState,
   shouldDeferForEarlierResponseOutput,
 } from "../shared/responses-stream-order.ts";
-import { toChatReasoningItem } from "../shared/chat-responses-reasoning.ts";
+import { toChatReasoningItem } from "../shared/responses-reasoning.ts";
 import {
   mapResponsesFinishReasonToChatCompletionsFinishReason,
   translateResponsesToChatCompletion,

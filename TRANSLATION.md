@@ -144,9 +144,10 @@ Request mapping shared by the Gemini source translation pairs:
   Messages `signature` or `redacted_thinking`, Responses `encrypted_content`,
   and Chat `reasoning_opaque`.
 - `thinkingBudget` and `thinkingLevel` map to the target's closest reasoning or
-  thinking controls. Budget `0` disables thinking when the target has an
-  explicit disabled state; positive budgets choose low/medium/high effort where
-  the target only supports effort levels.
+  thinking controls. Budget `0` disables thinking via Messages
+  `thinking.disabled`, Responses `reasoning.effort: "none"`, or Chat
+  `reasoning_effort: "none"`; positive budgets choose low/medium/high effort
+  where the target only supports effort levels.
 - `maxOutputTokens`, `temperature`, `topP`, `topK`, `stopSequences`,
   `presencePenalty`, `frequencyPenalty`, `seed`, `responseMimeType`, and
   `responseSchema` are passed through when the selected target has a natural
@@ -309,6 +310,9 @@ Request mapping:
   `reasoning_opaque`.
 - `max_tokens`, `stop_sequences` -> `stop`, `stream`, `temperature`, and `top_p`
   pass through when present.
+- `output_config.effort` maps directly to `reasoning_effort`; disabled thinking
+  maps to `reasoning_effort: "none"`; enabled thinking without explicit effort
+  is omitted.
 - streaming translated requests force upstream `stream_options.include_usage` so
   gateway accounting can see usage.
 - Messages tools become OpenAI function tools; explicit `strict` is preserved

@@ -7,8 +7,8 @@ import type {
   MessagesMessageStartEvent,
   MessagesStreamEventData,
 } from "../../../../lib/messages-types.ts";
-import { makeResponsesReasoningId } from "../../../../lib/reasoning.ts";
 import { unpackReasoningSignature } from "../shared/messages-responses-signature.ts";
+import { makeResponsesReasoningId } from "../shared/responses-reasoning.ts";
 import type {
   ResponseOutputFunctionCall,
   ResponseOutputItem,

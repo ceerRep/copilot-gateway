@@ -13,7 +13,7 @@ import type {
   ResponseTool,
   ResponseToolChoice,
 } from "../../../../lib/responses-types.ts";
-import { toChatReasoningItem } from "../shared/chat-responses-reasoning.ts";
+import { toChatReasoningItem } from "../shared/responses-reasoning.ts";
 
 const toChatCompletionsContent = (
   content: string | ResponseInputContent[],

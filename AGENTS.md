@@ -116,8 +116,8 @@ layout:
 Only cross-pair primitives belong in `src/data-plane/llm/translate/shared/`.
 Current shared modules are intentionally narrow:
 
-- `chat-responses-reasoning.ts`: Chat Completions <-> Responses reasoning-item
-  projection, used only by those two pair directions.
+- `responses-reasoning.ts`: Responses reasoning-item ID generation and
+  Chat-Completions-compatible reasoning-item projection.
 - `messages-responses-signature.ts`: Messages <-> Responses reasoning signature
   packing and unpacking.
 - `remote-images.ts`: remote image loading and conversion to Messages image
@@ -437,12 +437,14 @@ Current placement:
     `disable-reasoning-on-forced-tool-choice` interceptors below
 - `src/data-plane/llm/shared/disable-reasoning.ts`
   - `disableMessagesReasoning` / `disableResponsesReasoning` /
-    `disableChatCompletionsReasoning` emit explicit-disable signals. Messages
-    uses Anthropic's native `thinking: { type: "disabled" }`. Responses / Chat
-    Completions strip `reasoning` / `reasoning_effort` (OpenAI standard, no true
-    off switch) and additionally emit vendor-specific extensions when the
-    upstream has the matching vendor-style flag enabled — `vendor-deepseek`
-    emits `thinking: { type: "disabled" }` (the Anthropic schema copied into the
+    `disableChatCompletionsReasoning` remove reasoning for forced-tool-choice
+    retries. Messages uses Anthropic's native `thinking: { type: "disabled" }`.
+    Responses / Chat Completions strip `reasoning` / `reasoning_effort` by
+    default instead of synthesizing `none`, because this workaround must still
+    run against upstreams or model versions where `none` is not accepted. Vendor
+    flags add provider-specific explicit-disable fields when the upstream has
+    the matching dialect enabled — `vendor-deepseek` emits
+    `thinking: { type: "disabled" }` (the Anthropic schema copied into the
     OpenAI request body); `vendor-qwen` emits `enable_thinking: false`. Multiple
     vendor flags stack.
 - `src/data-plane/llm/targets/{messages,responses,chat-completions}/interceptors/disable-reasoning-on-forced-tool-choice.ts`
