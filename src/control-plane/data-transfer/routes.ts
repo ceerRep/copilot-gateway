@@ -5,7 +5,6 @@ import { normalizeSearchConfig } from "../../data-plane/tools/web-search/search-
 import { isWebSearchProviderName } from "../../lib/web-search-types.ts";
 import { invalidateUpstreamModels } from "../../lib/models-cache.ts";
 import { getRepo } from "../../repo/index.ts";
-import { isKnownFixId } from "../../data-plane/llm/targets/optional-fixes.ts";
 import type {
   ApiKey,
   GitHubAccount,
@@ -290,9 +289,8 @@ export const importData = async (c: Context) => {
 
   // Import upstream configs
   for (const config of upstreamConfigs) {
-    const normalized = normalizeImportedUpstreamConfig(config);
-    await repo.upstreamConfigs.save(normalized);
-    await invalidateUpstreamModels(normalized.id);
+    await repo.upstreamConfigs.save(config);
+    await invalidateUpstreamModels(config.id);
   }
 
   // Import performance telemetry records
@@ -331,39 +329,4 @@ function shouldImportPerformance(data: Record<string, unknown>): boolean {
   // replace import. Non-empty or invalid provided values are still treated as
   // intentional so real payloads import and malformed payloads are rejected.
   return !Array.isArray(data.performance) || data.performance.length > 0;
-}
-
-// Normalize an imported UpstreamConfig:
-//   - Drop legacy `reasoningDialect` field (was dev-only, never released).
-//   - Keep `enabledFixes` as a sorted/deduped string array of known fix ids.
-//   - Tolerate missing `pathOverrides`.
-function normalizeImportedUpstreamConfig(
-  // deno-lint-ignore no-explicit-any
-  config: any,
-): UpstreamConfig {
-  const { reasoningDialect: _legacyDialect, enabledFixes, ...rest } = config;
-  const fixes = Array.isArray(enabledFixes)
-    ? [
-      ...new Set(
-        enabledFixes.filter((v: unknown): v is string =>
-          typeof v === "string" && isKnownFixId(v)
-        ),
-      ),
-    ].sort()
-    : [];
-  const pathOverrides = rest.pathOverrides &&
-      typeof rest.pathOverrides === "object" &&
-      !Array.isArray(rest.pathOverrides)
-    ? Object.fromEntries(
-      Object.entries(rest.pathOverrides as Record<string, unknown>)
-        .filter(([, v]) => typeof v === "string"),
-    ) as UpstreamConfig["pathOverrides"]
-    : undefined;
-  return {
-    ...rest,
-    enabledFixes: fixes,
-    ...(pathOverrides && Object.keys(pathOverrides).length > 0
-      ? { pathOverrides }
-      : {}),
-  };
 }
