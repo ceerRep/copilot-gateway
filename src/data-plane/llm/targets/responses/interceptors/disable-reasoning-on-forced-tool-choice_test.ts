@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import type { ResponsesPayload } from "../../../../../lib/responses-types.ts";
+import type { ResponsesPayload } from "../../../shared/protocol/responses.ts";
 import { stubUpstream } from "../../../../../test-helpers.ts";
 import type { EmitInput } from "../../emit-types.ts";
 import { eventResult } from "../../../shared/errors/result.ts";

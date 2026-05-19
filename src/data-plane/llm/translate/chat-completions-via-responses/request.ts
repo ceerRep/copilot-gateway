@@ -2,7 +2,7 @@ import type {
   ChatCompletionsPayload,
   ContentPart,
   Tool,
-} from "../../../../lib/chat-completions-types.ts";
+} from "../../shared/protocol/chat-completions.ts";
 import type {
   ResponseInputContent,
   ResponseInputItem,
@@ -10,12 +10,12 @@ import type {
   ResponsesPayload,
   ResponseTool,
   ResponseToolChoice,
-} from "../../../../lib/responses-types.ts";
+} from "../../shared/protocol/responses.ts";
 import {
-  makeResponsesReasoningId,
   scalarToResponseReasoningItem,
   translateChatReasoningItems,
-} from "../shared/responses-reasoning.ts";
+} from "../shared/chat-responses-reasoning.ts";
+import { makeResponsesReasoningId } from "../shared/reasoning.ts";
 
 const extractTextContent = (
   content: string | ContentPart[] | null,

@@ -1,5 +1,5 @@
-import { findModel, type ModelInfo } from "../../../../lib/models-cache.ts";
-import type { Upstream } from "../../../../lib/upstream/types.ts";
+import { findModel, type ModelInfo } from "../../../models/cache.ts";
+import type { Upstream } from "../../../../shared/upstream/types.ts";
 import { resolveEffectiveSupportedEndpoints } from "../../../shared/models/resolve-endpoints.ts";
 
 // Re-export so existing LLM-side callers don't have to chase the new

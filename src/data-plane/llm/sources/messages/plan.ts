@@ -1,6 +1,15 @@
-import type { MessagesPayload } from "../../../../lib/messages-types.ts";
+import type { MessagesPayload } from "../../shared/protocol/messages.ts";
 import type { ModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
-import type { MessagesPlan } from "../../shared/types/plan.ts";
+import type { UpstreamFetchOptions } from "../../../../shared/upstream/types.ts";
+
+export type MessagesPlan =
+  | {
+    target: "messages";
+    fetchOptions: UpstreamFetchOptions;
+    rawBeta?: string;
+  }
+  | { target: "responses"; fetchOptions: UpstreamFetchOptions }
+  | { target: "chat-completions"; fetchOptions: UpstreamFetchOptions };
 
 const hasVision = (payload: MessagesPayload): boolean =>
   payload.messages.some((message) =>
@@ -23,7 +32,6 @@ export const planMessagesRequest = (
   capabilities: ModelCapabilities,
   rawBeta: string | undefined,
 ): MessagesPlan | null => {
-  const wantsStream = payload.stream === true;
   const fetchOptions = {
     vision: hasVision(payload),
     initiator: getInitiator(payload),
@@ -33,9 +41,7 @@ export const planMessagesRequest = (
   // uses Chat Completions as the last fallback.
   if (capabilities.supportsMessages) {
     return {
-      source: "messages",
       target: "messages",
-      wantsStream,
       fetchOptions,
       rawBeta,
     };
@@ -43,18 +49,14 @@ export const planMessagesRequest = (
 
   if (capabilities.supportsResponses) {
     return {
-      source: "messages",
       target: "responses",
-      wantsStream,
       fetchOptions,
     };
   }
 
   if (capabilities.supportsChatCompletions) {
     return {
-      source: "messages",
       target: "chat-completions",
-      wantsStream,
       fetchOptions,
     };
   }
@@ -66,9 +68,7 @@ export const planMessagesRequest = (
   if (capabilities.hasExplicitCapabilities) return null;
 
   return {
-    source: "messages",
     target: "chat-completions",
-    wantsStream,
     fetchOptions,
   };
 };

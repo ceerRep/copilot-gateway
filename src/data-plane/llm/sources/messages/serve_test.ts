@@ -4,9 +4,9 @@ import {
   assertFalse,
   assertStringIncludes,
 } from "@std/assert";
-import { clearCopilotTokenCache } from "../../../../lib/copilot.ts";
-import { clearModelsCache } from "../../../../lib/models-cache.ts";
-import type { ResponsesResult } from "../../../../lib/responses-types.ts";
+import { clearCopilotTokenCache } from "../../../../shared/copilot.ts";
+import { clearModelsCache } from "../../../models/cache.ts";
+import type { ResponsesResult } from "../../shared/protocol/responses.ts";
 import type { SearchConfig } from "../../../tools/web-search/types.ts";
 import {
   copilotModels,

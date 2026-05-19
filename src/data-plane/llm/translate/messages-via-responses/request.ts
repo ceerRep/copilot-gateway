@@ -10,16 +10,16 @@ import {
   type MessagesUserContentBlock,
   type MessagesUserMessage,
   type MessagesWebSearchToolResultBlock,
-} from "../../../../lib/messages-types.ts";
+} from "../../shared/protocol/messages.ts";
 import { unpackReasoningSignature } from "../shared/messages-responses-signature.ts";
-import { makeResponsesReasoningId } from "../shared/responses-reasoning.ts";
+import { makeResponsesReasoningId } from "../shared/reasoning.ts";
 import type {
   ResponseInputContent,
   ResponseInputItem,
   ResponsesPayload,
   ResponseTool,
   ResponseToolChoice,
-} from "../../../../lib/responses-types.ts";
+} from "../../shared/protocol/responses.ts";
 
 const flushPendingContent = (
   pending: ResponseInputContent[],

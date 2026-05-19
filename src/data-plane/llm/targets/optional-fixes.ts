@@ -16,7 +16,7 @@
 // vendor-specific protocol extension to emit. With no vendor flag set,
 // behavior defaults to the OpenAI standard (no extensions).
 
-import type { UpstreamKind } from "../../../lib/upstream/types.ts";
+import type { UpstreamKind } from "../../../shared/upstream/types.ts";
 
 export type FixEndpoint = "messages" | "responses" | "chat_completions";
 

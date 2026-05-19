@@ -14,7 +14,7 @@
 // declare. The caller's planning layer is still allowed to layer on
 // legacy model-name heuristics on top of this (LLM-specific).
 
-import type { Upstream } from "../../../lib/upstream/types.ts";
+import type { Upstream } from "../../../shared/upstream/types.ts";
 
 export const resolveEffectiveSupportedEndpoints = (
   modelEndpoints: string[] | undefined,

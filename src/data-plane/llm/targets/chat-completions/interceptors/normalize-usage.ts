@@ -1,14 +1,14 @@
 import type {
   ChatCompletionResponse,
   ChatCompletionsPayload,
-} from "../../../../../lib/chat-completions-types.ts";
+} from "../../../shared/protocol/chat-completions.ts";
 import {
   asJsonObject,
   type JsonObject,
   readJsonNumber,
-} from "../../../../../lib/json-helpers.ts";
+} from "../../../../../shared/json-helpers.ts";
 import { jsonFrame, sseFrame } from "../../../shared/stream/types.ts";
-import type { Upstream } from "../../../../../lib/upstream/types.ts";
+import type { Upstream } from "../../../../../shared/upstream/types.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 
 /**

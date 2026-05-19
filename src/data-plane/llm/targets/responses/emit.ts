@@ -1,8 +1,8 @@
-import { isCopilotTokenFetchError } from "../../../../lib/copilot.ts";
+import { isCopilotTokenFetchError } from "../../../../shared/copilot.ts";
 import type {
   ResponsesPayload,
   ResponsesResult,
-} from "../../../../lib/responses-types.ts";
+} from "../../shared/protocol/responses.ts";
 import { readUpstreamError } from "../../shared/errors/upstream-error.ts";
 import {
   eventResult,
@@ -10,7 +10,6 @@ import {
 } from "../../shared/errors/result.ts";
 import { toInternalDebugError } from "../../shared/errors/internal-debug-error.ts";
 import { parseSSEStream } from "../../shared/stream/parse-sse.ts";
-import { isSSEResponse } from "../../shared/stream/is-sse-response.ts";
 import { jsonFrame } from "../../shared/stream/types.ts";
 import { runTargetInterceptors } from "../run-interceptors.ts";
 import type { EmitInput, EmitResult, RawEmitResult } from "../emit-types.ts";
@@ -21,6 +20,9 @@ import {
 import { type SequencedResponseStreamEvent } from "./events/from-result.ts";
 import { responsesStreamFramesToEvents } from "./events/from-stream.ts";
 import { interceptorsForResponses } from "./interceptors/index.ts";
+
+const isSSEResponse = (response: Response): boolean =>
+  (response.headers.get("content-type") ?? "").includes("text/event-stream");
 
 const responsesRawResultToProtocolResult = (
   result: RawEmitResult<ResponsesResult>,

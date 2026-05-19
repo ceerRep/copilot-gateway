@@ -1,8 +1,8 @@
 import type { Context } from "hono";
 import { getRepo } from "../../repo/index.ts";
-import { invalidateUpstreamModels } from "../../lib/models-cache.ts";
-import { createOpenAiUpstream } from "../../lib/upstream/openai.ts";
-import { validateUpstreamPath } from "../../lib/upstream/join.ts";
+import { invalidateUpstreamModels } from "../../data-plane/models/cache.ts";
+import { createOpenAiUpstream } from "../../shared/upstream/openai.ts";
+import { validateUpstreamPath } from "../../shared/upstream/join.ts";
 import type { EndpointKey, UpstreamConfig } from "../../repo/types.ts";
 import {
   getFixCatalog,

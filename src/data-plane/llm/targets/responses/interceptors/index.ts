@@ -1,8 +1,8 @@
 import type {
   ResponsesPayload,
   ResponsesResult,
-} from "../../../../../lib/responses-types.ts";
-import type { Upstream } from "../../../../../lib/upstream/types.ts";
+} from "../../../shared/protocol/responses.ts";
+import type { Upstream } from "../../../../../shared/upstream/types.ts";
 import type { EmitInput } from "../../emit-types.ts";
 import type { OptionalInterceptor } from "../../optional-fix.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";

@@ -1,5 +1,5 @@
-import type { ChatCompletionResponse } from "../../../../../lib/chat-completions-types.ts";
-import type { Upstream } from "../../../../../lib/upstream/types.ts";
+import type { ChatCompletionResponse } from "../../../shared/protocol/chat-completions.ts";
+import type { Upstream } from "../../../../../shared/upstream/types.ts";
 import type { OptionalInterceptor } from "../../optional-fix.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 import type { EmitToChatCompletionsInput } from "../emit.ts";

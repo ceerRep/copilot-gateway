@@ -4,7 +4,7 @@ import type {
   Message,
   Tool,
   ToolCall,
-} from "../../../../lib/chat-completions-types.ts";
+} from "../../shared/protocol/chat-completions.ts";
 import type {
   ResponseFunctionTool,
   ResponseInputContent,
@@ -12,8 +12,8 @@ import type {
   ResponsesPayload,
   ResponseTool,
   ResponseToolChoice,
-} from "../../../../lib/responses-types.ts";
-import { toChatReasoningItem } from "../shared/responses-reasoning.ts";
+} from "../../shared/protocol/responses.ts";
+import { toChatReasoningItem } from "../shared/chat-responses-reasoning.ts";
 
 const toChatCompletionsContent = (
   content: string | ResponseInputContent[],

@@ -1,7 +1,7 @@
 import { app } from "./app.ts";
-import { clearCopilotTokenCache } from "./lib/copilot.ts";
-import { clearModelsCache } from "./lib/models-cache.ts";
-import { initEnv } from "./lib/env.ts";
+import { clearCopilotTokenCache } from "./shared/copilot.ts";
+import { clearModelsCache } from "./data-plane/models/cache.ts";
+import { initEnv } from "./runtime/env.ts";
 import type { SearchConfig } from "./data-plane/tools/web-search/types.ts";
 import { InMemoryRepo } from "./repo/memory.ts";
 import { initRepo } from "./repo/index.ts";
@@ -193,7 +193,7 @@ export function copilotModels(
   };
 }
 
-import type { Upstream } from "./lib/upstream/types.ts";
+import type { Upstream } from "./shared/upstream/types.ts";
 
 // A throwaway upstream stub for unit tests that exercise interceptors or other
 // code paths needing an EmitInput.upstream but not the upstream's network

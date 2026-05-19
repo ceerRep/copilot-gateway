@@ -8,8 +8,8 @@
 // catalog. LLM-flavoured layering (default-fix merge) wraps this in
 // `data-plane/llm/shared/upstream-run.ts`.
 
-import type { UpstreamSelection } from "../../lib/upstream/resolver.ts";
-import type { Upstream } from "../../lib/upstream/types.ts";
+import type { UpstreamSelection } from "../../shared/upstream/resolver.ts";
+import type { Upstream } from "../../shared/upstream/types.ts";
 import { withAccountFallback } from "./account-pool/fallback.ts";
 
 export const runOnUpstream = async <T>(

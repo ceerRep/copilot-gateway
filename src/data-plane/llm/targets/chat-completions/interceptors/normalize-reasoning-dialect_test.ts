@@ -2,7 +2,7 @@ import { assertEquals } from "@std/assert";
 import type {
   ChatCompletionResponse,
   ChatCompletionsPayload,
-} from "../../../../../lib/chat-completions-types.ts";
+} from "../../../shared/protocol/chat-completions.ts";
 import { stubUpstream } from "../../../../../test-helpers.ts";
 import { eventResult } from "../../../shared/errors/result.ts";
 import {

@@ -5,18 +5,18 @@
 // `data-plane/shared/upstream-run.ts` directly — they don't run target
 // interceptors and don't need the catalog.
 
-import { ModelsFetchError } from "../../../lib/models-cache.ts";
-import type { PerformanceTelemetryContext } from "../../../lib/performance-telemetry.ts";
-import type { UpstreamSelection } from "../../../lib/upstream/resolver.ts";
-import type { Upstream } from "../../../lib/upstream/types.ts";
+import { ModelsFetchError } from "../../models/cache.ts";
+import type { PerformanceTelemetryContext } from "../../shared/performance/telemetry.ts";
+import type { UpstreamSelection } from "../../../shared/upstream/resolver.ts";
+import type { Upstream } from "../../../shared/upstream/types.ts";
 import { runOnUpstream as runOnUpstreamNeutral } from "../../shared/upstream-run.ts";
 import { defaultFixesFor } from "../targets/optional-fixes.ts";
 import type { UpstreamErrorResult } from "./errors/result.ts";
 
-// `lib/upstream/*` adapters carry only the admin's explicit opt-in fix ids
+// `shared/upstream/*` adapters carry only the admin's explicit opt-in fix ids
 // (empty for built-in Copilot). The flag catalog is data-plane territory,
 // so per-kind defaults are merged here at the request-path boundary
-// instead of inside the adapter — keeping lib/upstream catalog-agnostic.
+// instead of inside the adapter — keeping shared/upstream catalog-agnostic.
 export const withDefaultFixes = (upstream: Upstream): Upstream => {
   const defaults = defaultFixesFor(upstream.kind);
   if (defaults.size === 0) return upstream;

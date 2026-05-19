@@ -1,8 +1,8 @@
 import type { Context } from "hono";
-import { isCopilotTokenFetchError } from "../../../../../lib/copilot.ts";
-import { ModelsFetchError } from "../../../../../lib/models-cache.ts";
-import type { MessagesPayload } from "../../../../../lib/messages-types.ts";
-import { resolveUpstreamForModel } from "../../../../../lib/upstream/resolver.ts";
+import { isCopilotTokenFetchError } from "../../../../../shared/copilot.ts";
+import { ModelsFetchError } from "../../../../models/cache.ts";
+import type { MessagesPayload } from "../../../shared/protocol/messages.ts";
+import { resolveUpstreamForModel } from "../../../../../shared/upstream/resolver.ts";
 import { withAccountFallback } from "../../../../shared/account-pool/fallback.ts";
 import {
   messagesModelResolutionIntent,

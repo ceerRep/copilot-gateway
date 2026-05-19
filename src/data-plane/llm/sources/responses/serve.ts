@@ -1,5 +1,5 @@
 import type { Context } from "hono";
-import type { ResponsesPayload } from "../../../../lib/responses-types.ts";
+import type { ResponsesPayload } from "../../shared/protocol/responses.ts";
 import {
   type ResponsesSourceContext,
   responsesSourceInterceptors,
@@ -25,18 +25,19 @@ import {
   type UpstreamErrorResult,
 } from "../../shared/errors/result.ts";
 import { toInternalDebugError } from "../../shared/errors/internal-debug-error.ts";
+import { thrownUpstreamErrorResult } from "../../shared/errors/upstream-error.ts";
 import type { ProtocolFrame } from "../../shared/stream/types.ts";
 import type { SourceResponseStreamEvent } from "./events/protocol.ts";
 import {
   modelLoadErrorResult,
   runOnUpstream,
 } from "../../shared/upstream-run.ts";
-import { resolveUpstreamForModel } from "../../../../lib/upstream/resolver.ts";
+import { resolveUpstreamForModel } from "../../../../shared/upstream/resolver.ts";
 import {
   type PerformanceTelemetryContext,
   runtimeLocationFromRequest,
-} from "../../../../lib/performance-telemetry.ts";
-import { backgroundSchedulerFromContext } from "../../../../lib/background.ts";
+} from "../../../shared/performance/telemetry.ts";
+import { backgroundSchedulerFromContext } from "../../../../runtime/background.ts";
 
 const withTranslatedEvents = <T>(
   result: StreamExecuteResult<T>,
@@ -321,6 +322,16 @@ export const serveResponses = async (
       downstreamAbortController,
     );
   } catch (error) {
+    const upstreamError = thrownUpstreamErrorResult(error, lastPerformance);
+    if (upstreamError) {
+      return await respondResponses(
+        c,
+        upstreamError,
+        false,
+        downstreamAbortController,
+      );
+    }
+
     return await respondResponses(
       c,
       internalErrorResult(

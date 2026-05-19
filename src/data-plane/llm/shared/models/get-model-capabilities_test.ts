@@ -4,7 +4,7 @@ import {
   modelCapabilitiesFromModel,
   resolveEffectiveSupportedEndpoints,
 } from "./get-model-capabilities.ts";
-import type { ModelInfo } from "../../../../lib/models-cache.ts";
+import type { ModelInfo } from "../../../models/cache.ts";
 
 const baseModel = (overrides: Partial<ModelInfo> = {}): ModelInfo => ({
   id: "test-model",

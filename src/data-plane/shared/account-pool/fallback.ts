@@ -3,20 +3,20 @@ import type { GitHubAccount } from "../../../repo/types.ts";
 import {
   isAccountSwitchableStatus,
   isCopilotTokenFetchError,
-} from "../../../lib/copilot.ts";
+} from "../../../shared/copilot.ts";
 import {
   clearModelBackoffs,
   isAccountModelBackedOff,
   markAccountModelBackoff,
-} from "../../../lib/account-model-backoffs.ts";
+} from "./backoffs.ts";
 import {
   findModelInModels,
   isSwitchableModelsLoadError,
   loadModelsForAccount,
   ModelsFetchError,
-} from "../../../lib/models-cache.ts";
-import { createCopilotUpstream } from "../../../lib/upstream/copilot.ts";
-import type { Upstream } from "../../../lib/upstream/types.ts";
+} from "../../models/cache.ts";
+import { createCopilotUpstream } from "../../../shared/upstream/copilot.ts";
+import type { Upstream } from "../../../shared/upstream/types.ts";
 
 export interface AccountPoolAttemptContext {
   upstream: Upstream;

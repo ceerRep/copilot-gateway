@@ -9,7 +9,7 @@ import type {
   MessagesToolResultBlock,
   MessagesToolResultContentBlock,
   MessagesUserContentBlock,
-} from "../../../../../lib/messages-types.ts";
+} from "../../../shared/protocol/messages.ts";
 import {
   collectMessagesProtocolEventsToResponse,
 } from "../events/to-response.ts";

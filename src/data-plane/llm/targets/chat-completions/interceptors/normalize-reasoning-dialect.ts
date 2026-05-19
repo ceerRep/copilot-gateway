@@ -3,7 +3,7 @@ import type {
   ChatCompletionsPayload,
   ChatReasoningItem,
   Message,
-} from "../../../../../lib/chat-completions-types.ts";
+} from "../../../shared/protocol/chat-completions.ts";
 import { jsonFrame, sseFrame } from "../../../shared/stream/types.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 

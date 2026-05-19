@@ -2,12 +2,12 @@ import type { Context } from "hono";
 import type {
   GeminiGenerateContentRequest,
   GeminiStreamEvent,
-} from "../../../../lib/gemini-types.ts";
-import { backgroundSchedulerFromContext } from "../../../../lib/background.ts";
+} from "../../shared/protocol/gemini.ts";
+import { backgroundSchedulerFromContext } from "../../../../runtime/background.ts";
 import {
   type PerformanceTelemetryContext,
   runtimeLocationFromRequest,
-} from "../../../../lib/performance-telemetry.ts";
+} from "../../../shared/performance/telemetry.ts";
 import {
   type GeminiSourceContext,
   geminiSourceInterceptors,
@@ -21,7 +21,7 @@ import {
   modelLoadErrorResult,
   runOnUpstream,
 } from "../../shared/upstream-run.ts";
-import { resolveUpstreamForModel } from "../../../../lib/upstream/resolver.ts";
+import { resolveUpstreamForModel } from "../../../../shared/upstream/resolver.ts";
 import { emitToMessages } from "../../targets/messages/emit.ts";
 import { emitToResponses } from "../../targets/responses/emit.ts";
 import { emitToChatCompletions } from "../../targets/chat-completions/emit.ts";
@@ -37,7 +37,7 @@ import {
 } from "../../shared/errors/result.ts";
 import { toInternalDebugError } from "../../shared/errors/internal-debug-error.ts";
 import type { ProtocolFrame } from "../../shared/stream/types.ts";
-import { countGeminiTokens } from "../../../gemini/count-tokens.ts";
+import { countGeminiTokens } from "./count-tokens/serve.ts";
 
 const withTranslatedEvents = <T>(
   result: StreamExecuteResult<T>,

@@ -1,17 +1,11 @@
-import type { ChatCompletionsPayload } from "../../../../lib/chat-completions-types.ts";
-import type { MessagesPayload } from "../../../../lib/messages-types.ts";
-import type {
-  ModelInfo,
-  ModelsResponse,
-} from "../../../../lib/models-cache.ts";
-import {
-  loadModels,
-  loadModelsForAccount,
-} from "../../../../lib/models-cache.ts";
-import { normalizeModelName } from "../../../../lib/model-name.ts";
-import type { ResponsesPayload } from "../../../../lib/responses-types.ts";
+import type { ChatCompletionsPayload } from "../protocol/chat-completions.ts";
+import type { MessagesPayload } from "../protocol/messages.ts";
+import type { ModelInfo, ModelsResponse } from "../../../models/cache.ts";
+import { loadModels, loadModelsForAccount } from "../../../models/cache.ts";
+import { normalizeModelName } from "../../../../shared/model-name.ts";
+import type { ResponsesPayload } from "../protocol/responses.ts";
 import { getRepo } from "../../../../repo/index.ts";
-import { createOpenAiUpstream } from "../../../../lib/upstream/openai.ts";
+import { createOpenAiUpstream } from "../../../../shared/upstream/openai.ts";
 
 const CONTEXT_1M_BETA = "context-1m-2025-08-07";
 const CLAUDE_DATE_SUFFIX = /-\d{8}$/;

@@ -3,19 +3,17 @@
 // custom OpenAI-compatible upstreams and are not exposed as admin-toggleable
 // fixes.
 
-import type { MessagesResponse } from "../../../../../../lib/messages-types.ts";
+import type { MessagesResponse } from "../../../../shared/protocol/messages.ts";
 import type { TargetInterceptor } from "../../../run-interceptors.ts";
 import type { EmitToMessagesInput } from "../../emit.ts";
 import { withThinkingDisplayPromoted } from "./promote-thinking-display.ts";
 import { withBetaHeaderFixed } from "./fix-beta-header.ts";
 import { withEagerInputStreamingStripped } from "./strip-eager-input-streaming.ts";
-import { withDoneSentinelStripped } from "./strip-done-sentinel.ts";
 
 export const messagesCopilotInterceptors = [
   withThinkingDisplayPromoted,
   withBetaHeaderFixed,
   withEagerInputStreamingStripped,
-  withDoneSentinelStripped,
 ] as const satisfies readonly TargetInterceptor<
   EmitToMessagesInput,
   MessagesResponse

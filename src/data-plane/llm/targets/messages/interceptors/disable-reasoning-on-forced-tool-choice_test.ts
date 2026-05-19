@@ -1,5 +1,5 @@
 import { assertEquals } from "@std/assert";
-import type { MessagesPayload } from "../../../../../lib/messages-types.ts";
+import type { MessagesPayload } from "../../../shared/protocol/messages.ts";
 import { stubUpstream } from "../../../../../test-helpers.ts";
 import { eventResult } from "../../../shared/errors/result.ts";
 import type { EmitToMessagesInput } from "../emit.ts";

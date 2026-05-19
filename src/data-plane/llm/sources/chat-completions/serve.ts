@@ -2,12 +2,7 @@ import type { Context } from "hono";
 import type {
   ChatCompletionChunk,
   ChatCompletionsPayload,
-} from "../../../../lib/chat-completions-types.ts";
-import {
-  type ChatCompletionsSourceContext,
-  chatCompletionsSourceInterceptors,
-} from "./interceptors/index.ts";
-import { runSourceInterceptors } from "../run-interceptors.ts";
+} from "../../shared/protocol/chat-completions.ts";
 import { planChatRequest } from "./plan.ts";
 import { getModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
 import {
@@ -28,6 +23,16 @@ import {
   type UpstreamErrorResult,
 } from "../../shared/errors/result.ts";
 import { toInternalDebugError } from "../../shared/errors/internal-debug-error.ts";
+import {
+  modelLoadErrorResult,
+  runOnUpstream,
+} from "../../shared/upstream-run.ts";
+import { resolveUpstreamForModel } from "../../../../shared/upstream/resolver.ts";
+import {
+  type PerformanceTelemetryContext,
+  runtimeLocationFromRequest,
+} from "../../../shared/performance/telemetry.ts";
+import { backgroundSchedulerFromContext } from "../../../../runtime/background.ts";
 import type { ProtocolFrame } from "../../shared/stream/types.ts";
 
 const unsupportedChatModelResult = (
@@ -44,16 +49,6 @@ const unsupportedChatModelResult = (
     },
   })),
 });
-import {
-  modelLoadErrorResult,
-  runOnUpstream,
-} from "../../shared/upstream-run.ts";
-import { resolveUpstreamForModel } from "../../../../lib/upstream/resolver.ts";
-import {
-  type PerformanceTelemetryContext,
-  runtimeLocationFromRequest,
-} from "../../../../lib/performance-telemetry.ts";
-import { backgroundSchedulerFromContext } from "../../../../lib/background.ts";
 
 const withTranslatedEvents = <T>(
   result: StreamExecuteResult<T>,
@@ -90,7 +85,6 @@ export const serveChatCompletions = async (
     downstreamAbortController = wantsStream ? new AbortController() : undefined;
     const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
     const scheduleBackground = backgroundSchedulerFromContext(c);
-    const ctx: ChatCompletionsSourceContext = { payload, apiKeyId };
     const performanceFor = (
       model: string,
       targetApi: PerformanceTelemetryContext["targetApi"],
@@ -106,129 +100,120 @@ export const serveChatCompletions = async (
       return lastPerformance;
     };
 
-    const result = await runSourceInterceptors(
-      ctx,
-      chatCompletionsSourceInterceptors,
-      async () => {
-        const intent = chatModelResolutionIntent(ctx.payload);
-        const { id: modelId } = await resolveModelForRequest(
-          ctx.payload.model,
-          intent,
-        );
-        performanceFor(modelId, "chat-completions");
+    const intent = chatModelResolutionIntent(payload);
+    const { id: modelId } = await resolveModelForRequest(
+      payload.model,
+      intent,
+    );
+    performanceFor(modelId, "chat-completions");
 
-        const resolution = await resolveUpstreamForModel(modelId);
-        if (resolution.type === "not-found") {
-          return {
-            type: "upstream-error" as const,
-            status: 404,
-            headers: new Headers({ "content-type": "application/json" }),
-            body: new TextEncoder().encode(JSON.stringify({
-              error: {
-                message:
-                  `No upstream provides model ${modelId}. Configure an upstream that exposes this model in the dashboard.`,
-                type: "invalid_request_error",
-              },
-            })),
-          };
-        }
-        if (resolution.type === "upstream-error") {
-          return modelLoadErrorResult(resolution.error, lastPerformance);
-        }
+    const resolution = await resolveUpstreamForModel(modelId);
+    const result = resolution.type === "not-found"
+      ? {
+        type: "upstream-error" as const,
+        status: 404,
+        headers: new Headers({ "content-type": "application/json" }),
+        body: new TextEncoder().encode(JSON.stringify({
+          error: {
+            message:
+              `No upstream provides model ${modelId}. Configure an upstream that exposes this model in the dashboard.`,
+            type: "invalid_request_error",
+          },
+        })),
+      }
+      : resolution.type === "upstream-error"
+      ? modelLoadErrorResult(resolution.error, lastPerformance)
+      : await runOnUpstream(
+        resolution.selection,
+        modelId,
+        async (upstream) => {
+          const attemptPayload = structuredClone(payload);
+          attemptPayload.model = modelId;
+          const capabilities = await getModelCapabilities(
+            modelId,
+            upstream,
+          );
+          const plan = planChatRequest(attemptPayload, capabilities);
+          if (!plan) {
+            return unsupportedChatModelResult(attemptPayload.model);
+          }
 
-        return await runOnUpstream(
-          resolution.selection,
-          modelId,
-          async (upstream) => {
-            const attemptPayload = structuredClone(ctx.payload);
-            attemptPayload.model = modelId;
-            const capabilities = await getModelCapabilities(
-              modelId,
-              upstream,
+          if (plan.target === "messages") {
+            performanceFor(attemptPayload.model, "messages");
+            const targetPayload = await buildMessagesTargetRequest(
+              attemptPayload,
+              capabilities,
             );
-            const plan = planChatRequest(attemptPayload, capabilities);
-            if (!plan) {
-              return unsupportedChatModelResult(attemptPayload.model);
-            }
-
-            if (plan.target === "messages") {
-              performanceFor(attemptPayload.model, "messages");
-              const targetPayload = await buildMessagesTargetRequest(
-                attemptPayload,
-                capabilities,
-              );
-              const performance = performanceFor(
-                targetPayload.model,
-                "messages",
-              );
-              const result = await emitToMessages({
-                sourceApi: "chat-completions",
-                payload: targetPayload,
-                upstream,
-                apiKeyId,
-                clientStream: wantsStream,
-                runtimeLocation,
-                scheduleBackground,
-                fetchOptions: plan.fetchOptions,
-                downstreamAbortSignal: downstreamAbortController?.signal,
-              });
-
-              return withResultMetadata(
-                withTranslatedEvents(result, translateMessagesToSourceEvents),
-                targetPayload.model,
-                performance,
-              );
-            }
-
-            if (plan.target === "responses") {
-              performanceFor(attemptPayload.model, "responses");
-              const targetPayload = buildResponsesTargetRequest(attemptPayload);
-              const performance = performanceFor(
-                targetPayload.model,
-                "responses",
-              );
-              const result = await emitToResponses({
-                sourceApi: "chat-completions",
-                payload: targetPayload,
-                upstream,
-                apiKeyId,
-                clientStream: wantsStream,
-                runtimeLocation,
-                scheduleBackground,
-                fetchOptions: plan.fetchOptions,
-                downstreamAbortSignal: downstreamAbortController?.signal,
-              });
-
-              return withResultMetadata(
-                withTranslatedEvents(result, translateResponsesToSourceEvents),
-                targetPayload.model,
-                performance,
-              );
-            }
-
             const performance = performanceFor(
-              attemptPayload.model,
-              "chat-completions",
+              targetPayload.model,
+              "messages",
             );
+            const result = await emitToMessages({
+              sourceApi: "chat-completions",
+              payload: targetPayload,
+              upstream,
+              apiKeyId,
+              clientStream: wantsStream,
+              runtimeLocation,
+              scheduleBackground,
+              fetchOptions: plan.fetchOptions,
+              downstreamAbortSignal: downstreamAbortController?.signal,
+            });
+
             return withResultMetadata(
-              await emitToChatCompletions({
-                sourceApi: "chat-completions",
-                payload: attemptPayload,
-                upstream,
-                apiKeyId,
-                clientStream: wantsStream,
-                runtimeLocation,
-                scheduleBackground,
-                fetchOptions: plan.fetchOptions,
-                downstreamAbortSignal: downstreamAbortController?.signal,
-              }),
-              attemptPayload.model,
+              withTranslatedEvents(result, translateMessagesToSourceEvents),
+              targetPayload.model,
               performance,
             );
-          },
-        );
-      },
-    );
+          }
+
+          if (plan.target === "responses") {
+            performanceFor(attemptPayload.model, "responses");
+            const targetPayload = buildResponsesTargetRequest(attemptPayload);
+            const performance = performanceFor(
+              targetPayload.model,
+              "responses",
+            );
+            const result = await emitToResponses({
+              sourceApi: "chat-completions",
+              payload: targetPayload,
+              upstream,
+              apiKeyId,
+              clientStream: wantsStream,
+              runtimeLocation,
+              scheduleBackground,
+              fetchOptions: plan.fetchOptions,
+              downstreamAbortSignal: downstreamAbortController?.signal,
+            });
+
+            return withResultMetadata(
+              withTranslatedEvents(result, translateResponsesToSourceEvents),
+              targetPayload.model,
+              performance,
+            );
+          }
+
+          const performance = performanceFor(
+            attemptPayload.model,
+            "chat-completions",
+          );
+          return withResultMetadata(
+            await emitToChatCompletions({
+              sourceApi: "chat-completions",
+              payload: attemptPayload,
+              upstream,
+              apiKeyId,
+              clientStream: wantsStream,
+              runtimeLocation,
+              scheduleBackground,
+              fetchOptions: plan.fetchOptions,
+              downstreamAbortSignal: downstreamAbortController?.signal,
+            }),
+            attemptPayload.model,
+            performance,
+          );
+        },
+      );
 
     return await respondChatCompletions(
       c,

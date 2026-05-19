@@ -1,5 +1,5 @@
-import type { MessagesResponse } from "../../../../../lib/messages-types.ts";
-import type { Upstream } from "../../../../../lib/upstream/types.ts";
+import type { MessagesResponse } from "../../../shared/protocol/messages.ts";
+import type { Upstream } from "../../../../../shared/upstream/types.ts";
 import type { OptionalInterceptor } from "../../optional-fix.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 import type { EmitToMessagesInput } from "../emit.ts";

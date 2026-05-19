@@ -5,18 +5,13 @@
 
 import type { Context } from "hono";
 
-import { isCopilotTokenFetchError } from "../../lib/copilot.ts";
-import { findModel, ModelsFetchError } from "../../lib/models-cache.ts";
-import { resolveUpstreamForModel } from "../../lib/upstream/resolver.ts";
+import { isCopilotTokenFetchError } from "../../shared/copilot.ts";
+import { findModel, ModelsFetchError } from "../models/cache.ts";
+import { resolveUpstreamForModel } from "../../shared/upstream/resolver.ts";
 import { resolveEffectiveSupportedEndpoints } from "../shared/models/resolve-endpoints.ts";
 import { runOnUpstream } from "../shared/upstream-run.ts";
 import { withAccountFallback } from "../shared/account-pool/fallback.ts";
-import { withUsageResponseMetadata } from "../../middleware/usage-response-metadata.ts";
-import {
-  apiErrorResponse,
-  getErrorMessage,
-  proxyJsonResponse,
-} from "../shared/http/proxy-response.ts";
+import { setUsageResponseMetadata } from "../../middleware/usage-response-metadata.ts";
 
 interface EmbeddingsRequestBody {
   model?: unknown;
@@ -69,6 +64,23 @@ const modelsLoadErrorResponse = (error: unknown): Response | null =>
     })
     : null;
 
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const apiErrorResponse = (
+  c: Context,
+  message: string,
+  status: 400 | 404 | 502,
+): Response => c.json({ error: { message, type: "api_error" } }, status);
+
+const proxyJsonResponse = (resp: Response): Response =>
+  new Response(resp.body, {
+    status: resp.status,
+    headers: {
+      "content-type": resp.headers.get("content-type") ?? "application/json",
+    },
+  });
+
 export const embeddings = async (c: Context) => {
   try {
     const request = prepareEmbeddingsRequest(await c.req.text());
@@ -82,9 +94,10 @@ export const embeddings = async (c: Context) => {
         ({ upstream }) =>
           upstream.fetch("embeddings", { method: "POST", body: request.body }),
       );
-      return withUsageResponseMetadata(c, proxyJsonResponse(resp), {
+      setUsageResponseMetadata(c, {
         usageModel: request.usageModel,
       });
+      return proxyJsonResponse(resp);
     }
 
     const resolution = await resolveUpstreamForModel(request.model);
@@ -117,16 +130,12 @@ export const embeddings = async (c: Context) => {
             400,
           );
         }
-        return withUsageResponseMetadata(
-          c,
-          proxyJsonResponse(
-            await upstream.fetch("embeddings", {
-              method: "POST",
-              body: request.body,
-            }),
-          ),
-          { usageModel: request.usageModel },
-        );
+        const upstreamResponse = await upstream.fetch("embeddings", {
+          method: "POST",
+          body: request.body,
+        });
+        setUsageResponseMetadata(c, { usageModel: request.usageModel });
+        return proxyJsonResponse(upstreamResponse);
       },
     );
 
@@ -139,6 +148,6 @@ export const embeddings = async (c: Context) => {
       });
     }
 
-    return apiErrorResponse(c, getErrorMessage(e), 502);
+    return apiErrorResponse(c, errorMessage(e), 502);
   }
 };

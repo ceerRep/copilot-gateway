@@ -1,11 +1,12 @@
-import type { BackgroundScheduler } from "../../../lib/background.ts";
+import type { BackgroundScheduler } from "../../../runtime/background.ts";
 import type { ExecuteResult } from "../shared/errors/result.ts";
 import type { ProtocolFrame, StreamFrame } from "../shared/stream/types.ts";
-import type { SourceApi } from "../shared/types/source-api.ts";
 import type {
   Upstream,
   UpstreamFetchOptions,
-} from "../../../lib/upstream/types.ts";
+} from "../../../shared/upstream/types.ts";
+
+type SourceApi = "messages" | "responses" | "chat-completions" | "gemini";
 
 export interface EmitInput<TPayload extends { model: string }> {
   sourceApi: SourceApi;

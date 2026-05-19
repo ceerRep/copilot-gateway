@@ -8,25 +8,9 @@
 // ids are global upstream contracts).
 
 import type { Context } from "hono";
-import { isCopilotTokenFetchError } from "../../lib/copilot.ts";
-import {
-  loadModels,
-  loadModelsForAccount,
-  type ModelInfo,
-  ModelsFetchError,
-} from "../../lib/models-cache.ts";
-import { getRepo } from "../../repo/index.ts";
-import { createOpenAiUpstream } from "../../lib/upstream/openai.ts";
-import {
-  apiErrorResponse,
-  getErrorMessage,
-} from "../shared/http/proxy-response.ts";
-import {
-  copilotSupportsGeneration,
-  endpointsIncludeLlmGeneration,
-  resolveEffectiveSupportedEndpoints,
-} from "../llm/shared/models/get-model-capabilities.ts";
-import { mergeClaudeVariants } from "./merge.ts";
+import { isCopilotTokenFetchError } from "../../shared/copilot.ts";
+import { ModelsFetchError } from "./cache.ts";
+import { loadMergedModels } from "./load.ts";
 
 const errorResponse = (error: unknown): Response | null => {
   if (error instanceof ModelsFetchError) {
@@ -46,97 +30,21 @@ const errorResponse = (error: unknown): Response | null => {
   return null;
 };
 
+const errorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error);
+
+const apiErrorResponse = (
+  c: Context,
+  message: string,
+  status: 502,
+): Response => c.json({ error: { message, type: "api_error" } }, status);
+
 export const models = async (c: Context) => {
   try {
-    const byId = new Map<string, ModelInfo>();
-    let lastCopilotError: unknown = null;
-    let sawCopilotSuccess = false;
-
-    const accounts = await getRepo().github.listAccounts();
-    for (const account of accounts) {
-      const result = await loadModelsForAccount(account);
-      if (result.type === "error") {
-        lastCopilotError = result.error;
-        continue;
-      }
-      sawCopilotSuccess = true;
-      for (const model of result.data.data) {
-        if (!model?.id || byId.has(model.id)) continue;
-        byId.set(model.id, {
-          ...model,
-          upstream_kind: "copilot",
-          supports_generation: copilotSupportsGeneration(model),
-        });
-      }
-    }
-
-    const customConfigs = await getRepo().upstreamConfigs.list();
-    let sawCustomSuccess = false;
-    let lastCustomError: unknown = null;
-    for (const config of customConfigs) {
-      if (!config.enabled) continue;
-      const upstream = createOpenAiUpstream(config);
-      const result = await loadModels(upstream);
-      if (result.type === "error") {
-        lastCustomError = result.error;
-        continue;
-      }
-      sawCustomSuccess = true;
-      for (const model of result.data.data) {
-        if (!model?.id || byId.has(model.id)) continue;
-        const { endpoints: supported_endpoints } =
-          resolveEffectiveSupportedEndpoints(
-            model.supported_endpoints,
-            upstream,
-          );
-        byId.set(model.id, {
-          ...model,
-          supported_endpoints,
-          upstream_kind: "openai",
-          supports_generation: endpointsIncludeLlmGeneration(
-            supported_endpoints,
-          ),
-        });
-      }
-    }
-
-    if (sawCopilotSuccess || sawCustomSuccess) {
-      // Merge Claude variants (reasoning-effort, 1M-context, dated aliases)
-      // into base model ids for a clean outbound view. Non-Claude models
-      // (gpt-*, gemini-*, custom-upstream) pass through unchanged.
-      const merged = mergeClaudeVariants({
-        object: "list",
-        data: [...byId.values()],
-      });
-      return Response.json(merged);
-    }
-
-    if (accounts.length === 0 && !sawCustomSuccess) {
-      const anyError = lastCustomError ?? lastCopilotError;
-      if (anyError) {
-        const upstreamErr = errorResponse(anyError);
-        if (upstreamErr) return upstreamErr;
-        return apiErrorResponse(c, getErrorMessage(anyError), 502);
-      }
-      return apiErrorResponse(
-        c,
-        "No GitHub account connected — add one via the dashboard",
-        502,
-      );
-    }
-
-    const upstreamErr = errorResponse(lastCopilotError);
-    if (upstreamErr) return upstreamErr;
-    if (lastCopilotError) {
-      return apiErrorResponse(c, getErrorMessage(lastCopilotError), 502);
-    }
-    if (lastCustomError) {
-      const customErr = errorResponse(lastCustomError);
-      if (customErr) return customErr;
-      return apiErrorResponse(c, getErrorMessage(lastCustomError), 502);
-    }
-    return Response.json({ object: "list", data: [] });
+    return Response.json(await loadMergedModels());
   } catch (e: unknown) {
-    return apiErrorResponse(c, getErrorMessage(e), 502);
+    const upstreamErr = errorResponse(e);
+    if (upstreamErr) return upstreamErr;
+    return apiErrorResponse(c, errorMessage(e), 502);
   }
 };
