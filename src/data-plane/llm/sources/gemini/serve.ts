@@ -34,8 +34,10 @@ import { translateToSourceEvents as translateChatCompletionsToSourceEvents } fro
 import {
   internalErrorResult,
   type StreamExecuteResult,
+  type UpstreamErrorResult,
 } from "../../shared/errors/result.ts";
 import { toInternalDebugError } from "../../shared/errors/internal-debug-error.ts";
+import { thrownUpstreamErrorResult } from "../../shared/errors/upstream-error.ts";
 import type { ProtocolFrame } from "../../shared/stream/types.ts";
 import { countGeminiTokens } from "./count-tokens/serve.ts";
 
@@ -57,6 +59,24 @@ const withResultMetadata = <T>(
   result.type === "events"
     ? { ...result, usageModel, performance }
     : { ...result, performance };
+
+const unsupportedGeminiModelResult = (
+  model: string,
+  performance: PerformanceTelemetryContext,
+): UpstreamErrorResult => ({
+  type: "upstream-error",
+  status: 400,
+  headers: new Headers({ "content-type": "application/json" }),
+  body: new TextEncoder().encode(JSON.stringify({
+    error: {
+      code: 400,
+      message:
+        `Model ${model} does not support the Gemini generateContent endpoint.`,
+      status: "INVALID_ARGUMENT",
+    },
+  })),
+  performance,
+});
 
 export const serveGemini = async (
   c: Context,
@@ -134,19 +154,8 @@ export const serveGemini = async (
               wantsStream,
             );
             if (!plan) {
-              return {
-                type: "upstream-error" as const,
-                status: 400,
-                headers: new Headers({ "content-type": "application/json" }),
-                body: new TextEncoder().encode(JSON.stringify({
-                  error: {
-                    code: 400,
-                    message:
-                      `Model ${modelId} does not support generateContent.`,
-                    status: "INVALID_ARGUMENT",
-                  },
-                })),
-              };
+              const performance = performanceFor(modelId, "gemini");
+              return unsupportedGeminiModelResult(modelId, performance);
             }
 
             if (plan.target === "messages") {
@@ -249,6 +258,16 @@ export const serveGemini = async (
       downstreamAbortController,
     );
   } catch (error) {
+    const upstreamError = thrownUpstreamErrorResult(error, lastPerformance);
+    if (upstreamError) {
+      return await respondGemini(
+        c,
+        upstreamError,
+        false,
+        downstreamAbortController,
+      );
+    }
+
     return await respondGemini(
       c,
       internalErrorResult(

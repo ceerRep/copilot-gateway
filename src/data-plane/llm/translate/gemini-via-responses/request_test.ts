@@ -269,6 +269,14 @@ Deno.test("buildTargetRequest maps thinking budget thresholds and zero-budget di
     ).reasoning,
     { effort: "none" },
   );
+  assertEquals(
+    buildTargetRequest(
+      { generationConfig: { thinkingConfig: { thinkingBudget: -1 } } },
+      "gpt-test",
+      false,
+    ).reasoning,
+    undefined,
+  );
 });
 
 Deno.test("buildTargetRequest maps tool declarations and tool choice modes only when tools exist", () => {

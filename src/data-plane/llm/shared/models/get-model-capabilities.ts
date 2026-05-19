@@ -94,7 +94,7 @@ export const modelCapabilitiesFromModel = (
     supportsMessages: supportedEndpoints.includes("/v1/messages"),
     supportsResponses: supportedEndpoints.includes("/responses"),
     supportsChatCompletions: supportedEndpoints.includes("/chat/completions") ||
-      inferredChatCompletionsSupport(model),
+      (!explicit && inferredChatCompletionsSupport(model)),
     supportsAdaptiveThinking:
       model?.capabilities?.supports?.adaptive_thinking === true,
     hasExplicitCapabilities: explicit,

@@ -1,7 +1,10 @@
 import type { Context } from "hono";
 import { isCopilotTokenFetchError } from "../../shared/copilot.ts";
 import { type ModelInfo, ModelsFetchError } from "./cache.ts";
-import { endpointsIncludeLlmGeneration } from "../llm/shared/models/get-model-capabilities.ts";
+import {
+  copilotSupportsGeneration,
+  endpointsIncludeLlmGeneration,
+} from "../llm/shared/models/get-model-capabilities.ts";
 import { loadMergedModels } from "./load.ts";
 
 type GeminiGenerationMethod =
@@ -26,9 +29,9 @@ interface GeminiModel {
 
 const supportsLlmGeneration = (model: ModelInfo): boolean =>
   model.supports_generation ??
-    (model.supported_endpoints
-      ? endpointsIncludeLlmGeneration(model.supported_endpoints)
-      : true);
+    (model.upstream_kind === "openai"
+      ? endpointsIncludeLlmGeneration(model.supported_endpoints ?? [])
+      : copilotSupportsGeneration(model));
 
 const displayNameForModel = (model: ModelInfo): string =>
   model.name || model.id;

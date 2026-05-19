@@ -138,6 +138,16 @@ Deno.test("resolveEffectiveSupportedEndpoints falls back to upstream config for 
   assertEquals(explicit, true);
 });
 
+Deno.test("modelCapabilitiesFromModel does not infer chat support over explicit upstream config", () => {
+  const caps = modelCapabilitiesFromModel(
+    baseModel({ id: "custom-chat-model" }),
+    { kind: "openai", supportedEndpoints: ["/embeddings"] },
+  );
+
+  assertEquals(caps.supportsChatCompletions, false);
+  assertEquals(caps.hasExplicitCapabilities, true);
+});
+
 Deno.test("resolveEffectiveSupportedEndpoints returns empty for copilot without per-model metadata", () => {
   const { endpoints, explicit } = resolveEffectiveSupportedEndpoints(
     undefined,

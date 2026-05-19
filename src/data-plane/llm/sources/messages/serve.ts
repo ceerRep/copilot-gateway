@@ -41,6 +41,7 @@ import { backgroundSchedulerFromContext } from "../../../../runtime/background.t
 
 const unsupportedMessagesModelResult = (
   model: string,
+  performance: PerformanceTelemetryContext,
 ): UpstreamErrorResult => ({
   type: "upstream-error",
   status: 400,
@@ -51,6 +52,7 @@ const unsupportedMessagesModelResult = (
       type: "invalid_request_error",
     },
   })),
+  performance,
 });
 
 const withTranslatedEvents = <T>(
@@ -147,7 +149,14 @@ export const serveMessages = async (
               rawBeta,
             );
             if (!plan) {
-              return unsupportedMessagesModelResult(attemptPayload.model);
+              const performance = performanceFor(
+                attemptPayload.model,
+                "messages",
+              );
+              return unsupportedMessagesModelResult(
+                attemptPayload.model,
+                performance,
+              );
             }
 
             if (plan.target === "messages") {

@@ -23,6 +23,7 @@ import {
   type UpstreamErrorResult,
 } from "../../shared/errors/result.ts";
 import { toInternalDebugError } from "../../shared/errors/internal-debug-error.ts";
+import { thrownUpstreamErrorResult } from "../../shared/errors/upstream-error.ts";
 import {
   modelLoadErrorResult,
   runOnUpstream,
@@ -37,6 +38,7 @@ import type { ProtocolFrame } from "../../shared/stream/types.ts";
 
 const unsupportedChatModelResult = (
   model: string,
+  performance: PerformanceTelemetryContext,
 ): UpstreamErrorResult => ({
   type: "upstream-error",
   status: 400,
@@ -48,6 +50,7 @@ const unsupportedChatModelResult = (
       type: "invalid_request_error",
     },
   })),
+  performance,
 });
 
 const withTranslatedEvents = <T>(
@@ -135,7 +138,11 @@ export const serveChatCompletions = async (
           );
           const plan = planChatRequest(attemptPayload, capabilities);
           if (!plan) {
-            return unsupportedChatModelResult(attemptPayload.model);
+            const performance = performanceFor(
+              attemptPayload.model,
+              "chat-completions",
+            );
+            return unsupportedChatModelResult(attemptPayload.model, performance);
           }
 
           if (plan.target === "messages") {
@@ -223,6 +230,17 @@ export const serveChatCompletions = async (
       downstreamAbortController,
     );
   } catch (error) {
+    const upstreamError = thrownUpstreamErrorResult(error, lastPerformance);
+    if (upstreamError) {
+      return await respondChatCompletions(
+        c,
+        upstreamError,
+        false,
+        includeUsageChunk,
+        downstreamAbortController,
+      );
+    }
+
     return await respondChatCompletions(
       c,
       internalErrorResult(

@@ -386,6 +386,14 @@ Deno.test("buildTargetRequest maps thinking budget thresholds", () => {
   );
   assertEquals(
     buildTargetRequest(
+      { generationConfig: { thinkingConfig: { thinkingBudget: -1 } } },
+      "gpt-test",
+      false,
+    ).reasoning_effort,
+    undefined,
+  );
+  assertEquals(
+    buildTargetRequest(
       { generationConfig: { thinkingConfig: { thinkingBudget: 2048 } } },
       "gpt-test",
       false,
