@@ -1,17 +1,46 @@
-import type { ChatCompletionResponse } from "../../../../../lib/chat-completions-types.ts";
-import { disableChatCompletionsReasoning } from "../../../shared/disable-reasoning.ts";
-import { chatHasForcedToolChoice } from "../../../shared/forced-tool-choice.ts";
+import type {
+  ChatCompletionResponse,
+  ChatCompletionsPayload,
+} from "../../../../../lib/chat-completions-types.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 import type { EmitToChatCompletionsInput } from "../emit.ts";
 
 // Opt-in workaround for upstreams where forced `tool_choice` and enabled
-// reasoning do not compose. Vendor field mapping and references live in
-// shared/disable-reasoning.ts.
+// reasoning do not compose. By default this strips OpenAI `reasoning_effort`
+// rather than inventing a `none` effort, because upstreams differ on whether
+// `none` is accepted. Vendor flags add their documented explicit-disable
+// spellings.
+// References:
+// - https://api-docs.deepseek.com/guides/thinking_mode
+// - https://api-docs.deepseek.com/quick_start/agent_integrations/oh_my_pi
+// - https://www.alibabacloud.com/help/en/model-studio/deep-thinking
+const hasForcedToolChoice = (payload: ChatCompletionsPayload): boolean => {
+  const toolChoice = payload.tool_choice;
+  if (toolChoice === undefined || toolChoice === null) return false;
+  if (typeof toolChoice === "string") return toolChoice === "required";
+  return true;
+};
+
+const disableChatCompletionsReasoning = (
+  payload: ChatCompletionsPayload,
+  enabledFixes: ReadonlySet<string>,
+): ChatCompletionsPayload => {
+  const { reasoning_effort: _reasoningEffort, ...rest } = payload;
+  const out: ChatCompletionsPayload & Record<string, unknown> = { ...rest };
+  if (enabledFixes.has("vendor-deepseek")) {
+    out.thinking = { type: "disabled" };
+  }
+  if (enabledFixes.has("vendor-qwen")) {
+    out.enable_thinking = false;
+  }
+  return out;
+};
+
 export const withReasoningDisabledOnForcedToolChoice: TargetInterceptor<
   EmitToChatCompletionsInput,
   ChatCompletionResponse
 > = async (ctx, run) => {
-  if (!chatHasForcedToolChoice(ctx.payload)) return await run();
+  if (!hasForcedToolChoice(ctx.payload)) return await run();
   ctx.payload = disableChatCompletionsReasoning(
     ctx.payload,
     ctx.upstream.enabledFixes,

@@ -431,32 +431,22 @@ Current placement:
     Copilot via the flag's `defaultFor: ["copilot"]` declaration in
     `targets/optional-fixes.ts`, admin-toggleable for custom upstreams that
     surface the same `cyber_policy` failure envelope
-- `src/data-plane/llm/shared/forced-tool-choice.ts`
-  - per-target shape detection helpers (`messagesHasForcedToolChoice`,
-    `responsesHasForcedToolChoice`, `chatHasForcedToolChoice`) consumed by the
-    `disable-reasoning-on-forced-tool-choice` interceptors below
-- `src/data-plane/llm/shared/disable-reasoning.ts`
-  - `disableMessagesReasoning` / `disableResponsesReasoning` /
-    `disableChatCompletionsReasoning` remove reasoning for forced-tool-choice
-    retries. Messages uses Anthropic's native `thinking: { type: "disabled" }`.
-    Responses / Chat Completions strip `reasoning` / `reasoning_effort` by
-    default instead of synthesizing `none`, because this workaround must still
-    run against upstreams or model versions where `none` is not accepted. Vendor
-    flags add provider-specific explicit-disable fields when the upstream has
-    the matching dialect enabled — `vendor-deepseek` emits
-    `thinking: { type: "disabled" }` (the Anthropic schema copied into the
-    OpenAI request body); `vendor-qwen` emits `enable_thinking: false`. Multiple
-    vendor flags stack.
 - `src/data-plane/llm/targets/{messages,responses,chat-completions}/interceptors/disable-reasoning-on-forced-tool-choice.ts`
   - three per-target interceptors bound to a single flag
     `disable-reasoning-on-forced-tool-choice` (declared in
-    `targets/optional-fixes.ts`, default off). Each inspects its target-shaped
-    `tool_choice` (Messages `type === "tool" | "any"`; Responses / Chat
-    Completions `"required"` or object form); when forced, calls the matching
-    helper from `shared/disable-reasoning.ts`. Flag → interceptor decoupling
-    lets one admin toggle drive all three targets simultaneously; vendor-style
-    flags on the same upstream are consumed by the helpers to layer in vendor
-    extensions.
+    `targets/optional-fixes.ts`, default off). Each interceptor owns its local
+    target-shaped `tool_choice` detection and reasoning-disable rewrite:
+    Messages treats `type === "tool" | "any"` as forced and emits Anthropic's
+    native `thinking: { type: "disabled" }` while stripping `output_config`;
+    Responses treats `"required"` or any object form as forced and strips
+    `reasoning`; Chat Completions treats `"required"` or object form as forced
+    and strips `reasoning_effort`. Responses / Chat Completions intentionally do
+    not synthesize `none`, because this workaround must run against upstreams or
+    model versions where `none` is not accepted. Vendor flags add
+    provider-specific explicit-disable fields inside those same target
+    interceptors — `vendor-deepseek` emits `thinking: { type: "disabled" }` (the
+    Anthropic schema copied into the OpenAI request body); `vendor-qwen` emits
+    `enable_thinking: false`. Multiple vendor flags stack.
 - `src/data-plane/llm/targets/chat-completions/interceptors/include-usage-stream-options.ts`
   - always-on base interceptor: ensure streaming usage options needed by the
     gateway's usage-tracking pipeline
