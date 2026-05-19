@@ -72,7 +72,7 @@ interface ReplayAwareMessagesWebSearchShimState {
   requestSearchResultOwnership: SearchResultOwnership[];
 }
 
-export interface ActiveMessagesWebSearchProvider {
+interface ActiveMessagesWebSearchProvider {
   providerName: WebSearchProviderName;
   search: WebSearchProvider;
   apiKeyId?: string;
@@ -788,25 +788,6 @@ export const prepareMessagesWebSearchShimRequest = (
     };
   }
 
-  if (state.mode === "active") {
-    return {
-      type: "ok",
-      payload: {
-        ...payload,
-        ...(payload.tools
-          ? {
-            tools: rewriteMessagesWebSearchToolDefinitions(
-              payload.tools,
-              validatedNativeTools.nativeTool,
-            ),
-          }
-          : {}),
-        messages: replay.messages,
-      },
-      state,
-    };
-  }
-
   return {
     type: "ok",
     payload: {
@@ -989,16 +970,6 @@ export const rewriteMessagesWebSearchResponseToNative = async (
         buildNativeWebSearchErrorResultBlock(block.id, "unavailable"),
       );
     }
-  }
-
-  if (
-    state.mode === "active" &&
-    state.priorSearchUseCount === 0 &&
-    interceptedSearches === 0
-  ) {
-    console.warn(
-      "[web-search-shim] first-turn active session produced no web_search tool_use; upstream model likely ignored forced tool_choice (e.g. reasoning model emitted JSON as reasoning_content).",
-    );
   }
 
   return {
