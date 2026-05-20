@@ -1,5 +1,8 @@
 import { assertEquals, assertFalse } from "@std/assert";
-import { MESSAGES_FALLBACK_MAX_TOKENS } from "../../shared/protocol/messages.ts";
+import {
+  MESSAGES_FALLBACK_MAX_TOKENS,
+  type MessagesMessage,
+} from "../../shared/protocol/messages.ts";
 import { translateResponsesToMessagesResponse } from "../messages-via-responses/result.ts";
 import { translateResponsesToMessages } from "./request.ts";
 
@@ -326,12 +329,203 @@ Deno.test("translateResponsesToMessages drops opaque-only reasoning input with e
 
   // The undefined-encrypted_content reasoning item is dropped, so the two
   // adjacent user messages remain side-by-side without an injected assistant
-  // turn.
+  // turn. The last user message's content carries the ephemeral cache
+  // breakpoint we inject for prompt caching; ignore that here and compare
+  // text content only.
+  const collectText = (content: MessagesMessage["content"]): string =>
+    typeof content === "string"
+      ? content
+      : content.map((b) => "text" in b ? b.text : "").join("");
   assertEquals(
-    result.messages.map((m) => ({ role: m.role, content: m.content })),
+    result.messages.map((m) => ({ role: m.role, text: collectText(m.content) })),
     [
-      { role: "user", content: "hi" },
-      { role: "user", content: "follow up" },
+      { role: "user", text: "hi" },
+      { role: "user", text: "follow up" },
     ],
   );
+});
+
+Deno.test("translateResponsesToMessages emits the system as a block array with an ephemeral cache breakpoint", async () => {
+  // Anthropic requires explicit cache_control to opt into prompt caching;
+  // codex (Responses wire) never sends one, so we inject on the way out. The
+  // system block is the most stable prefix and the easiest place to attach.
+  const result = await translateResponsesToMessages({
+    model: "claude-test",
+    input: [{ type: "message", role: "user", content: "hi" }],
+    instructions: "you are helpful",
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: "auto",
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  });
+
+  assertEquals(result.system, [{
+    type: "text",
+    text: "you are helpful",
+    cache_control: { type: "ephemeral" },
+  }]);
+});
+
+Deno.test("translateResponsesToMessages omits system entirely when instructions and system messages are empty", async () => {
+  const result = await translateResponsesToMessages({
+    model: "claude-test",
+    input: [{ type: "message", role: "user", content: "hi" }],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: "auto",
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  });
+
+  assertFalse("system" in result);
+});
+
+Deno.test("translateResponsesToMessages attaches an ephemeral cache breakpoint to the last tool definition", async () => {
+  const result = await translateResponsesToMessages({
+    model: "claude-test",
+    input: [{ type: "message", role: "user", content: "hi" }],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: [
+      {
+        type: "function",
+        name: "first",
+        description: "first tool",
+        parameters: { type: "object" },
+        strict: true,
+      },
+      {
+        type: "function",
+        name: "second",
+        description: "second tool",
+        parameters: { type: "object" },
+        strict: true,
+      },
+    ],
+    tool_choice: "auto",
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  });
+
+  // Only the last tool gets the breakpoint — earlier tools share the cached
+  // prefix that ends at the last entry.
+  assertEquals(result.tools?.[0], {
+    name: "first",
+    description: "first tool",
+    input_schema: { type: "object" },
+    strict: true,
+  });
+  assertEquals(result.tools?.[1], {
+    name: "second",
+    description: "second tool",
+    input_schema: { type: "object" },
+    strict: true,
+    cache_control: { type: "ephemeral" },
+  });
+});
+
+Deno.test("translateResponsesToMessages attaches an ephemeral cache breakpoint to the last block of the last user message", async () => {
+  const result = await translateResponsesToMessages({
+    model: "claude-test",
+    input: [
+      { type: "message", role: "user", content: "earlier turn" },
+      {
+        type: "message",
+        role: "assistant",
+        content: [{ type: "output_text", text: "ack" }],
+      },
+      { type: "message", role: "user", content: "latest turn" },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: "auto",
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  });
+
+  const last = result.messages[result.messages.length - 1];
+  if (last.role !== "user" || !Array.isArray(last.content)) {
+    throw new Error("expected last user message with content blocks");
+  }
+  // String-content user message is converted to a single text block carrying
+  // the breakpoint, so cache_control can attach (Anthropic requires it on a
+  // block, not on a message).
+  assertEquals(last.content, [{
+    type: "text",
+    text: "latest turn",
+    cache_control: { type: "ephemeral" },
+  }]);
+
+  // Earlier user message remains plain string — only the last message owns
+  // the conversation-history breakpoint.
+  assertEquals(result.messages[0], {
+    role: "user",
+    content: "earlier turn",
+  });
+});
+
+Deno.test("translateResponsesToMessages attaches an ephemeral cache breakpoint to a tool_result block when that's the last user content", async () => {
+  // Mid-conversation requests from codex end on a function_call_output,
+  // which the translator appends as a tool_result block on a user message.
+  // The breakpoint should land on that tool_result so the cache prefix
+  // covers the latest tool exchange.
+  const result = await translateResponsesToMessages({
+    model: "claude-test",
+    input: [
+      { type: "message", role: "user", content: "do thing" },
+      {
+        type: "function_call",
+        call_id: "call_1",
+        name: "noop",
+        arguments: "{}",
+      },
+      {
+        type: "function_call_output",
+        call_id: "call_1",
+        output: "done",
+        status: "completed",
+      },
+    ],
+    instructions: null,
+    temperature: null,
+    top_p: null,
+    max_output_tokens: 256,
+    tools: null,
+    tool_choice: "auto",
+    metadata: null,
+    stream: null,
+    store: false,
+    parallel_tool_calls: true,
+  });
+
+  const last = result.messages[result.messages.length - 1];
+  if (last.role !== "user" || !Array.isArray(last.content)) {
+    throw new Error("expected last user message with content blocks");
+  }
+  assertEquals(last.content[last.content.length - 1], {
+    type: "tool_result",
+    tool_use_id: "call_1",
+    content: "done",
+    is_error: undefined,
+    cache_control: { type: "ephemeral" },
+  });
 });

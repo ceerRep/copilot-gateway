@@ -4,6 +4,7 @@ import {
   type MessagesAssistantMessage,
   type MessagesMessage,
   type MessagesPayload,
+  type MessagesTextBlock,
   type MessagesTool,
   type MessagesToolResultBlock,
   type MessagesUserContentBlock,
@@ -232,11 +233,21 @@ const translateTools = (
   );
   if (functionTools.length === 0) return undefined;
 
-  return functionTools.map((tool) => ({
+  // Mark the last tool definition with an ephemeral cache breakpoint so the
+  // upstream caches the system+tools prefix. Responses itself has no
+  // explicit cache_control concept (caching is keyed by prompt_cache_key on
+  // OpenAI-shaped upstreams), so we have to opt-in to Anthropic's protocol
+  // here or the translated request would always cache-miss — see the
+  // breakpoint placement comment on `applyLastMessageCacheBreakpoint` below
+  // for the full rationale.
+  return functionTools.map((tool, index) => ({
     name: tool.name,
     description: tool.description,
     input_schema: tool.parameters,
     strict: tool.strict,
+    ...(index === functionTools.length - 1
+      ? { cache_control: { type: "ephemeral" as const } }
+      : {}),
   }));
 };
 
@@ -263,6 +274,69 @@ const translateToolChoice = (
     : undefined;
 };
 
+// Inject Anthropic ephemeral cache breakpoints into a translated Messages
+// payload. Anthropic requires explicit cache_control opt-in: without a
+// breakpoint anywhere in the request, the upstream skips prompt caching and
+// returns cache_read_input_tokens = 0 forever, regardless of how stable the
+// prompt prefix is. Codex on the Responses wire never sends cache_control
+// (Responses uses an opaque prompt_cache_key instead) and the field is also
+// not in our MessagesPayload until this function runs.
+//
+// Placement strategy (Anthropic allows up to 4 breakpoints per request):
+//
+//   - last tool definition: caches the system + tools prefix, which is
+//     normally the largest and most stable chunk of every turn.
+//   - last block of the last message: caches conversation history up to
+//     and including the latest user turn / tool result, so subsequent
+//     turns build on a longer cached prefix.
+//   - system block (handled by the caller when system text is non-empty):
+//     covers the no-tools case where everything else here would be no-ops.
+//
+// We do not place a breakpoint on `cache_control.scope` style fields — that
+// is a Claude Code beta extension Copilot rejects (and the Copilot target
+// has a strip interceptor for it). Plain `{ type: "ephemeral" }` is the
+// safe lowest-common-denominator form across Anthropic and Copilot's
+// /v1/messages endpoint.
+const EPHEMERAL: { type: "ephemeral" } = { type: "ephemeral" };
+
+const applyLastMessageCacheBreakpoint = (
+  messages: MessagesMessage[],
+): void => {
+  const last = messages[messages.length - 1];
+  if (!last) return;
+
+  if (typeof last.content === "string") {
+    if (!last.content) return;
+    // String content can't carry a breakpoint — convert to a single text
+    // block so cache_control has somewhere to sit. Branch on role because the
+    // user/assistant content arrays have different element unions even
+    // though MessagesTextBlock is valid in both.
+    const block: MessagesTextBlock = {
+      type: "text",
+      text: last.content,
+      cache_control: EPHEMERAL,
+    };
+    if (last.role === "user") {
+      last.content = [block];
+    } else {
+      last.content = [block];
+    }
+    return;
+  }
+
+  // Walk back to a block type that natively carries cache_control.
+  // Anthropic supports it on text, tool_use, tool_result, image, and
+  // document blocks; we only attach to the kinds we know our Messages
+  // protocol type declares (text/tool_result).
+  for (let i = last.content.length - 1; i >= 0; i--) {
+    const block = last.content[i];
+    if (block.type === "text" || block.type === "tool_result") {
+      block.cache_control = EPHEMERAL;
+      return;
+    }
+  }
+};
+
 export const translateResponsesToMessages = async (
   payload: ResponsesPayload,
   options: TranslateResponsesToMessagesOptions = {},
@@ -271,12 +345,20 @@ export const translateResponsesToMessages = async (
     payload.input,
     options.loadRemoteImage ?? fetchRemoteImage,
   );
-  const system = [payload.instructions, ...systemParts].filter((
+  const systemText = [payload.instructions, ...systemParts].filter((
     part,
   ): part is string => Boolean(part)).join("\n\n");
   const effort = payload.reasoning?.effort;
   const maxTokens = payload.max_output_tokens ??
     options.fallbackMaxOutputTokens ?? MESSAGES_FALLBACK_MAX_TOKENS;
+
+  // Convert system to block form when present so the breakpoint can attach.
+  // See `applyLastMessageCacheBreakpoint` above for the broader rationale.
+  const systemBlocks: MessagesTextBlock[] | undefined = systemText
+    ? [{ type: "text", text: systemText, cache_control: EPHEMERAL }]
+    : undefined;
+
+  applyLastMessageCacheBreakpoint(messages);
 
   // Responses `metadata` is intentionally omitted on the Messages path instead
   // of being coerced into Anthropic `metadata.user_id`, prompt-cache, or safety
@@ -285,7 +367,7 @@ export const translateResponsesToMessages = async (
     model: payload.model,
     messages,
     max_tokens: maxTokens,
-    ...(system ? { system } : {}),
+    ...(systemBlocks ? { system: systemBlocks } : {}),
     ...(payload.temperature != null
       ? { temperature: payload.temperature }
       : {}),

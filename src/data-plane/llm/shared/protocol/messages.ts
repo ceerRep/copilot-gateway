@@ -71,6 +71,7 @@ export interface MessagesTextBlock {
   type: "text";
   text: string;
   citations?: MessagesTextCitation[];
+  cache_control?: { type: "ephemeral" };
 }
 
 export interface MessagesImageBlock {
@@ -107,6 +108,7 @@ export interface MessagesToolResultBlock {
   tool_use_id: string;
   content: string | MessagesToolResultContentBlock[];
   is_error?: boolean;
+  cache_control?: { type: "ephemeral" };
 }
 
 export interface MessagesToolUseBlock {
@@ -190,6 +192,7 @@ export interface MessagesClientTool {
   description?: string;
   input_schema: Record<string, unknown>;
   strict?: boolean;
+  cache_control?: { type: "ephemeral" };
 }
 
 export interface MessagesNativeWebSearchTool {
