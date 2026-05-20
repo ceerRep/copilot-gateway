@@ -23,12 +23,27 @@ export interface GitHubAccount {
 export interface UsageRecord {
   keyId: string;
   model: string;
+  upstream: string | null;
+  modelKey: string;
   hour: string;
   requests: number;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens?: number;
   cacheCreationTokens?: number;
+}
+
+export interface ModelAccounting {
+  model: string;
+  upstream: string;
+  modelKey: string;
+}
+
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheCreationTokens: number;
 }
 
 export interface SearchUsageRecord {
@@ -50,6 +65,8 @@ export interface PerformanceDimensions {
   metricScope: PerformanceMetricScope;
   keyId: string;
   model: string;
+  upstream: string | null;
+  modelKey: string;
   sourceApi: PerformanceApiName;
   targetApi: PerformanceApiName;
   stream: boolean;
@@ -67,13 +84,6 @@ export interface PerformanceTelemetryRecord extends PerformanceDimensions {
   errors: number;
   totalMsSum: number;
   buckets: HistogramBucket[];
-}
-
-export interface AccountModelBackoffRecord {
-  accountId: number;
-  model: string;
-  status: number;
-  expiresAt: number;
 }
 
 export interface ApiKeyRepo {
@@ -98,6 +108,8 @@ export interface UsageRepo {
   record(
     keyId: string,
     model: string,
+    upstream: string | null,
+    modelKey: string,
     hour: string,
     requests: number,
     inputTokens: number,
@@ -154,19 +166,6 @@ export interface CacheRepo {
   deletePrefix(prefix: string): Promise<void>;
 }
 
-export interface AccountModelBackoffRepo {
-  get(
-    accountId: number,
-    model: string,
-  ): Promise<AccountModelBackoffRecord | null>;
-  list(accountIds: number[]): Promise<AccountModelBackoffRecord[]>;
-  mark(record: AccountModelBackoffRecord): Promise<void>;
-  clear(accountId: number, model: string): Promise<void>;
-  clearModel(accountIds: number[], model: string): Promise<void>;
-  clearAccount(accountId: number): Promise<void>;
-  deleteAll(): Promise<void>;
-}
-
 export interface SearchConfigRepo {
   get(): Promise<unknown | null>;
   save(config: unknown): Promise<void>;
@@ -193,7 +192,7 @@ export interface UpstreamConfig {
   enabled: boolean;
   sortOrder: number;
   createdAt: string;
-  // Flag ids the admin opted into for this upstream. See
+  // Behavior flag ids the admin opted into for this upstream. See
   // src/data-plane/llm/targets/optional-fixes.ts for the catalog.
   // Always sorted + deduped at the repo boundary.
   enabledFixes: string[];
@@ -221,7 +220,6 @@ export interface Repo {
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
   cache: CacheRepo;
-  accountModelBackoffs: AccountModelBackoffRepo;
   searchConfig: SearchConfigRepo;
   upstreamConfigs: UpstreamConfigRepo;
 }

@@ -42,7 +42,7 @@ export const withReasoningDisabledOnForcedToolChoice: TargetInterceptor<
   if (!hasForcedToolChoice(ctx.payload)) return await run();
   ctx.payload = disableResponsesReasoning(
     ctx.payload,
-    ctx.upstream.enabledFixes,
+    ctx.enabledFixes,
   );
   return await run();
 };

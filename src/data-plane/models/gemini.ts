@@ -1,11 +1,8 @@
 import type { Context } from "hono";
-import { isCopilotTokenFetchError } from "../../shared/copilot.ts";
-import { type ModelInfo, ModelsFetchError } from "./cache.ts";
-import {
-  copilotSupportsGeneration,
-  endpointsIncludeLlmGeneration,
-} from "../llm/shared/models/get-model-capabilities.ts";
-import { loadMergedModels } from "./load.ts";
+import { ModelsFetchError, ModelsRequestError } from "./cache.ts";
+import { endpointsIncludeLlmGeneration } from "../providers/endpoints.ts";
+import { getModels } from "../providers/registry.ts";
+import type { Model } from "../providers/types.ts";
 
 type GeminiGenerationMethod =
   | "generateContent"
@@ -27,30 +24,29 @@ interface GeminiModel {
   topK?: number;
 }
 
-const supportsLlmGeneration = (model: ModelInfo): boolean =>
-  model.supports_generation ??
-    (model.upstream_kind === "openai"
-      ? endpointsIncludeLlmGeneration(model.supported_endpoints ?? [])
-      : copilotSupportsGeneration(model));
+const supportsLlmGeneration = (model: Model): boolean =>
+  endpointsIncludeLlmGeneration(model.supportedEndpoints);
 
-const displayNameForModel = (model: ModelInfo): string =>
-  model.name || model.id;
+const displayNameForModel = (model: Model): string =>
+  model.display_name ?? model.name ?? model.id;
 
-const inputLimitForModel = (model: ModelInfo): number | undefined => {
+const inputLimitForModel = (model: Model): number | undefined => {
   const limits = model.capabilities?.limits;
   return limits?.max_prompt_tokens ?? limits?.max_context_window_tokens;
 };
 
-const outputLimitForModel = (model: ModelInfo): number | undefined =>
+const outputLimitForModel = (model: Model): number | undefined =>
   model.capabilities?.limits?.max_output_tokens ??
     model.capabilities?.limits?.max_non_streaming_output_tokens;
 
-const toGeminiModel = (model: ModelInfo): GeminiModel => {
+const toGeminiModel = (model: Model): GeminiModel => {
   const methods: GeminiGenerationMethod[] = [
     "generateContent",
     "streamGenerateContent",
   ];
-  if (model.upstream_kind !== "openai") methods.push("countTokens");
+  if (model.supportedEndpoints.includes("messages_count_tokens")) {
+    methods.push("countTokens");
+  }
   return {
     name: `models/${model.id}`,
     baseModelId: model.id,
@@ -93,13 +89,14 @@ const geminiError = (status: number, message: string): Response => {
   }, { status: code });
 };
 
+const modelListingFailureMessage = "Upstream model listing failed";
+
 const geminiModelLoadError = (error: unknown): Response => {
   if (error instanceof ModelsFetchError) {
-    return geminiError(error.status, error.body);
+    return geminiError(error.status, modelListingFailureMessage);
   }
-
-  if (isCopilotTokenFetchError(error)) {
-    return geminiError(error.status, error.body);
+  if (error instanceof ModelsRequestError) {
+    return geminiError(502, modelListingFailureMessage);
   }
 
   return geminiError(
@@ -109,8 +106,8 @@ const geminiModelLoadError = (error: unknown): Response => {
 };
 
 const loadGeminiModels = async (): Promise<GeminiModel[]> => {
-  const models = await loadMergedModels();
-  return models.data.filter(supportsLlmGeneration).map(toGeminiModel);
+  const models = await getModels();
+  return models.filter(supportsLlmGeneration).map(toGeminiModel);
 };
 
 export const serveGeminiModels = async (_c: Context): Promise<Response> => {

@@ -50,7 +50,14 @@ Deno.test("/v1/models returns merged model list from Copilot and custom upstream
       url.pathname === "/models" && url.hostname === "api.githubcopilot.com"
     ) {
       return jsonResponse(copilotModels([
-        { id: "claude-sonnet-4", supported_endpoints: ["/v1/messages"] },
+        {
+          id: "claude-sonnet-4",
+          display_name: "Claude Sonnet 4",
+          supported_endpoints: ["/v1/messages"],
+          billing: { is_premium: true, multiplier: 3 },
+          policy: { state: "enabled", terms: "test terms" },
+          model_picker_enabled: true,
+        },
       ]));
     }
     if (url.pathname === "/v1/models" && url.hostname === "oai.example.com") {
@@ -70,7 +77,21 @@ Deno.test("/v1/models returns merged model list from Copilot and custom upstream
     const body = await response.json() as {
       object: string;
       data: Array<
-        { id: string; supported_endpoints?: string[]; upstream_kind?: string }
+        {
+          id: string;
+          name?: string;
+          display_name?: string;
+          supported_endpoints?: string[];
+          supports_generation?: boolean;
+          capabilities?: unknown;
+          providers?: unknown;
+          providerData?: unknown;
+          supportedEndpoints?: unknown;
+          upstream_kind?: string;
+          billing?: unknown;
+          policy?: unknown;
+          model_picker_enabled?: boolean;
+        }
       >;
     };
     assertEquals(body.object, "list");
@@ -81,11 +102,267 @@ Deno.test("/v1/models returns merged model list from Copilot and custom upstream
     assertEquals(ids.includes("gpt-4o-mini"), true);
 
     const claude = body.data.find((m) => m.id === "claude-sonnet-4");
-    assertEquals(claude!.upstream_kind, "copilot");
+    assertEquals(claude!.name, undefined);
+    assertEquals(claude!.display_name, undefined);
+    assertEquals(claude!.supported_endpoints, undefined);
+    assertEquals(claude!.supports_generation, undefined);
+    assertEquals(claude!.capabilities, undefined);
+    assertEquals(claude!.upstream_kind, undefined);
+    assertEquals(claude!.billing, undefined);
+    assertEquals(claude!.policy, undefined);
+    assertEquals(claude!.model_picker_enabled, undefined);
 
     const gpt4o = body.data.find((m) => m.id === "gpt-4o");
-    assertEquals(gpt4o!.supported_endpoints, ["/chat/completions"]);
-    assertEquals(gpt4o!.upstream_kind, "openai");
+    assertEquals(gpt4o!.supported_endpoints, undefined);
+    assertEquals(gpt4o!.upstream_kind, undefined);
+
+    for (const model of body.data) {
+      assertEquals(model.providers, undefined);
+      assertEquals(model.providerData, undefined);
+      assertEquals(model.supportedEndpoints, undefined);
+    }
+
+    const controlResponse = await requestApp("/api/models", {
+      headers: { "x-api-key": apiKey.key },
+    });
+    assertEquals(controlResponse.status, 200);
+    const controlBody = await controlResponse.json() as {
+      data: Array<{
+        id: string;
+        name: string;
+        display_name: string;
+        supported_endpoints?: string[];
+        upstream_kind?: string;
+        billing?: unknown;
+        policy?: unknown;
+        model_picker_enabled?: boolean;
+      }>;
+    };
+    const controlClaude = controlBody.data.find((m) =>
+      m.id === "claude-sonnet-4"
+    )!;
+    assertEquals(controlClaude.name, "Claude Sonnet 4");
+    assertEquals(controlClaude.display_name, "Claude Sonnet 4");
+    assertEquals(controlClaude.upstream_kind, "copilot");
+    assertEquals(controlClaude.billing, { is_premium: true, multiplier: 3 });
+    assertEquals(controlClaude.policy, {
+      state: "enabled",
+      terms: "test terms",
+    });
+    assertEquals(controlClaude.model_picker_enabled, true);
+    assertEquals(controlClaude.supported_endpoints, ["/v1/messages"]);
+    assertEquals(
+      controlBody.data.find((m) => m.id === "gpt-4o")?.upstream_kind,
+      "openai",
+    );
+  });
+});
+
+Deno.test("/models returns Anthropic-shaped model list", async () => {
+  const { apiKey } = await setupAppTest();
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+
+    if (url.hostname === "update.code.visualstudio.com") {
+      return jsonResponse(["1.110.1"]);
+    }
+    if (url.pathname === "/copilot_internal/v2/token") {
+      return jsonResponse({
+        token: "copilot-access-token",
+        expires_at: 4102444800,
+        refresh_in: 3600,
+      });
+    }
+    if (url.pathname === "/models") {
+      return jsonResponse(copilotModels([
+        {
+          id: "claude-opus-4.7-xhigh",
+          display_name: "Claude Opus 4.7 XHigh",
+          supported_endpoints: ["/v1/messages"],
+        },
+        {
+          id: "embedding-only",
+          supported_endpoints: ["/embeddings"],
+        },
+      ]));
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp("/models", {
+      headers: { "x-api-key": apiKey.key },
+    });
+
+    assertEquals(response.status, 200);
+    assertEquals(await response.json(), {
+      data: [{
+        id: "claude-opus-4-7",
+        type: "model",
+        display_name: "Claude Opus 4.7 XHigh",
+      }],
+      has_more: false,
+      first_id: "claude-opus-4-7",
+      last_id: "claude-opus-4-7",
+    });
+  });
+});
+
+Deno.test("/v1/models hides upstream identity when a provider returns an invalid model list", async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  await repo.upstreamConfigs.save({
+    id: "up_secret_provider",
+    name: "Secret Provider",
+    baseUrl: "https://secret.example.com",
+    bearerToken: "sk-secret",
+    supportedEndpoints: ["/chat/completions"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: new Date().toISOString(),
+    enabledFixes: [],
+  });
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+    if (url.hostname === "secret.example.com") {
+      return jsonResponse({ object: "list", data: null });
+    }
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp("/v1/models", {
+      headers: { "x-api-key": apiKey.key },
+    });
+
+    assertEquals(response.status, 502);
+    const body = await response.json() as { error: { message: string } };
+    assertEquals(body.error.message, "Invalid upstream /models response");
+  });
+});
+
+Deno.test("public model list endpoints hide upstream HTTP error bodies and headers", async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  await repo.upstreamConfigs.save({
+    id: "up_http_secret_provider",
+    name: "HTTP Secret Provider",
+    baseUrl: "https://http-secret.example.com",
+    bearerToken: "sk-secret",
+    supportedEndpoints: ["/chat/completions"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: new Date().toISOString(),
+    enabledFixes: [],
+  });
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+    if (url.hostname === "http-secret.example.com") {
+      return new Response("secret upstream body: up_http_secret_provider", {
+        status: 403,
+        headers: {
+          "content-type": "text/plain",
+          "x-upstream-id": "up_http_secret_provider",
+        },
+      });
+    }
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    for (const path of ["/v1/models", "/models", "/api/models"]) {
+      const response = await requestApp(path, {
+        headers: { "x-api-key": apiKey.key },
+      });
+      assertEquals(response.status, 403);
+      assertEquals(response.headers.get("x-upstream-id"), null);
+      assertEquals(await response.json(), {
+        error: {
+          message: "Upstream model listing failed",
+          type: "api_error",
+        },
+      });
+    }
+  });
+});
+
+Deno.test("public model list endpoints hide thrown upstream request errors", async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  await repo.upstreamConfigs.save({
+    id: "up_throw_secret_provider",
+    name: "Throw Secret Provider",
+    baseUrl: "https://throw-secret.example.com",
+    bearerToken: "sk-secret",
+    supportedEndpoints: ["/chat/completions"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: new Date().toISOString(),
+    enabledFixes: [],
+  });
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+    if (url.hostname === "throw-secret.example.com") {
+      throw new Error(
+        "network failure contacting https://throw-secret.example.com/v1/models",
+      );
+    }
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    for (const path of ["/v1/models", "/models", "/api/models"]) {
+      const response = await requestApp(path, {
+        headers: { "x-api-key": apiKey.key },
+      });
+      assertEquals(response.status, 502);
+      assertEquals(await response.json(), {
+        error: {
+          message: "Upstream model listing failed",
+          type: "api_error",
+        },
+      });
+    }
+  });
+});
+
+Deno.test("public model list endpoints hide malformed upstream response bodies", async () => {
+  const { repo, apiKey } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  await repo.upstreamConfigs.save({
+    id: "up_malformed_secret_provider",
+    name: "Malformed Secret Provider",
+    baseUrl: "https://malformed-secret.example.com",
+    bearerToken: "sk-secret",
+    supportedEndpoints: ["/chat/completions"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: new Date().toISOString(),
+    enabledFixes: [],
+  });
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+    if (url.hostname === "malformed-secret.example.com") {
+      return new Response(
+        "secret malformed body: up_malformed_secret_provider",
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      );
+    }
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    for (const path of ["/v1/models", "/models", "/api/models"]) {
+      const response = await requestApp(path, {
+        headers: { "x-api-key": apiKey.key },
+      });
+      assertEquals(response.status, 502);
+      assertEquals(await response.json(), {
+        error: {
+          message: "Invalid upstream /models response",
+          type: "api_error",
+        },
+      });
+    }
   });
 });
 
@@ -101,7 +378,7 @@ Deno.test("/v1/models returns empty list when no upstream is configured", async 
   const body = await response.json() as { error: { message: string } };
   assertEquals(
     body.error.message,
-    "No GitHub account connected — add one via the dashboard",
+    "No upstream provider configured — connect GitHub Copilot or add a custom upstream in the dashboard",
   );
 });
 
@@ -156,14 +433,19 @@ Deno.test("/v1/models returns the ordered union of every connected GitHub accoun
 
     assertEquals(response.status, 200);
     const body = await response.json() as {
-      data: Array<{ id: string; supported_endpoints?: string[] }>;
+      data: Array<{
+        id: string;
+        supported_endpoints?: string[];
+        upstream_kind?: string;
+      }>;
     };
     assertEquals(body.data.map((model) => model.id), [
       "shared-model",
       "first-only",
       "second-only",
     ]);
-    assertEquals(body.data[0].supported_endpoints, ["/v1/messages"]);
+    assertEquals(body.data[0].supported_endpoints, undefined);
+    assertEquals(body.data[0].upstream_kind, undefined);
   });
 });
 

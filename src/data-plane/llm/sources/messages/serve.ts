@@ -4,13 +4,14 @@ import {
   type MessagesSourceContext,
   messagesSourceInterceptors,
 } from "./interceptors/index.ts";
-import { runSourceInterceptors } from "../run-interceptors.ts";
+import {
+  runSourceInterceptors,
+  type SourceInterceptor,
+} from "../run-interceptors.ts";
 import { planMessagesRequest } from "./plan.ts";
 import { getModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
-import {
-  messagesModelResolutionIntent,
-  resolveModelForRequest,
-} from "../../shared/models/resolve-model.ts";
+import { resolveModelForRequest } from "../../../providers/registry.ts";
+import { runOnModel, skipProvider } from "../../../providers/run.ts";
 import { buildTargetRequest as buildChatTargetRequest } from "../../translate/messages-via-chat-completions/request.ts";
 import { buildTargetRequest as buildResponsesTargetRequest } from "../../translate/messages-via-responses/request.ts";
 import { emitToMessages } from "../../targets/messages/emit.ts";
@@ -27,21 +28,47 @@ import {
 import { toInternalDebugError } from "../../shared/errors/internal-debug-error.ts";
 import { thrownUpstreamErrorResult } from "../../shared/errors/upstream-error.ts";
 import type { ProtocolFrame } from "../../shared/stream/types.ts";
-import {
-  modelLoadErrorResult,
-  runOnUpstream,
-} from "../../shared/upstream-run.ts";
-import { resolveUpstreamForModel } from "../../../../shared/upstream/resolver.ts";
+import { modelLoadErrorResult } from "../../shared/errors/model-load-error.ts";
 import {
   type PerformanceTelemetryContext,
   runtimeLocationFromRequest,
 } from "../../../shared/performance/telemetry.ts";
 import type { MessagesStreamEventData } from "../../shared/protocol/messages.ts";
+import type { ModelProviderBinding } from "../../../providers/types.ts";
 import { backgroundSchedulerFromContext } from "../../../../runtime/background.ts";
+import {
+  recordRequestPerformanceForApiKey,
+  recordUsageForApiKey,
+} from "../accounting.ts";
+
+const parseAnthropicBeta = (raw: string | undefined): string[] | undefined => {
+  if (!raw) return undefined;
+  const values = raw.split(",")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  return values.length > 0 ? values : undefined;
+};
+
+const bodyBetaParam = (payload: MessagesPayload): string | undefined => {
+  const record = payload as unknown as Record<string, unknown>;
+  if (Object.hasOwn(record, "anthropic_beta")) return "anthropic_beta";
+  if (Object.hasOwn(record, "betas")) return "betas";
+  return undefined;
+};
+
+const bodyAnthropicBetaResponse = (param: string): Response =>
+  Response.json({
+    error: {
+      message:
+        `${param} in the Messages request body is not supported; send Anthropic beta flags with the anthropic-beta HTTP header.`,
+      type: "invalid_request_error",
+      param,
+    },
+  }, { status: 400 });
 
 const unsupportedMessagesModelResult = (
   model: string,
-  performance: PerformanceTelemetryContext,
+  performance?: PerformanceTelemetryContext,
 ): UpstreamErrorResult => ({
   type: "upstream-error",
   status: 400,
@@ -52,7 +79,7 @@ const unsupportedMessagesModelResult = (
       type: "invalid_request_error",
     },
   })),
-  performance,
+  ...(performance ? { performance } : {}),
 });
 
 const withTranslatedEvents = <T>(
@@ -65,57 +92,50 @@ const withTranslatedEvents = <T>(
     ? { ...result, events: translate(result.events) }
     : result;
 
-const withResultMetadata = <T>(
-  result: StreamExecuteResult<T>,
-  usageModel: string,
-  performance: PerformanceTelemetryContext,
-): StreamExecuteResult<T> =>
-  result.type === "events"
-    ? { ...result, usageModel, performance }
-    : { ...result, performance };
+const messagesSourceInterceptorsForProvider = (
+  binding: ModelProviderBinding,
+): readonly SourceInterceptor<
+  MessagesSourceContext,
+  MessagesStreamEventData
+>[] =>
+  (binding.sourceInterceptors?.messages ?? []) as readonly SourceInterceptor<
+    MessagesSourceContext,
+    MessagesStreamEventData
+  >[];
 
 export const serveMessages = async (
   c: Context,
 ): Promise<Response> => {
+  const requestStartedAt = performance.now();
+  const apiKeyId = c.get("apiKeyId") as string | undefined;
+  const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
+  const scheduleBackground = backgroundSchedulerFromContext(c);
+  const recordUsage = recordUsageForApiKey(apiKeyId);
+  const recordRequestPerformance = recordRequestPerformanceForApiKey(
+    apiKeyId,
+    scheduleBackground,
+  );
   let lastPerformance: PerformanceTelemetryContext | undefined;
   let downstreamAbortController: AbortController | undefined;
   try {
     const payload = await c.req.json<MessagesPayload>();
-    const apiKeyId = c.get("apiKeyId") as string | undefined;
+    const rejectedBetaParam = bodyBetaParam(payload);
+    if (rejectedBetaParam) return bodyAnthropicBetaResponse(rejectedBetaParam);
+
     const wantsStream = payload.stream === true;
     downstreamAbortController = wantsStream ? new AbortController() : undefined;
-    const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
-    const scheduleBackground = backgroundSchedulerFromContext(c);
-    const rawBeta = c.req.header("anthropic-beta");
+    const anthropicBeta = parseAnthropicBeta(c.req.header("anthropic-beta"));
     const ctx: MessagesSourceContext = { payload, apiKeyId };
-    const performanceFor = (
-      model: string,
-      targetApi: PerformanceTelemetryContext["targetApi"],
-    ): PerformanceTelemetryContext => {
-      lastPerformance = {
-        keyId: apiKeyId ?? "unknown",
-        model,
-        sourceApi: "messages",
-        targetApi,
-        stream: wantsStream,
-        runtimeLocation,
-      };
-      return lastPerformance;
-    };
 
     const result = await runSourceInterceptors(
       ctx,
       messagesSourceInterceptors,
       async () => {
-        const intent = messagesModelResolutionIntent(ctx.payload, rawBeta);
-        const { id: modelId } = await resolveModelForRequest(
+        const { id: modelId, model } = await resolveModelForRequest(
           ctx.payload.model,
-          intent,
         );
-        performanceFor(modelId, "messages");
 
-        const resolution = await resolveUpstreamForModel(modelId);
-        if (resolution.type === "not-found") {
+        if (!model) {
           return {
             type: "upstream-error" as const,
             status: 404,
@@ -129,107 +149,100 @@ export const serveMessages = async (
             })),
           };
         }
-        if (resolution.type === "upstream-error") {
-          return modelLoadErrorResult(resolution.error, lastPerformance);
-        }
 
-        return await runOnUpstream(
-          resolution.selection,
-          modelId,
-          async (upstream) => {
+        return await runOnModel(
+          model,
+          async (binding) => {
             const attemptPayload = structuredClone(ctx.payload);
             attemptPayload.model = modelId;
-            const capabilities = await getModelCapabilities(
-              modelId,
-              upstream,
-            );
-            const plan = planMessagesRequest(
-              attemptPayload,
-              capabilities,
-              rawBeta,
-            );
+            const capabilities = getModelCapabilities(binding.upstreamModel);
+            const plan = planMessagesRequest(capabilities);
             if (!plan) {
-              const performance = performanceFor(
+              return skipProvider(unsupportedMessagesModelResult(
                 attemptPayload.model,
-                "messages",
-              );
-              return unsupportedMessagesModelResult(
-                attemptPayload.model,
-                performance,
-              );
+              ));
             }
 
-            if (plan.target === "messages") {
-              const performance = performanceFor(
-                attemptPayload.model,
-                "messages",
-              );
-              return withResultMetadata(
-                await emitToMessages({
+            const providerCtx: MessagesSourceContext = {
+              payload: attemptPayload,
+              apiKeyId,
+            };
+
+            return await runSourceInterceptors(
+              providerCtx,
+              messagesSourceInterceptorsForProvider(binding),
+              async () => {
+                const payload = providerCtx.payload;
+
+                if (plan.target === "messages") {
+                  const result = await emitToMessages({
+                    sourceApi: "messages",
+                    model: modelId,
+                    upstream: binding.upstream,
+                    payload,
+                    provider: binding.provider,
+                    upstreamModel: binding.upstreamModel,
+                    enabledFixes: binding.enabledFixes,
+                    targetInterceptors: binding.targetInterceptors,
+                    apiKeyId,
+                    clientStream: wantsStream,
+                    runtimeLocation,
+                    scheduleBackground,
+                    downstreamAbortSignal: downstreamAbortController?.signal,
+                    anthropicBeta,
+                  });
+                  if (result.performance) lastPerformance = result.performance;
+                  return result;
+                }
+
+                if (plan.target === "responses") {
+                  const targetPayload = buildResponsesTargetRequest(payload);
+                  const result = await emitToResponses({
+                    sourceApi: "messages",
+                    model: modelId,
+                    upstream: binding.upstream,
+                    payload: targetPayload,
+                    provider: binding.provider,
+                    upstreamModel: binding.upstreamModel,
+                    enabledFixes: binding.enabledFixes,
+                    targetInterceptors: binding.targetInterceptors,
+                    apiKeyId,
+                    clientStream: wantsStream,
+                    runtimeLocation,
+                    scheduleBackground,
+                    downstreamAbortSignal: downstreamAbortController?.signal,
+                  });
+
+                  if (result.performance) lastPerformance = result.performance;
+                  return withTranslatedEvents(
+                    result,
+                    translateResponsesToSourceEvents,
+                  );
+                }
+
+                const targetPayload = buildChatTargetRequest(payload);
+                const result = await emitToChatCompletions({
                   sourceApi: "messages",
-                  payload: attemptPayload,
-                  upstream,
+                  model: modelId,
+                  upstream: binding.upstream,
+                  payload: targetPayload,
+                  provider: binding.provider,
+                  upstreamModel: binding.upstreamModel,
+                  enabledFixes: binding.enabledFixes,
+                  targetInterceptors: binding.targetInterceptors,
                   apiKeyId,
                   clientStream: wantsStream,
                   runtimeLocation,
                   scheduleBackground,
-                  fetchOptions: plan.fetchOptions,
                   downstreamAbortSignal: downstreamAbortController?.signal,
-                  rawBeta: plan.rawBeta,
-                }),
-                attemptPayload.model,
-                performance,
-              );
-            }
+                });
 
-            if (plan.target === "responses") {
-              performanceFor(attemptPayload.model, "responses");
-              const targetPayload = buildResponsesTargetRequest(attemptPayload);
-              const performance = performanceFor(
-                targetPayload.model,
-                "responses",
-              );
-              const result = await emitToResponses({
-                sourceApi: "messages",
-                payload: targetPayload,
-                upstream,
-                apiKeyId,
-                clientStream: wantsStream,
-                runtimeLocation,
-                scheduleBackground,
-                fetchOptions: plan.fetchOptions,
-                downstreamAbortSignal: downstreamAbortController?.signal,
-              });
-
-              return withResultMetadata(
-                withTranslatedEvents(result, translateResponsesToSourceEvents),
-                targetPayload.model,
-                performance,
-              );
-            }
-
-            performanceFor(attemptPayload.model, "chat-completions");
-            const targetPayload = buildChatTargetRequest(attemptPayload);
-            const performance = performanceFor(
-              targetPayload.model,
-              "chat-completions",
-            );
-            const result = await emitToChatCompletions({
-              sourceApi: "messages",
-              payload: targetPayload,
-              upstream,
-              apiKeyId,
-              clientStream: wantsStream,
-              runtimeLocation,
-              scheduleBackground,
-              fetchOptions: plan.fetchOptions,
-              downstreamAbortSignal: downstreamAbortController?.signal,
-            });
-
-            return withResultMetadata(
-              withTranslatedEvents(result, translateChatToSourceEvents),
-              targetPayload.model,
-              performance,
+                if (result.performance) lastPerformance = result.performance;
+                return withTranslatedEvents(
+                  result,
+                  translateChatToSourceEvents,
+                );
+              },
             );
           },
         );
@@ -240,15 +253,36 @@ export const serveMessages = async (
       c,
       result,
       wantsStream,
+      recordUsage,
+      recordRequestPerformance,
+      requestStartedAt,
       downstreamAbortController,
     );
   } catch (error) {
+    try {
+      const modelError = modelLoadErrorResult(error, lastPerformance);
+      return await respondMessages(
+        c,
+        modelError,
+        false,
+        recordUsage,
+        recordRequestPerformance,
+        requestStartedAt,
+        downstreamAbortController,
+      );
+    } catch {
+      // Not a model-load error; continue with normal request-boundary handling.
+    }
+
     const upstreamError = thrownUpstreamErrorResult(error, lastPerformance);
     if (upstreamError) {
       return await respondMessages(
         c,
         upstreamError,
         false,
+        recordUsage,
+        recordRequestPerformance,
+        requestStartedAt,
         downstreamAbortController,
       );
     }
@@ -261,6 +295,9 @@ export const serveMessages = async (
         lastPerformance,
       ),
       false,
+      recordUsage,
+      recordRequestPerformance,
+      requestStartedAt,
       downstreamAbortController,
     );
   }

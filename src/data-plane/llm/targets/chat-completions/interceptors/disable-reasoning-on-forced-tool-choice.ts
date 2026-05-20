@@ -43,7 +43,7 @@ export const withReasoningDisabledOnForcedToolChoice: TargetInterceptor<
   if (!hasForcedToolChoice(ctx.payload)) return await run();
   ctx.payload = disableChatCompletionsReasoning(
     ctx.payload,
-    ctx.upstream.enabledFixes,
+    ctx.enabledFixes,
   );
   return await run();
 };

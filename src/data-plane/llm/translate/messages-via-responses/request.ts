@@ -151,12 +151,11 @@ const translateAssistantMessage = (
       flushPendingContent(pendingContent, input, "assistant");
       // Recover the original Responses item id when the signature was issued
       // by this gateway (packed as `${encrypted_content}@${id}`). Without the
-      // packed id, Copilot rejects the next-turn submission because the
-      // encrypted blob was signed against a different item id. Unpacked
-      // signatures (native Anthropic sessions resumed against the gateway, or
-      // stored sessions predating the packing change) fall back to a
-      // synthesized id; the upstream signature check will still fail for
-      // those, matching pre-packing behavior. See
+      // packed id, upstreams that verify reasoning continuity can reject the
+      // next-turn submission because the encrypted blob was signed against a
+      // different item id. Unpacked signatures fall back to a synthesized id;
+      // the upstream signature check may still fail for those, matching
+      // pre-packing behavior. See
       // `../shared/messages-responses-signature.ts`.
       const unpacked = typeof block.signature === "string"
         ? unpackReasoningSignature(block.signature)

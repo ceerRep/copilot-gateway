@@ -197,7 +197,7 @@ const stripSpottedEncryptedContent = async (
   return stripped;
 };
 
-const collectEncryptedContentHashes = async (
+const collectEncryptedContentHashes = (
   items: AnyItem[],
 ): Promise<string[]> => {
   const withEc = items.filter(

@@ -2,11 +2,9 @@ import type {
   ResponsesPayload,
   ResponsesResult,
 } from "../../../shared/protocol/responses.ts";
-import type { Upstream } from "../../../../../shared/upstream/types.ts";
 import type { EmitInput } from "../../emit-types.ts";
 import type { OptionalInterceptor } from "../../optional-fix.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
-import { responsesCopilotInterceptors } from "./copilot/index.ts";
 import { withReasoningDisabledOnForcedToolChoice } from "./disable-reasoning-on-forced-tool-choice.ts";
 import { withCyberPolicyRetried } from "./retry-cyber-policy.ts";
 
@@ -27,14 +25,21 @@ export const responsesOptionalInterceptors = [
 >[];
 
 export const interceptorsForResponses = (
-  upstream: Upstream,
+  provider: Pick<
+    EmitInput<ResponsesPayload>,
+    "enabledFixes" | "targetInterceptors"
+  >,
 ): readonly TargetInterceptor<
   EmitInput<ResponsesPayload>,
   ResponsesResult
 >[] => [
   ...baseInterceptors,
-  ...(upstream.kind === "copilot" ? responsesCopilotInterceptors : []),
+  ...((provider.targetInterceptors?.responses ??
+    []) as readonly TargetInterceptor<
+      EmitInput<ResponsesPayload>,
+      ResponsesResult
+    >[]),
   ...responsesOptionalInterceptors
-    .filter(({ fixId }) => upstream.enabledFixes.has(fixId))
+    .filter(({ fixId }) => provider.enabledFixes.has(fixId))
     .map(({ run }) => run),
 ];

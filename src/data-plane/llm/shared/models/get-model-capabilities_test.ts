@@ -1,16 +1,15 @@
 import { assertEquals } from "@std/assert";
-import {
-  copilotSupportsGeneration,
-  modelCapabilitiesFromModel,
-  resolveEffectiveSupportedEndpoints,
-} from "./get-model-capabilities.ts";
-import type { ModelInfo } from "../../../models/cache.ts";
+import { getModelCapabilities } from "./get-model-capabilities.ts";
+import type { UpstreamModel } from "../../../providers/types.ts";
 
-const baseModel = (overrides: Partial<ModelInfo> = {}): ModelInfo => ({
+const upstreamModel = (
+  overrides: Partial<UpstreamModel> = {},
+): UpstreamModel => ({
   id: "test-model",
   name: "Test",
   version: "1",
   object: "model",
+  supportedEndpoints: [],
   capabilities: {
     family: "test",
     type: "chat",
@@ -20,183 +19,66 @@ const baseModel = (overrides: Partial<ModelInfo> = {}): ModelInfo => ({
   ...overrides,
 });
 
-const copilot = { kind: "copilot" as const, supportedEndpoints: [] };
-
-Deno.test("modelCapabilitiesFromModel honors explicit supported_endpoints", () => {
-  const caps = modelCapabilitiesFromModel(
-    baseModel({
-      supported_endpoints: ["/v1/messages", "/chat/completions"],
-    }),
-    copilot,
+Deno.test("getModelCapabilities trusts provider-supplied endpoints", () => {
+  const caps = getModelCapabilities(
+    upstreamModel({ supportedEndpoints: ["messages", "chat_completions"] }),
   );
 
   assertEquals(caps.supportsMessages, true);
   assertEquals(caps.supportsChatCompletions, true);
   assertEquals(caps.supportsResponses, false);
-  assertEquals(caps.hasExplicitCapabilities, true);
+  assertEquals(caps.supportedEndpoints, ["messages", "chat_completions"]);
 });
 
-Deno.test("modelCapabilitiesFromModel detects /responses support", () => {
-  const caps = modelCapabilitiesFromModel(
-    baseModel({
-      supported_endpoints: ["/responses", "/chat/completions", "ws:/responses"],
+Deno.test("getModelCapabilities maps every provider endpoint flag", () => {
+  const caps = getModelCapabilities(
+    upstreamModel({
+      supportedEndpoints: [
+        "responses",
+        "messages_count_tokens",
+        "embeddings",
+      ],
     }),
-    copilot,
   );
 
   assertEquals(caps.supportsResponses, true);
-  assertEquals(caps.supportsChatCompletions, true);
+  assertEquals(caps.supportsMessagesCountTokens, true);
+  assertEquals(caps.supportsEmbeddings, true);
   assertEquals(caps.supportsMessages, false);
+  assertEquals(caps.supportsChatCompletions, false);
 });
 
-Deno.test(
-  "modelCapabilitiesFromModel infers chat completions when supported_endpoints is missing on a chat model",
-  () => {
-    // gpt-4o, gpt-4.1, and other legacy chat models still ship from
-    // /chat/completions but no longer carry supported_endpoints in Copilot's
-    // /models response.
-    const caps = modelCapabilitiesFromModel(
-      baseModel({ id: "gpt-4o" }),
-      copilot,
-    );
-
-    assertEquals(caps.supportsChatCompletions, true);
-    assertEquals(caps.supportsResponses, false);
-    assertEquals(caps.supportsMessages, false);
-    assertEquals(caps.hasExplicitCapabilities, false);
-  },
-);
-
-Deno.test(
-  "modelCapabilitiesFromModel does not infer chat completions for non-chat capability types",
-  () => {
-    const caps = modelCapabilitiesFromModel(
-      baseModel({
-        id: "text-embedding-3-small",
-        capabilities: {
-          family: "text-embedding-3-small",
-          type: "embeddings",
-          limits: {},
-          supports: {},
-        },
-      }),
-      copilot,
-    );
-
-    assertEquals(caps.supportsChatCompletions, false);
-  },
-);
-
-Deno.test(
-  "modelCapabilitiesFromModel honors an explicitly empty supported_endpoints array",
-  () => {
-    // If upstream ever ships an empty list we trust the declaration rather
-    // than re-inferring from capabilities.type — that keeps us strict on
-    // entries that intentionally opt out of every endpoint.
-    const caps = modelCapabilitiesFromModel(
-      baseModel({ supported_endpoints: [] }),
-      copilot,
-    );
-
-    assertEquals(caps.supportsChatCompletions, false);
-    assertEquals(caps.supportsResponses, false);
-    assertEquals(caps.supportsMessages, false);
-    assertEquals(caps.hasExplicitCapabilities, true);
-  },
-);
-
-Deno.test("resolveEffectiveSupportedEndpoints returns per-model endpoints when present (copilot)", () => {
-  const { endpoints, explicit } = resolveEffectiveSupportedEndpoints(
-    ["/embeddings"],
-    { kind: "copilot", supportedEndpoints: [] },
-  );
-  assertEquals(endpoints, ["/embeddings"]);
-  assertEquals(explicit, true);
-});
-
-Deno.test("resolveEffectiveSupportedEndpoints returns per-model endpoints when present (openai)", () => {
-  const { endpoints, explicit } = resolveEffectiveSupportedEndpoints(
-    ["/v1/messages"],
-    {
-      kind: "openai",
-      supportedEndpoints: ["/chat/completions", "/embeddings"],
-    },
-  );
-  assertEquals(endpoints, ["/v1/messages"]);
-  assertEquals(explicit, true);
-});
-
-Deno.test("resolveEffectiveSupportedEndpoints falls back to upstream config for openai", () => {
-  const { endpoints, explicit } = resolveEffectiveSupportedEndpoints(
-    undefined,
-    {
-      kind: "openai",
-      supportedEndpoints: ["/chat/completions", "/embeddings"],
-    },
-  );
-  assertEquals(endpoints, ["/chat/completions", "/embeddings"]);
-  assertEquals(explicit, true);
-});
-
-Deno.test("modelCapabilitiesFromModel does not infer chat support over explicit upstream config", () => {
-  const caps = modelCapabilitiesFromModel(
-    baseModel({ id: "custom-chat-model" }),
-    { kind: "openai", supportedEndpoints: ["/embeddings"] },
+Deno.test("getModelCapabilities does not infer endpoints from model metadata", () => {
+  const caps = getModelCapabilities(
+    upstreamModel({
+      id: "gpt-legacy-chat",
+      supportedEndpoints: [],
+      capabilities: {
+        family: "test",
+        type: "chat",
+        limits: {},
+        supports: {},
+      },
+    }),
   );
 
   assertEquals(caps.supportsChatCompletions, false);
-  assertEquals(caps.hasExplicitCapabilities, true);
+  assertEquals(caps.supportsMessages, false);
+  assertEquals(caps.supportsResponses, false);
 });
 
-Deno.test("resolveEffectiveSupportedEndpoints returns empty for copilot without per-model metadata", () => {
-  const { endpoints, explicit } = resolveEffectiveSupportedEndpoints(
-    undefined,
-    { kind: "copilot", supportedEndpoints: [] },
+Deno.test("getModelCapabilities exposes translation-relevant metadata", () => {
+  const caps = getModelCapabilities(
+    upstreamModel({
+      capabilities: {
+        family: "test",
+        type: "chat",
+        limits: { max_output_tokens: 64_000 },
+        supports: { adaptive_thinking: true },
+      },
+    }),
   );
-  assertEquals(endpoints, []);
-  assertEquals(explicit, false);
-});
 
-Deno.test("copilotSupportsGeneration: explicit endpoints with /chat/completions → true", () => {
-  const model = baseModel({ supported_endpoints: ["/chat/completions"] });
-  assertEquals(copilotSupportsGeneration(model), true);
-});
-
-Deno.test("copilotSupportsGeneration: explicit endpoints with only /embeddings → false", () => {
-  const model = baseModel({ supported_endpoints: ["/embeddings"] });
-  assertEquals(copilotSupportsGeneration(model), false);
-});
-
-Deno.test("copilotSupportsGeneration: missing endpoints + capabilities.type === 'chat' → true (legacy SKU)", () => {
-  const model = baseModel({
-    supported_endpoints: undefined,
-    capabilities: { family: "test", type: "chat", limits: {}, supports: {} },
-  });
-  assertEquals(copilotSupportsGeneration(model), true);
-});
-
-Deno.test("copilotSupportsGeneration: missing endpoints + capabilities.type === 'embeddings' → false", () => {
-  const model = baseModel({
-    supported_endpoints: undefined,
-    capabilities: {
-      family: "test",
-      type: "embeddings",
-      limits: {},
-      supports: {},
-    },
-  });
-  assertEquals(copilotSupportsGeneration(model), false);
-});
-
-Deno.test("copilotSupportsGeneration: missing endpoints + missing capabilities.type → false", () => {
-  // Defensive: a Copilot entry without supported_endpoints AND without a
-  // declared capabilities.type should be treated as not routable. Building
-  // a ModelInfo with capabilities.type defaulted to a non-chat value so the
-  // strict ModelInfo shape stays satisfied while still asserting the
-  // non-chat path.
-  const model = baseModel({
-    supported_endpoints: undefined,
-    capabilities: { family: "test", type: "", limits: {}, supports: {} },
-  });
-  assertEquals(copilotSupportsGeneration(model), false);
+  assertEquals(caps.maxOutputTokens, 64_000);
+  assertEquals(caps.supportsAdaptiveThinking, true);
 });

@@ -1,16 +1,25 @@
 import { assertEquals } from "@std/assert";
 import type { MessagesPayload } from "../../../shared/protocol/messages.ts";
-import { stubUpstream } from "../../../../../test-helpers.ts";
+import {
+  stubProvider,
+  stubUpstreamModel,
+  testAccounting,
+} from "../../../../../test-helpers.ts";
 import { eventResult } from "../../../shared/errors/result.ts";
 import type { EmitToMessagesInput } from "../emit.ts";
 import { withReasoningDisabledOnForcedToolChoice } from "./disable-reasoning-on-forced-tool-choice.ts";
 
-const okEvents = () => Promise.resolve(eventResult((async function* () {})()));
+const okEvents = () =>
+  Promise.resolve(eventResult((async function* () {})(), testAccounting));
 
 const emitInput = (payload: MessagesPayload): EmitToMessagesInput => ({
   sourceApi: "messages",
+  model: payload.model,
+  upstream: "test-upstream",
   payload,
-  upstream: stubUpstream(),
+  provider: stubProvider(),
+  upstreamModel: stubUpstreamModel(),
+  enabledFixes: new Set<string>(),
 });
 
 Deno.test("messages forced tool_choice disables thinking and strips output_config", async () => {

@@ -3,7 +3,7 @@ import type {
   ChatCompletionResponse,
   ChatCompletionsPayload,
 } from "../../../shared/protocol/chat-completions.ts";
-import { stubUpstream } from "../../../../../test-helpers.ts";
+import { stubUpstream, testAccounting } from "../../../../../test-helpers.ts";
 import { eventResult } from "../../../shared/errors/result.ts";
 import {
   jsonFrame,
@@ -56,9 +56,14 @@ Deno.test("withDeepseekReasoningDialect renames outbound reasoning_text on a dee
   };
 
   let observed: ChatCompletionsPayload | null = null;
-  await withDeepseekReasoningDialect(ctx, async () => {
+  await withDeepseekReasoningDialect(ctx, () => {
     observed = ctx.payload;
-    return eventResult((async function* () {})());
+    return Promise.resolve(eventResult(
+      (async function* () {
+        yield* [];
+      })(),
+      testAccounting,
+    ));
   });
 
   const assistant = observed!.messages[1] as unknown as Record<string, unknown>;
@@ -103,9 +108,14 @@ Deno.test("withDeepseekReasoningDialect synthesizes reasoning_content from reaso
   };
 
   let observed: ChatCompletionsPayload | null = null;
-  await withDeepseekReasoningDialect(ctx, async () => {
+  await withDeepseekReasoningDialect(ctx, () => {
     observed = ctx.payload;
-    return eventResult((async function* () {})());
+    return Promise.resolve(eventResult(
+      (async function* () {
+        yield* [];
+      })(),
+      testAccounting,
+    ));
   });
 
   const assistant = observed!.messages[1] as unknown as Record<string, unknown>;
@@ -138,9 +148,14 @@ Deno.test("withDeepseekReasoningDialect strips reasoning_items even when no summ
   };
 
   let observed: ChatCompletionsPayload | null = null;
-  await withDeepseekReasoningDialect(ctx, async () => {
+  await withDeepseekReasoningDialect(ctx, () => {
     observed = ctx.payload;
-    return eventResult((async function* () {})());
+    return Promise.resolve(eventResult(
+      (async function* () {
+        yield* [];
+      })(),
+      testAccounting,
+    ));
   });
 
   const assistant = observed!.messages[1] as unknown as Record<string, unknown>;
@@ -167,10 +182,13 @@ Deno.test("withDeepseekReasoningDialect renames inbound SSE reasoning_content to
 
   const result = await withDeepseekReasoningDialect(
     ctx,
-    async () =>
-      eventResult((async function* () {
-        yield sseFrame(upstreamChunk);
-      })()),
+    () =>
+      Promise.resolve(eventResult(
+        (async function* () {
+          yield sseFrame(upstreamChunk);
+        })(),
+        testAccounting,
+      )),
   );
 
   const frames = await collectFrames(result);
@@ -209,10 +227,13 @@ Deno.test("withDeepseekReasoningDialect renames inbound non-stream message.reaso
 
   const result = await withDeepseekReasoningDialect(
     ctx,
-    async () =>
-      eventResult((async function* () {
-        yield jsonFrame(upstreamResponse);
-      })()),
+    () =>
+      Promise.resolve(eventResult(
+        (async function* () {
+          yield jsonFrame(upstreamResponse);
+        })(),
+        testAccounting,
+      )),
   );
 
   const frames = await collectFrames(result);

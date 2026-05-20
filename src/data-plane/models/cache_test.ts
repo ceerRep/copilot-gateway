@@ -2,7 +2,6 @@ import { assertEquals } from "@std/assert";
 import { clearCopilotTokenCache } from "../../shared/copilot.ts";
 import {
   clearModelsCache,
-  findModel,
   getModelsForUpstream,
   invalidateUpstreamModels,
   loadModels,
@@ -158,7 +157,76 @@ Deno.test("models cache refreshes upstream after repo-backed cache expires", asy
   assertEquals(modelsFetches, 2);
 });
 
-Deno.test("models cache uses stale data after soft expiry on switchable errors until hard expiry", async () => {
+Deno.test("models cache ignores malformed repo-backed entries", async () => {
+  const { githubAccount, repo } = await setupAppTest();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  const upstream = await createCopilotUpstream(
+    githubAccount.token,
+    githubAccount.accountType,
+  );
+
+  await repo.cache.set(
+    `models_cache_v2:${upstream.id}`,
+    JSON.stringify({
+      fetchedAt: 0,
+      hardExpiresAt: 7_200_000,
+      data: {
+        object: "list",
+        data: [{ id: 123, name: "bad" }],
+      },
+    }),
+  );
+
+  let modelsFetches = 0;
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+
+    if (url.hostname === "update.code.visualstudio.com") {
+      return jsonResponse(["1.110.1"]);
+    }
+    if (url.pathname === "/copilot_internal/v2/token") {
+      return jsonResponse({
+        token: "copilot-access-token",
+        expires_at: 4102444800,
+        refresh_in: 3600,
+      });
+    }
+    if (url.pathname === "/models") {
+      modelsFetches++;
+      return jsonResponse({
+        object: "list",
+        data: [{
+          id: "fresh-model",
+          name: "fresh-model",
+          version: "1",
+          object: "model",
+          supported_endpoints: ["/responses"],
+          capabilities: {
+            family: "gpt",
+            type: "chat",
+            limits: {},
+            supports: {},
+          },
+        }],
+      });
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    await withFakeNow([0], async () => {
+      const models = await getModelsForUpstream(upstream);
+
+      assertEquals(models.data[0].id, "fresh-model");
+    });
+  });
+
+  assertEquals(modelsFetches, 1);
+});
+
+Deno.test("models cache uses stale data after soft expiry on configured load errors until hard expiry", async () => {
   const { githubAccount } = await setupAppTest();
   clearModelsCache();
   await clearCopilotTokenCache();
@@ -218,107 +286,6 @@ Deno.test("models cache uses stale data after soft expiry on switchable errors u
   });
 
   assertEquals(modelsFetches, 3);
-});
-
-Deno.test("findModel applies dated Claude aliases only after exact model misses", async () => {
-  const { githubAccount } = await setupAppTest();
-  clearModelsCache();
-  await clearCopilotTokenCache();
-
-  const upstream = await createCopilotUpstream(
-    githubAccount.token,
-    githubAccount.accountType,
-  );
-
-  await withMockedFetch((request) => {
-    const url = new URL(request.url);
-
-    if (url.hostname === "update.code.visualstudio.com") {
-      return jsonResponse(["1.110.1"]);
-    }
-    if (url.pathname === "/copilot_internal/v2/token") {
-      return jsonResponse({
-        token: "copilot-access-token",
-        expires_at: 4102444800,
-        refresh_in: 3600,
-      });
-    }
-    if (url.pathname === "/models") {
-      return jsonResponse({
-        object: "list",
-        data: [
-          {
-            id: "claude-haiku-4.5-20251001",
-            name: "claude-haiku-4.5-20251001",
-            version: "1",
-            object: "model",
-            supported_endpoints: ["/chat/completions"],
-            capabilities: {
-              family: "claude",
-              type: "chat",
-              limits: {},
-              supports: {},
-            },
-          },
-          {
-            id: "claude-haiku-4.5",
-            name: "claude-haiku-4.5",
-            version: "1",
-            object: "model",
-            supported_endpoints: ["/v1/messages"],
-            capabilities: {
-              family: "claude",
-              type: "chat",
-              limits: {},
-              supports: {},
-            },
-          },
-          {
-            id: "claude-opus-4.7",
-            name: "claude-opus-4.7",
-            version: "1",
-            object: "model",
-            supported_endpoints: ["/v1/messages"],
-            capabilities: {
-              family: "claude",
-              type: "chat",
-              limits: {},
-              supports: {},
-            },
-          },
-          {
-            id: "claude-sonnet-4.5",
-            name: "claude-sonnet-4.5",
-            version: "1",
-            object: "model",
-            supported_endpoints: ["/responses"],
-            capabilities: {
-              family: "claude",
-              type: "chat",
-              limits: {},
-              supports: {},
-            },
-          },
-        ],
-      });
-    }
-
-    throw new Error(`Unhandled fetch ${request.url}`);
-  }, async () => {
-    const exact = await findModel("claude-haiku-4.5-20251001", upstream);
-    const fallbackDotted = await findModel(
-      "claude-opus-4.7-20251001",
-      upstream,
-    );
-    const fallbackDashed = await findModel(
-      "claude-sonnet-4-5-20251001",
-      upstream,
-    );
-
-    assertEquals(exact?.id, "claude-haiku-4.5-20251001");
-    assertEquals(fallbackDotted?.id, "claude-opus-4.7");
-    assertEquals(fallbackDashed?.id, "claude-sonnet-4.5");
-  });
 });
 
 Deno.test("invalidateUpstreamModels clears both L1 and L2 cache for a given upstream", async () => {

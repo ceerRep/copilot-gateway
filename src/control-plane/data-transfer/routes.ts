@@ -113,6 +113,9 @@ const parsePerformanceRecords = (
       item.keyId.length === 0 ||
       typeof item.model !== "string" ||
       item.model.length === 0 ||
+      (item.upstream !== null && typeof item.upstream !== "string") ||
+      typeof item.modelKey !== "string" ||
+      item.modelKey.length === 0 ||
       !isPerformanceApiName(item.sourceApi) ||
       !isPerformanceApiName(item.targetApi) ||
       typeof item.stream !== "boolean" ||
@@ -152,6 +155,8 @@ const parsePerformanceRecords = (
       metricScope: item.metricScope,
       keyId: item.keyId,
       model: item.model,
+      upstream: item.upstream as string | null,
+      modelKey: item.modelKey,
       sourceApi: item.sourceApi,
       targetApi: item.targetApi,
       stream: item.stream,
@@ -270,7 +275,6 @@ export const importData = async (c: Context) => {
       repo.usage.deleteAll(),
       repo.searchUsage.deleteAll(),
       repo.upstreamConfigs.deleteAll(),
-      repo.accountModelBackoffs.deleteAll(),
     ];
     if (performanceIncluded) deletes.push(repo.performance.deleteAll());
     await Promise.all(deletes);

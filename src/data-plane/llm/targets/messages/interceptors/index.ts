@@ -1,9 +1,7 @@
 import type { MessagesResponse } from "../../../shared/protocol/messages.ts";
-import type { Upstream } from "../../../../../shared/upstream/types.ts";
 import type { OptionalInterceptor } from "../../optional-fix.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 import type { EmitToMessagesInput } from "../emit.ts";
-import { messagesCopilotInterceptors } from "./copilot/index.ts";
 import { withReasoningDisabledOnForcedToolChoice } from "./disable-reasoning-on-forced-tool-choice.ts";
 
 const baseInterceptors: readonly TargetInterceptor<
@@ -22,11 +20,15 @@ export const messagesOptionalInterceptors = [
 >[];
 
 export const interceptorsForMessages = (
-  upstream: Upstream,
+  provider: Pick<EmitToMessagesInput, "enabledFixes" | "targetInterceptors">,
 ): readonly TargetInterceptor<EmitToMessagesInput, MessagesResponse>[] => [
   ...baseInterceptors,
-  ...(upstream.kind === "copilot" ? messagesCopilotInterceptors : []),
+  ...((provider.targetInterceptors?.messages ??
+    []) as readonly TargetInterceptor<
+      EmitToMessagesInput,
+      MessagesResponse
+    >[]),
   ...messagesOptionalInterceptors
-    .filter(({ fixId }) => upstream.enabledFixes.has(fixId))
+    .filter(({ fixId }) => provider.enabledFixes.has(fixId))
     .map(({ run }) => run),
 ];

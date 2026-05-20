@@ -31,6 +31,7 @@ Deno.test("/v1beta/models lists Copilot LLM models in Gemini model shape", async
         data: [{
           id: "gpt-gemini-list",
           name: "gpt-gemini-list",
+          display_name: "GPT Gemini List",
           version: "1",
           object: "model",
           capabilities: {
@@ -69,11 +70,10 @@ Deno.test("/v1beta/models lists Copilot LLM models in Gemini model shape", async
     assertEquals(body.models, [{
       name: "models/gpt-gemini-list",
       baseModelId: "gpt-gemini-list",
-      displayName: "gpt-gemini-list",
+      displayName: "GPT Gemini List",
       supportedGenerationMethods: [
         "generateContent",
         "streamGenerateContent",
-        "countTokens",
       ],
       inputTokenLimit: 12345,
       outputTokenLimit: 678,
@@ -152,7 +152,7 @@ Deno.test("/v1beta/models includes custom upstream LLM models", async () => {
     enabledFixes: [],
   });
 
-  await withMockedFetch(async (request) => {
+  await withMockedFetch((request) => {
     const url = new URL(request.url);
 
     if (
@@ -207,7 +207,7 @@ Deno.test("/v1beta/models excludes custom upstream embedding-only models", async
     enabledFixes: [],
   });
 
-  await withMockedFetch(async (request) => {
+  await withMockedFetch((request) => {
     const url = new URL(request.url);
 
     if (
@@ -228,5 +228,177 @@ Deno.test("/v1beta/models excludes custom upstream embedding-only models", async
     assertEquals(listResp.status, 200);
     const list = await listResp.json();
     assertEquals(list.models.length, 0);
+  });
+});
+
+Deno.test("/v1beta/models hides upstream identity when a provider returns an invalid model list", async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  await repo.upstreamConfigs.save({
+    id: "up_secret_gemini_provider",
+    name: "Secret Gemini Provider",
+    baseUrl: "https://gemini-secret.example.com",
+    bearerToken: "sk-secret",
+    supportedEndpoints: ["/chat/completions"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    enabledFixes: [],
+  });
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+
+    if (url.hostname === "gemini-secret.example.com") {
+      return jsonResponse({ object: "list", data: null });
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp("/v1beta/models", {
+      headers: { "x-api-key": apiKey.key },
+    });
+    assertEquals(response.status, 502);
+    assertEquals(await response.json(), {
+      error: {
+        code: 502,
+        message: "Invalid upstream /models response",
+        status: "UNAVAILABLE",
+      },
+    });
+  });
+});
+
+Deno.test("/v1beta/models hides upstream HTTP error bodies", async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  await repo.upstreamConfigs.save({
+    id: "up_http_secret_gemini_provider",
+    name: "HTTP Secret Gemini Provider",
+    baseUrl: "https://gemini-http-secret.example.com",
+    bearerToken: "sk-secret",
+    supportedEndpoints: ["/chat/completions"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    enabledFixes: [],
+  });
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+
+    if (url.hostname === "gemini-http-secret.example.com") {
+      return new Response("secret upstream body: up_http_secret_gemini", {
+        status: 403,
+        headers: { "content-type": "text/plain" },
+      });
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp("/v1beta/models", {
+      headers: { "x-api-key": apiKey.key },
+    });
+    assertEquals(response.status, 403);
+    assertEquals(await response.json(), {
+      error: {
+        code: 403,
+        message: "Upstream model listing failed",
+        status: "PERMISSION_DENIED",
+      },
+    });
+  });
+});
+
+Deno.test("/v1beta/models hides thrown upstream request errors", async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  await repo.upstreamConfigs.save({
+    id: "up_throw_secret_gemini_provider",
+    name: "Throw Secret Gemini Provider",
+    baseUrl: "https://gemini-throw-secret.example.com",
+    bearerToken: "sk-secret",
+    supportedEndpoints: ["/chat/completions"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    enabledFixes: [],
+  });
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+
+    if (url.hostname === "gemini-throw-secret.example.com") {
+      throw new Error(
+        "network failure contacting https://gemini-throw-secret.example.com/v1/models",
+      );
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp("/v1beta/models", {
+      headers: { "x-api-key": apiKey.key },
+    });
+    assertEquals(response.status, 502);
+    assertEquals(await response.json(), {
+      error: {
+        code: 502,
+        message: "Upstream model listing failed",
+        status: "UNAVAILABLE",
+      },
+    });
+  });
+});
+
+Deno.test("/v1beta/models hides malformed upstream response bodies", async () => {
+  const { apiKey, repo } = await setupAppTest();
+  await repo.github.deleteAllAccounts();
+  clearModelsCache();
+  await clearCopilotTokenCache();
+
+  await repo.upstreamConfigs.save({
+    id: "up_malformed_secret_gemini_provider",
+    name: "Malformed Secret Gemini Provider",
+    baseUrl: "https://gemini-malformed-secret.example.com",
+    bearerToken: "sk-secret",
+    supportedEndpoints: ["/chat/completions"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    enabledFixes: [],
+  });
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+
+    if (url.hostname === "gemini-malformed-secret.example.com") {
+      return new Response("secret malformed body: up_malformed_secret_gemini", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp("/v1beta/models", {
+      headers: { "x-api-key": apiKey.key },
+    });
+    assertEquals(response.status, 502);
+    assertEquals(await response.json(), {
+      error: {
+        code: 502,
+        message: "Invalid upstream /models response",
+        status: "UNAVAILABLE",
+      },
+    });
   });
 });

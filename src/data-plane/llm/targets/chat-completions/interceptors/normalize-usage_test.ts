@@ -1,9 +1,9 @@
 import { assertEquals } from "@std/assert";
+import { testAccounting } from "../../../../../test-helpers.ts";
 import type {
   ChatCompletionResponse,
   ChatCompletionsPayload,
 } from "../../../shared/protocol/chat-completions.ts";
-import { stubUpstream } from "../../../../../test-helpers.ts";
 import { eventResult } from "../../../shared/errors/result.ts";
 import {
   jsonFrame,
@@ -15,7 +15,6 @@ import { withUsageNormalized } from "./normalize-usage.ts";
 
 const baseCtx = () => ({
   payload: { model: "test-model", messages: [] } as ChatCompletionsPayload,
-  upstream: stubUpstream(),
 });
 
 const collectFrames = async (
@@ -31,22 +30,25 @@ Deno.test("withUsageNormalized rewrites DeepSeek prompt_cache_hit_tokens on non-
   const result = await withUsageNormalized(
     baseCtx(),
     () =>
-      Promise.resolve(eventResult((async function* () {
-        yield jsonFrame({
-          id: "x",
-          object: "chat.completion",
-          created: 0,
-          model: "deepseek-test",
-          choices: [],
-          usage: {
-            prompt_tokens: 100,
-            completion_tokens: 20,
-            total_tokens: 120,
-            prompt_cache_hit_tokens: 70,
-            prompt_cache_miss_tokens: 30,
-          },
-        } as unknown as ChatCompletionResponse);
-      })())),
+      Promise.resolve(eventResult(
+        (async function* () {
+          yield jsonFrame({
+            id: "x",
+            object: "chat.completion",
+            created: 0,
+            model: "deepseek-test",
+            choices: [],
+            usage: {
+              prompt_tokens: 100,
+              completion_tokens: 20,
+              total_tokens: 120,
+              prompt_cache_hit_tokens: 70,
+              prompt_cache_miss_tokens: 30,
+            },
+          } as unknown as ChatCompletionResponse);
+        })(),
+        testAccounting,
+      )),
   );
 
   const frames = await collectFrames(result);
@@ -64,21 +66,24 @@ Deno.test("withUsageNormalized rewrites Kimi flat cached_tokens on non-stream re
   const result = await withUsageNormalized(
     baseCtx(),
     () =>
-      Promise.resolve(eventResult((async function* () {
-        yield jsonFrame({
-          id: "x",
-          object: "chat.completion",
-          created: 0,
-          model: "kimi-test",
-          choices: [],
-          usage: {
-            prompt_tokens: 100,
-            completion_tokens: 20,
-            total_tokens: 120,
-            cached_tokens: 50,
-          },
-        } as unknown as ChatCompletionResponse);
-      })())),
+      Promise.resolve(eventResult(
+        (async function* () {
+          yield jsonFrame({
+            id: "x",
+            object: "chat.completion",
+            created: 0,
+            model: "kimi-test",
+            choices: [],
+            usage: {
+              prompt_tokens: 100,
+              completion_tokens: 20,
+              total_tokens: 120,
+              cached_tokens: 50,
+            },
+          } as unknown as ChatCompletionResponse);
+        })(),
+        testAccounting,
+      )),
   );
 
   const frames = await collectFrames(result);
@@ -93,21 +98,24 @@ Deno.test("withUsageNormalized leaves standard prompt_tokens_details untouched",
   const result = await withUsageNormalized(
     baseCtx(),
     () =>
-      Promise.resolve(eventResult((async function* () {
-        yield jsonFrame({
-          id: "x",
-          object: "chat.completion",
-          created: 0,
-          model: "gpt-test",
-          choices: [],
-          usage: {
-            prompt_tokens: 100,
-            completion_tokens: 20,
-            total_tokens: 120,
-            prompt_tokens_details: { cached_tokens: 60, audio_tokens: 0 },
-          },
-        } as unknown as ChatCompletionResponse);
-      })())),
+      Promise.resolve(eventResult(
+        (async function* () {
+          yield jsonFrame({
+            id: "x",
+            object: "chat.completion",
+            created: 0,
+            model: "gpt-test",
+            choices: [],
+            usage: {
+              prompt_tokens: 100,
+              completion_tokens: 20,
+              total_tokens: 120,
+              prompt_tokens_details: { cached_tokens: 60, audio_tokens: 0 },
+            },
+          } as unknown as ChatCompletionResponse);
+        })(),
+        testAccounting,
+      )),
   );
 
   const frames = await collectFrames(result);
@@ -132,9 +140,12 @@ Deno.test("withUsageNormalized passes responses without usage through unchanged"
   const result = await withUsageNormalized(
     baseCtx(),
     () =>
-      Promise.resolve(eventResult((async function* () {
-        yield jsonFrame(original);
-      })())),
+      Promise.resolve(eventResult(
+        (async function* () {
+          yield jsonFrame(original);
+        })(),
+        testAccounting,
+      )),
   );
 
   const frames = await collectFrames(result);
@@ -145,22 +156,25 @@ Deno.test("withUsageNormalized relocates DeepSeek usage from a non-empty choices
   const result = await withUsageNormalized(
     baseCtx(),
     () =>
-      Promise.resolve(eventResult((async function* () {
-        yield sseFrame(JSON.stringify({
-          id: "chatcmpl_1",
-          object: "chat.completion.chunk",
-          created: 1,
-          model: "deepseek-test",
-          choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-          usage: {
-            prompt_tokens: 100,
-            completion_tokens: 20,
-            total_tokens: 120,
-            prompt_cache_hit_tokens: 70,
-            prompt_cache_miss_tokens: 30,
-          },
-        }));
-      })())),
+      Promise.resolve(eventResult(
+        (async function* () {
+          yield sseFrame(JSON.stringify({
+            id: "chatcmpl_1",
+            object: "chat.completion.chunk",
+            created: 1,
+            model: "deepseek-test",
+            choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+            usage: {
+              prompt_tokens: 100,
+              completion_tokens: 20,
+              total_tokens: 120,
+              prompt_cache_hit_tokens: 70,
+              prompt_cache_miss_tokens: 30,
+            },
+          }));
+        })(),
+        testAccounting,
+      )),
   );
 
   const frames = await collectFrames(result);
@@ -185,21 +199,24 @@ Deno.test("withUsageNormalized rewrites usage in-place on a spec-compliant carri
   const result = await withUsageNormalized(
     baseCtx(),
     () =>
-      Promise.resolve(eventResult((async function* () {
-        yield sseFrame(JSON.stringify({
-          id: "chatcmpl_2",
-          object: "chat.completion.chunk",
-          created: 1,
-          model: "kimi-test",
-          choices: [],
-          usage: {
-            prompt_tokens: 80,
-            completion_tokens: 10,
-            total_tokens: 90,
-            cached_tokens: 25,
-          },
-        }));
-      })())),
+      Promise.resolve(eventResult(
+        (async function* () {
+          yield sseFrame(JSON.stringify({
+            id: "chatcmpl_2",
+            object: "chat.completion.chunk",
+            created: 1,
+            model: "kimi-test",
+            choices: [],
+            usage: {
+              prompt_tokens: 80,
+              completion_tokens: 10,
+              total_tokens: 90,
+              cached_tokens: 25,
+            },
+          }));
+        })(),
+        testAccounting,
+      )),
   );
 
   const frames = await collectFrames(result);
@@ -222,9 +239,12 @@ Deno.test("withUsageNormalized leaves stream chunks without usage untouched", as
   const result = await withUsageNormalized(
     baseCtx(),
     () =>
-      Promise.resolve(eventResult((async function* () {
-        yield sseFrame(chunk);
-      })())),
+      Promise.resolve(eventResult(
+        (async function* () {
+          yield sseFrame(chunk);
+        })(),
+        testAccounting,
+      )),
   );
 
   const frames = await collectFrames(result);
@@ -236,9 +256,12 @@ Deno.test("withUsageNormalized passes [DONE] sentinel through verbatim", async (
   const result = await withUsageNormalized(
     baseCtx(),
     () =>
-      Promise.resolve(eventResult((async function* () {
-        yield sseFrame("[DONE]");
-      })())),
+      Promise.resolve(eventResult(
+        (async function* () {
+          yield sseFrame("[DONE]");
+        })(),
+        testAccounting,
+      )),
   );
 
   const frames = await collectFrames(result);

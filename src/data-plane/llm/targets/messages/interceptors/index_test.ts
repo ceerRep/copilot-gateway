@@ -4,7 +4,6 @@
 // ordering across future refactors.
 
 import { assertEquals } from "@std/assert";
-import { stubUpstream } from "../../../../../test-helpers.ts";
 import { messagesCopilotInterceptors } from "./copilot/index.ts";
 import { withReasoningDisabledOnForcedToolChoice } from "./disable-reasoning-on-forced-tool-choice.ts";
 import {
@@ -12,40 +11,38 @@ import {
   messagesOptionalInterceptors,
 } from "./index.ts";
 
-Deno.test("interceptorsForMessages on copilot kind without opt-ins: copilot interceptors only", () => {
-  const upstream = stubUpstream({
-    kind: "copilot",
+Deno.test("interceptorsForMessages on provider with Copilot interceptors: provider interceptors only", () => {
+  const provider = {
     enabledFixes: new Set<string>(),
-  });
-  const assembled = interceptorsForMessages(upstream);
+    targetInterceptors: { messages: messagesCopilotInterceptors },
+  };
+  const assembled = interceptorsForMessages(provider);
 
   assertEquals(assembled, [...messagesCopilotInterceptors]);
 });
 
-Deno.test("interceptorsForMessages on openai kind without opt-ins: empty assembly", () => {
-  const upstream = stubUpstream({
-    kind: "openai",
+Deno.test("interceptorsForMessages on provider without provider interceptors or opt-ins: empty assembly", () => {
+  const provider = {
     enabledFixes: new Set<string>(),
-  });
-  const assembled = interceptorsForMessages(upstream);
+  };
+  const assembled = interceptorsForMessages(provider);
 
   assertEquals(assembled, []);
   for (const interceptor of messagesCopilotInterceptors) {
     assertEquals(
       assembled.includes(interceptor),
       false,
-      "openai upstreams must not pick up Copilot-only interceptors",
+      "providers must not pick up Copilot-only interceptors unless they attach them",
     );
   }
 });
 
 Deno.test("interceptorsForMessages picks up disable-reasoning-on-forced-tool-choice when opted in", () => {
-  const upstream = stubUpstream({
-    kind: "openai",
+  const provider = {
     enabledFixes: new Set(["disable-reasoning-on-forced-tool-choice"]),
-  });
+  };
   assertEquals(
-    interceptorsForMessages(upstream),
+    interceptorsForMessages(provider),
     [withReasoningDisabledOnForcedToolChoice],
   );
 });

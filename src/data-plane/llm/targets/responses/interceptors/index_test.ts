@@ -1,7 +1,6 @@
 // Order assertion for the Responses target assembler.
 
 import { assertEquals } from "@std/assert";
-import { stubUpstream } from "../../../../../test-helpers.ts";
 import { responsesCopilotInterceptors } from "./copilot/index.ts";
 import {
   interceptorsForResponses,
@@ -9,17 +8,12 @@ import {
 } from "./index.ts";
 import { withCyberPolicyRetried } from "./retry-cyber-policy.ts";
 
-Deno.test("interceptorsForResponses on copilot kind: copilot block then retry-cyber-policy (Copilot default)", () => {
-  // The merged set (defaults ∪ admin opt-ins) is materialized in
-  // `runOnUpstream` (data-plane/llm/shared/upstream-run.ts) via
-  // `withDefaultFixes` before the assembler runs, so by the time
-  // `interceptorsForResponses` sees an upstream its `enabledFixes`
-  // already includes `retry-cyber-policy` for Copilot.
-  const upstream = stubUpstream({
-    kind: "copilot",
+Deno.test("interceptorsForResponses on provider with Copilot interceptors and retry-cyber-policy", () => {
+  const provider = {
     enabledFixes: new Set(["retry-cyber-policy"]),
-  });
-  const assembled = interceptorsForResponses(upstream);
+    targetInterceptors: { responses: responsesCopilotInterceptors },
+  };
+  const assembled = interceptorsForResponses(provider);
 
   assertEquals(
     assembled,
@@ -27,30 +21,28 @@ Deno.test("interceptorsForResponses on copilot kind: copilot block then retry-cy
   );
 });
 
-Deno.test("interceptorsForResponses on copilot kind with empty enabledFixes: only copilot block", () => {
-  const upstream = stubUpstream({
-    kind: "copilot",
+Deno.test("interceptorsForResponses on provider with Copilot interceptors and no enabled fixes: only provider block", () => {
+  const provider = {
     enabledFixes: new Set<string>(),
-  });
-  const assembled = interceptorsForResponses(upstream);
+    targetInterceptors: { responses: responsesCopilotInterceptors },
+  };
+  const assembled = interceptorsForResponses(provider);
 
   assertEquals(assembled, [...responsesCopilotInterceptors]);
 });
 
-Deno.test("interceptorsForResponses on openai kind: no copilot interceptors, opt-in only by enabledFixes", () => {
-  const without = interceptorsForResponses(stubUpstream({
-    kind: "openai",
+Deno.test("interceptorsForResponses without provider interceptors: opt-in only by enabledFixes", () => {
+  const without = interceptorsForResponses({
     enabledFixes: new Set<string>(),
-  }));
+  });
   assertEquals(without, []);
   for (const interceptor of responsesCopilotInterceptors) {
     assertEquals(without.includes(interceptor), false);
   }
 
-  const withFix = interceptorsForResponses(stubUpstream({
-    kind: "openai",
+  const withFix = interceptorsForResponses({
     enabledFixes: new Set(["retry-cyber-policy"]),
-  }));
+  });
   assertEquals(withFix, [withCyberPolicyRetried]);
 });
 
@@ -60,11 +52,10 @@ Deno.test("interceptorsForResponses ignores unknown enabledFixes silently at the
   // assembler. The optional filter is a no-op on ids that don't match a
   // registered descriptor — confirm that behavior so a typo'd id doesn't
   // crash the assembler.
-  const upstream = stubUpstream({
-    kind: "openai",
+  const provider = {
     enabledFixes: new Set(["totally-made-up-fix"]),
-  });
-  assertEquals(interceptorsForResponses(upstream), []);
+  };
+  assertEquals(interceptorsForResponses(provider), []);
   // And the descriptor list itself isn't polluted with that id.
   const ids: readonly string[] = responsesOptionalInterceptors.map((d) =>
     d.fixId

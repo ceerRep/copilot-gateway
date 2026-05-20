@@ -76,7 +76,7 @@ Deno.test("/v1beta/models/:model:countTokens translates Gemini request to Messag
 Deno.test("/v1beta/models/:model:countTokens supports top-level contents", async () => {
   const { apiKey } = await setupAppTest();
 
-  await withMockedFetch(async (request) => {
+  await withMockedFetch((request) => {
     const url = new URL(request.url);
 
     if (url.hostname === "update.code.visualstudio.com") {
@@ -122,7 +122,7 @@ Deno.test("/v1beta/models/:model:countTokens supports top-level contents", async
 Deno.test("/v1beta/models/:model:countTokens internal failures include debug fields", async () => {
   const { apiKey } = await setupAppTest();
 
-  await withMockedFetch(async (request) => {
+  await withMockedFetch((request) => {
     const url = new URL(request.url);
 
     if (url.hostname === "update.code.visualstudio.com") {
@@ -189,7 +189,7 @@ Deno.test("/v1beta/models/:model:countTokens rejects custom-upstream-only models
     enabledFixes: [],
   });
 
-  await withMockedFetch(async (request) => {
+  await withMockedFetch((request) => {
     const url = new URL(request.url);
 
     if (
@@ -223,7 +223,7 @@ Deno.test("/v1beta/models/:model:countTokens rejects custom-upstream-only models
     assertEquals(body.error.code, 400);
     assertEquals(body.error.status, "INVALID_ARGUMENT");
     assertEquals(
-      body.error.message.includes("only supported for Copilot-hosted models"),
+      body.error.message.includes("does not support countTokens"),
       true,
     );
   });
@@ -247,7 +247,7 @@ Deno.test("/v1beta/models/:model:countTokens preserves custom upstream /models H
     enabledFixes: [],
   });
 
-  await withMockedFetch(async (request) => {
+  await withMockedFetch((request) => {
     const url = new URL(request.url);
 
     if (

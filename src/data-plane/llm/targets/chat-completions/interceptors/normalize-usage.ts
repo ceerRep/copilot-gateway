@@ -8,7 +8,6 @@ import {
   readJsonNumber,
 } from "../../../../../shared/json-helpers.ts";
 import { jsonFrame, sseFrame } from "../../../shared/stream/types.ts";
-import type { Upstream } from "../../../../../shared/upstream/types.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 
 /**
@@ -112,13 +111,13 @@ const normalizeNonStreamResponse = (
 };
 
 export const withUsageNormalized: TargetInterceptor<
-  { payload: ChatCompletionsPayload; upstream: Upstream },
+  { payload: ChatCompletionsPayload },
   ChatCompletionResponse
 > = async (_ctx, run) => {
   const result = await run();
   if (result.type !== "events") return result;
   return {
-    type: "events",
+    ...result,
     events: (async function* () {
       for await (const frame of result.events) {
         if (frame.type === "sse") {

@@ -165,7 +165,7 @@ export function dashboardAssets() {
           .sort((a, b) => a.colorSlot - b.colorSlot || compareUsageKeyIds(a.keyId, b.keyId, keyMetaMap));
         }
 
-        function usageModelChartEntries(models, knownModels) {
+        function tokenModelChartEntries(models, knownModels) {
           const present = new Set(models);
           const order = [...new Set([...knownModels, ...models])].sort();
           return order
@@ -375,7 +375,6 @@ export function dashboardAssets() {
                     importMode: 'merge',
                     importLoading: false,
                     importPreview: { ready: false, exportedAt: null, apiKeys: 0, githubAccounts: 0, usage: 0, searchUsage: 0, performance: 0 },
-                    expandedUnavailableAccountId: null,
                     // Models tab — chat playground
                     allModels: [],
                     modelsSearch: '',
@@ -454,7 +453,11 @@ export function dashboardAssets() {
                       let models = this.generationModels;
                       if (this.modelsSearch.trim()) {
                         const q = this.modelsSearch.toLowerCase();
-                        models = models.filter(m => m.id.toLowerCase().includes(q) || m.name.toLowerCase().includes(q));
+                        models = models.filter(m =>
+                          m.id.toLowerCase().includes(q) ||
+                          m.name.toLowerCase().includes(q) ||
+                          (m.display_name || '').toLowerCase().includes(q)
+                        );
                       }
                       const enabled = models.filter(m => m.model_picker_enabled);
                       const legacy = models.filter(m => !m.model_picker_enabled);
@@ -666,7 +669,7 @@ export function dashboardAssets() {
                             const { data: rawData } = await resp.json();
                             const data = rawData.map(m => ({
                               ...m,
-                              name: m.name || m.id,
+                              name: m.display_name || m.name || m.id,
                               supports_generation: modelSupportsGeneration(m),
                               }));
 
@@ -689,7 +692,7 @@ export function dashboardAssets() {
                                   eps.includes('/chat/completions');
                                 });
 
-                                // Context window map — backend mergeClaudeVariants has already
+                                // Context window map — backend model listing has already
                                 // collapsed dated/variant aliases into base ids, so we can
                                 // key directly by model id.
                                 this.claudeContextMap = Object.fromEntries(
@@ -708,9 +711,9 @@ export function dashboardAssets() {
                                   // narrow to be the right default for the Claude pickers.
                                   // Custom upstreams are admin-curated and surfaced in full.
                                   //
-                                  // Backend mergeClaudeVariants has already collapsed dated
-                                  // and variant aliases (-xhigh, -1m) into base ids, so we
-                                  // key directly by model id without configModelName dedupe.
+                                  // Backend model merging has already collapsed dated and
+                                  // variant aliases (-xhigh, -1m) into base ids, so we key
+                                  // directly by model id without configModelName dedupe.
                                   const copilotIds = dedupe(messagesCapable
                                     .filter(isCopilot)
                                     .filter((m) => m.id.startsWith('claude-'))
@@ -742,8 +745,8 @@ export function dashboardAssets() {
                                       // Codex CLI talks the Responses protocol; any
                                       // upstream that supports /responses natively or that
                                       // can be served by responses-via-chat-completions
-                                      // translation qualifies. Backend mergeClaudeVariants
-                                      // has already collapsed variants, so we key by id directly.
+                                      // translation qualifies. Backend model listing has already
+                                      // collapsed variants, so we key by id directly.
                                       const codexCapable = data.filter((m) => {
                                         const eps = m.supported_endpoints ?? [];
                                         return eps.includes('/responses') ||
@@ -785,9 +788,6 @@ export function dashboardAssets() {
                                       this.githubAccounts = data.accounts || [];
                                       if (!this.githubAccounts.some((acct) => acct.id === this.selectedGithubAccountId)) {
                                         this.selectedGithubAccountId = this.githubAccounts[0]?.id ?? null;
-                                      }
-                                      if (!this.githubAccounts.some((acct) => acct.id === this.expandedUnavailableAccountId)) {
-                                        this.expandedUnavailableAccountId = null;
                                       }
                                       } catch (e) {
                                         console.error('loadMe:', e);
@@ -948,12 +948,6 @@ export function dashboardAssets() {
                                         };
                                       } else {
                                         const nextSort = this.upstreams.reduce((m, u) => Math.max(m, u.sort_order), -1) + 1;
-                                        // Custom upstreams are always the openai kind in the
-                                        // gateway today, so pre-fill enabledFixes with every
-                                        // catalog entry whose defaultFor includes openai.
-                                        const defaults = this.upstreamFixCatalog
-                                          .filter((f) => Array.isArray(f.defaultFor) && f.defaultFor.includes('openai'))
-                                          .map((f) => f.id);
                                         this.upstreamModal = {
                                           open: true,
                                           id: null,
@@ -963,7 +957,7 @@ export function dashboardAssets() {
                                           supportedEndpoints: ['/chat/completions'],
                                           enabled: true,
                                           sortOrder: nextSort,
-                                          enabledFixes: defaults,
+                                          enabledFixes: [],
                                           enabledFixesOpen: false,
                                           pathOverrides: blankOverrides(),
                                           pathOverridesOpen: false,
@@ -1208,1238 +1202,1196 @@ export function dashboardAssets() {
                                         }
                                       },
 
-                                      unavailableModels(acct) {
-                                        return Array.isArray(acct?.temporarily_unavailable_models)
-                                          ? acct.temporarily_unavailable_models.filter((status) => {
-                                            const expiresAt = Date.parse(status.expires_at || '');
-                                            return Number.isFinite(expiresAt) && expiresAt > this.now;
-                                          })
-                                          : [];
-                                        },
-
-                                        hasUnavailableModels(acct) {
-                                          return this.unavailableModels(acct).length > 0;
-                                        },
-
-                                        unavailablePanelOpen(acct) {
-                                          return this.hasUnavailableModels(acct) && this.expandedUnavailableAccountId === acct.id;
-                                        },
-
-                                        toggleUnavailableDetails(acct) {
-                                          if (!this.hasUnavailableModels(acct)) return;
-                                          this.expandedUnavailableAccountId = this.expandedUnavailableAccountId === acct.id ? null : acct.id;
-                                        },
-
-                                        unavailableBadgeText(acct) {
-                                          const count = this.unavailableModels(acct).length;
-                                          return count + ' backoff';
-                                        },
-
-                                        cooldownRemaining(status) {
-                                          const expiresAt = Date.parse(status.expires_at || '');
-                                          const remainingMs = expiresAt - this.now;
-                                          const totalMinutes = Math.max(1, Math.ceil(remainingMs / 60000));
-                                          const hours = Math.floor(totalMinutes / 60);
-                                          const minutes = totalMinutes % 60;
-                                          if (hours > 0 && minutes > 0) return hours + 'h ' + minutes + 'm';
-                                          if (hours > 0) return hours + 'h';
-                                          return minutes + 'm';
-                                        },
-
-                                        cooldownRecoveryText(status) {
-                                          return 'in ' + this.cooldownRemaining(status);
-                                        },
-
-                                        async loadKeys() {
-                                          this.keysLoading = true;
-                                          try {
-                                            const resp = await fetch('/api/keys', { headers: this.authHeaders() });
-                                            if (resp.status === 401) {
-                                              this.logout();
-                                              return;
-                                            }
-                                            if (resp.ok) {
-                                              this.keys = await resp.json();
-                                              if (this.selectedKeyId && !this.keys.some((k) => k.id === this.selectedKeyId)) {
-                                                this.selectedKeyId = null;
-                                              }
-                                            }
-                                          } catch (e) {
-                                            console.error('loadKeys:', e);
-                                          } finally {
-                                            this.keysLoading = false;
-                                          }
-                                        },
-
-                                        async createNewKey() {
-                                          const name = this.newKeyName.trim();
-                                          if (!name) return;
-                                          this.keyCreating = true;
-                                          try {
-                                            const resp = await fetch('/api/keys', {
-                                              method: 'POST',
-                                              headers: { ...this.authHeaders(), 'Content-Type': 'application/json' },
-                                              body: JSON.stringify({ name }),
-                                            });
-                                            if (resp.status === 401) {
-                                              this.logout();
-                                              return;
-                                            }
-                                            if (resp.ok) {
-                                              const created = await resp.json();
-                                              this.selectedKeyId = created.id;
-                                              this.newKeyName = '';
-                                              await this.loadKeys();
-                                            } else {
-                                              alert((await resp.json()).error || 'Failed to create key');
-                                            }
-                                          } catch (e) {
-                                            console.error('createKey:', e);
-                                          } finally {
-                                            this.keyCreating = false;
-                                          }
-                                        },
-
-                                        async deleteKeyById(id, name) {
-                                          if (!confirm('Delete key "' + name + '"? This cannot be undone.')) return;
-                                          this.keyDeleting = id;
-                                          try {
-                                            const resp = await fetch('/api/keys/' + id, { method: 'DELETE', headers: this.authHeaders() });
-                                            if (resp.status === 401) {
-                                              this.logout();
-                                              return;
-                                            }
-                                            if (resp.ok) {
-                                              await this.loadKeys();
-                                            } else {
-                                              alert((await resp.json()).error || 'Failed to delete key');
-                                            }
-                                          } catch (e) {
-                                            console.error('deleteKey:', e);
-                                          } finally {
-                                            this.keyDeleting = null;
-                                          }
-                                        },
-
-                                        async rotateKeyById(id, name) {
-                                          if (!confirm('Rotate key "' + name + '"? The old key will stop working immediately.')) return;
-                                          this.keyRotating = id;
-                                          try {
-                                            const resp = await fetch('/api/keys/' + id + '/rotate', { method: 'POST', headers: this.authHeaders() });
-                                            if (resp.status === 401) {
-                                              this.logout();
-                                              return;
-                                            }
-                                            if (resp.ok) {
-                                              this.selectedKeyId = id;
-                                              await this.loadKeys();
-                                            } else {
-                                              alert((await resp.json()).error || 'Failed to rotate key');
-                                            }
-                                          } catch (e) {
-                                            console.error('rotateKey:', e);
-                                          } finally {
-                                            this.keyRotating = null;
-                                          }
-                                        },
-
-                                        async renameKeyById(id, currentName) {
-                                          const newName = prompt('Rename key:', currentName);
-                                          if (!newName || newName === currentName) return;
-                                          try {
-                                            const resp = await fetch('/api/keys/' + id, {
-                                              method: 'PATCH',
-                                              headers: { ...this.authHeaders(), 'Content-Type': 'application/json' },
-                                              body: JSON.stringify({ name: newName }),
-                                            });
-                                            if (resp.status === 401) {
-                                              this.logout();
-                                              return;
-                                            }
-                                            if (resp.ok) {
-                                              await this.loadKeys();
-                                            } else {
-                                              alert((await resp.json()).error || 'Failed to rename key');
-                                            }
-                                          } catch (e) {
-                                            console.error('renameKey:', e);
-                                          }
-                                        },
-
-                                        async copySnippet(text, tag) {
-                                          await copyText(text);
-                                          this.copied = tag;
-                                          setTimeout(() => {
-                                            this.copied = false;
-                                          }, 2000);
-                                        },
-
-                                        localHourKey(d) {
-                                          return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + 'T' + pad2(d.getHours());
-                                        },
-
-                                        localDateKey(d) {
-                                          return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
-                                        },
-
-                                        local8hBucketStart(d) {
-                                          const aligned = new Date(d);
-                                          aligned.setMinutes(0, 0, 0);
-                                          aligned.setHours(aligned.getHours() - (aligned.getHours() % 8));
-                                          return aligned;
-                                        },
-
-                                        local8hBucketKey(d) {
-                                          return this.localHourKey(this.local8hBucketStart(d));
-                                        },
-
-                                        local4hBucketStart(d) {
-                                          const aligned = new Date(d);
-                                          aligned.setMinutes(0, 0, 0);
-                                          aligned.setHours(aligned.getHours() - (aligned.getHours() % 4));
-                                          return aligned;
-                                        },
-
-                                        local4hBucketKey(d) {
-                                          return this.localHourKey(this.local4hBucketStart(d));
-                                        },
-
-                                        build8hBucketMap(count) {
-                                          const map = new Map();
-                                          const start = this.local8hBucketStart(new Date());
-                                          let prevDateKey = null;
-                                          for (let i = count - 1; i >= 0; i--) {
-                                            const d = new Date(start.getTime() - i * 8 * 3600000);
-                                            const key = this.localHourKey(d);
-                                            const dateKey = this.localDateKey(d);
-                                            const startH = d.getHours();
-                                            const endH = (startH + 8) % 24;
-                                            const time = pad2(startH) + ':00 \\u2013 ' + pad2(endH) + ':00';
-                                            const datePrefix = dateKey !== prevDateKey
-                                              ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' '
-                                              : '';
-                                            map.set(key, datePrefix + time);
-                                            prevDateKey = dateKey;
-                                          }
-                                          return map;
-                                        },
-
-                                        build4hBucketMap(count) {
-                                          const map = new Map();
-                                          const start = this.local4hBucketStart(new Date());
-                                          let prevDateKey = null;
-                                          for (let i = count - 1; i >= 0; i--) {
-                                            const d = new Date(start.getTime() - i * 4 * 3600000);
-                                            const key = this.localHourKey(d);
-                                            const h = d.getHours();
-                                            const dateKey = this.localDateKey(d);
-                                            const endH = (h + 4) % 24;
-                                            const time = pad2(h) + ':00 \\u2013 ' + pad2(endH) + ':00';
-                                            const datePrefix = dateKey !== prevDateKey
-                                              ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' '
-                                              : '';
-                                            map.set(key, datePrefix + time);
-                                            prevDateKey = dateKey;
-                                          }
-                                          return map;
-                                        },
-
-                                        usageRangeParams() {
-                                          const now = new Date();
-                                          const rangeStart = new Date(now);
-                                          if (this.tokenRange === 'today') {
-                                            rangeStart.setTime(now.getTime() - 23 * 3600000);
-                                            rangeStart.setMinutes(0, 0, 0);
-                                          } else if (this.tokenRange === '7d') {
-                                            rangeStart.setTime(this.local4hBucketStart(now).getTime() - 41 * 4 * 3600000);
-                                          } else {
-                                            rangeStart.setDate(rangeStart.getDate() - 29);
-                                            rangeStart.setHours(0, 0, 0, 0);
-                                          }
-                                          return {
-                                            start: rangeStart.toISOString().slice(0, 13),
-                                            end: new Date(now.getTime() + 3600000).toISOString().slice(0, 13),
-                                          };
-                                        },
-
-                                        async fetchTokenData(range = this.usageRangeParams()) {
-                                          try {
-                                            const resp = await fetch('/api/token-usage?start=' + encodeURIComponent(range.start) + '&end=' + encodeURIComponent(range.end) + '&include_key_metadata=1', { headers: this.authHeaders() });
-                                            if (resp.status === 401) {
-                                              this.logout();
-                                              return;
-                                            }
-                                            if (resp.ok) {
-                                              const body = await resp.json();
-                                              if (Array.isArray(body)) {
-                                                this.tokenData = body;
-                                                this.tokenKeyMetadata = [];
-                                                this.tokenKeyColorOrder = [];
-                                              } else {
-                                                this.tokenData = Array.isArray(body.records) ? body.records : [];
-                                                this.tokenKeyMetadata = Array.isArray(body.keys) ? body.keys : [];
-                                                this.tokenKeyColorOrder = Array.isArray(body.keyColorOrder) ? body.keyColorOrder : [];
-                                              }
-                                            }
-                                          } catch (e) {
-                                            console.error('fetchTokenData:', e);
-                                          }
-                                        },
-
-                                        async fetchSearchUsageData(range = this.usageRangeParams()) {
-                                          try {
-                                            const resp = await fetch('/api/search-usage?start=' + encodeURIComponent(range.start) + '&end=' + encodeURIComponent(range.end) + '&include_key_metadata=1', { headers: this.authHeaders() });
-                                            if (resp.status === 401) {
-                                              this.logout();
-                                              return;
-                                            }
-                                            if (resp.ok) {
-                                              const body = await resp.json();
-                                              this.searchUsageData = Array.isArray(body.records) ? body.records : [];
-                                              this.searchUsageKeyMetadata = Array.isArray(body.keys) ? body.keys : [];
-                                              this.searchUsageKeyColorOrder = Array.isArray(body.keyColorOrder) ? body.keyColorOrder : [];
-                                              this.searchUsageActiveProvider = body.activeProvider || 'disabled';
-                                            }
-                                          } catch (e) {
-                                            console.error('fetchSearchUsageData:', e);
-                                          }
-                                        },
-
-                                        async fetchUsageTabData() {
-                                          const range = this.usageRangeParams();
-                                          await Promise.all([
-                                            this.fetchTokenData(range),
-                                            this.fetchSearchUsageData(range),
-                                          ]);
-                                        },
-
-                                        async loadUsageTabData(modelsReady = this.ensureModelsLoaded()) {
-                                          const expectedRange = this.tokenRange;
-                                          this.tokenLoading = true;
-                                          this.searchUsageLoading = true;
-                                          try {
-                                            await Promise.all([
-                                              modelsReady,
-                                              this.fetchUsageTabData(),
-                                            ]);
-                                            if (this.tab !== 'usage' || this.tokenRange !== expectedRange) return;
-                                            await this.$nextTick();
-                                            this.renderTokenCharts();
-                                          } finally {
-                                            this.tokenLoading = false;
-                                            this.searchUsageLoading = false;
-                                          }
-                                        },
-
-                                        performanceRangeParams() {
-                                          const now = new Date();
-                                          const rangeStart = new Date(now);
-                                          if (this.performanceRange === 'today') {
-                                            rangeStart.setTime(now.getTime() - 23 * 3600000);
-                                            rangeStart.setMinutes(0, 0, 0);
-                                          } else if (this.performanceRange === '7d') {
-                                            rangeStart.setTime(this.local4hBucketStart(now).getTime() - 41 * 4 * 3600000);
-                                          } else {
-                                            rangeStart.setDate(rangeStart.getDate() - 29);
-                                            rangeStart.setHours(0, 0, 0, 0);
-                                          }
-                                          return {
-                                            start: rangeStart.toISOString().slice(0, 13),
-                                            end: new Date(now.getTime() + 3600000).toISOString().slice(0, 13),
-                                          };
-                                        },
-
-                                        performanceBucketGranularity() {
-                                          if (this.performanceRange === 'today') return 'hour';
-                                          if (this.performanceRange === '7d') return '4h';
-                                          return 'day';
-                                        },
-
-                                        buildPerformanceBucketMap() {
-                                          const bucketMap = new Map();
-                                          const now = new Date();
-                                          if (this.performanceRange === 'today') {
-                                            const cur = new Date(now);
-                                            cur.setMinutes(0, 0, 0);
-                                            for (let i = 23; i >= 0; i--) {
-                                              const d = new Date(cur.getTime() - i * 3600000);
-                                              const h = d.getHours();
-                                              bucketMap.set(this.localHourKey(d), pad2(h) + ':00 \\u2013 ' + pad2((h + 1) % 24) + ':00');
-                                            }
-                                          } else if (this.performanceRange === '7d') {
-                                            return this.build4hBucketMap(42);
-                                          } else {
-                                            const days = 30;
-                                            for (let i = days - 1; i >= 0; i--) {
-                                              const d = new Date(now);
-                                              d.setDate(d.getDate() - i);
-                                              d.setHours(0, 0, 0, 0);
-                                              bucketMap.set(this.localDateKey(d), d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-                                            }
-                                          }
-                                          return bucketMap;
-                                        },
-
-                                        async fetchPerformanceOverview() {
-                                          const range = this.performanceRangeParams();
-                                          const params = new URLSearchParams({
-                                            start: range.start,
-                                            end: range.end,
-                                            bucket: this.performanceBucketGranularity(),
-                                            metric_scope: this.performanceMetricScope,
-                                            timezone_offset_minutes: String(new Date().getTimezoneOffset()),
-                                          });
-                                          const resp = await fetch('/api/performance/overview?' + params.toString(), { headers: this.authHeaders() });
+                                      async loadKeys() {
+                                        this.keysLoading = true;
+                                        try {
+                                          const resp = await fetch('/api/keys', { headers: this.authHeaders() });
                                           if (resp.status === 401) {
                                             this.logout();
-                                            return null;
+                                            return;
                                           }
-                                          if (!resp.ok) return null;
-                                          const body = await resp.json();
-                                          return body && typeof body === 'object' ? body : null;
-                                        },
-
-                                        async loadPerformanceTabData() {
-                                          const expectedRange = this.performanceRange;
-                                          const expectedScope = this.performanceMetricScope;
-                                          this.performanceLoading = true;
-                                          try {
-                                            const overview = await this.fetchPerformanceOverview();
-                                            if (this.tab !== 'performance' || this.performanceRange !== expectedRange || this.performanceMetricScope !== expectedScope) return;
-                                            this.performanceSeries = Array.isArray(overview?.series) ? overview.series : [];
-                                            this.performanceSummaryRows = Array.isArray(overview?.summaryRows) ? overview.summaryRows : [];
-                                            this.performanceModelRows = Array.isArray(overview?.modelRows) ? overview.modelRows : [];
-                                            const runtimeRows = Array.isArray(overview?.runtimeRows) ? overview.runtimeRows : [];
-                                            this.performanceRuntimeRows = runtimeRows.filter((row) => row.group !== 'unknown' || runtimeRows.length > 1);
-                                            this.ensurePerformanceModelSelected();
-                                            this.updatePerformanceSummary();
-                                            await this.$nextTick();
-                                            this.renderPerformanceChart();
-                                          } catch (e) {
-                                            console.error('loadPerformanceTabData:', e);
-                                          } finally {
-                                            this.performanceLoading = false;
-                                          }
-                                        },
-
-                                        updatePerformanceSummary() {
-                                          const row = this.performanceSummaryRows[0];
-                                          this.performanceSummary = row
-                                            ? { requests: row.requests, errors: row.errors, avgMs: row.avgMs, p50Ms: row.p50Ms, p95Ms: row.p95Ms, p99Ms: row.p99Ms }
-                                            : { requests: 0, errors: 0, avgMs: null, p50Ms: null, p95Ms: null, p99Ms: null };
-                                          },
-
-                                          renderPerformanceChart() {
-                                            const canvas = document.getElementById('performanceChartByModel');
-                                            if (!canvas || canvas.clientWidth === 0) return;
-                                            if (_charts.performanceModel) {
-                                              _charts.performanceModel.stop();
-                                              _charts.performanceModel.destroy();
-                                              _charts.performanceModel = null;
+                                          if (resp.ok) {
+                                            this.keys = await resp.json();
+                                            if (this.selectedKeyId && !this.keys.some((k) => k.id === this.selectedKeyId)) {
+                                              this.selectedKeyId = null;
                                             }
+                                          }
+                                        } catch (e) {
+                                          console.error('loadKeys:', e);
+                                        } finally {
+                                          this.keysLoading = false;
+                                        }
+                                      },
 
-                                            const sourceRows = this.performanceChartView === 'percentile'
-                                              ? this.performanceSeries.filter((row) => row.group === this.performanceModel)
-                                              : this.performanceSeries;
-                                            const bucketMap = this.buildPerformanceBucketMap();
-                                            const bucketKeysArr = [...bucketMap.keys()];
-                                            const labels = [...bucketMap.values()];
-                                            const percentileMetrics = ['p50Ms', 'p95Ms', 'p99Ms'];
-                                            const datasets = this.performanceChartView === 'percentile'
-                                              ? percentileMetrics.map((metric, index) => {
-                                                const color = usageChartColor(index);
-                                                const valueByBucket = new Map(sourceRows.map((row) => [row.bucket, row[metric]]));
-                                                return {
-                                                  label: this.performancePercentileLabel(metric),
-                                                  data: bucketKeysArr.map((bucket) => valueByBucket.get(bucket) ?? null),
-                                                  borderColor: color,
-                                                  backgroundColor: color + '25',
-                                                  borderWidth: 2,
-                                                  pointRadius: 2,
-                                                  pointHoverRadius: 5,
-                                                  tension: 0.25,
-                                                  fill: false,
-                                                  spanGaps: true,
-                                                };
-                                              })
-                                              : [...new Set(this.performanceSeries.map((row) => row.group))].sort().map((group, index) => {
-                                                const color = usageChartColor(index);
-                                                const valueByKey = new Map(this.performanceSeries.map((row) => [row.bucket + '\\0' + row.group, row[this.performancePercentile]]));
-                                                return {
-                                                  label: group,
-                                                  data: bucketKeysArr.map((bucket) => valueByKey.get(bucket + '\\0' + group) ?? null),
-                                                  borderColor: color,
-                                                  backgroundColor: color + '25',
-                                                  borderWidth: 2,
-                                                  pointRadius: 2,
-                                                  pointHoverRadius: 5,
-                                                  tension: 0.25,
-                                                  fill: false,
-                                                  spanGaps: true,
-                                                };
-                                              });
+                                      async createNewKey() {
+                                        const name = this.newKeyName.trim();
+                                        if (!name) return;
+                                        this.keyCreating = true;
+                                        try {
+                                          const resp = await fetch('/api/keys', {
+                                            method: 'POST',
+                                            headers: { ...this.authHeaders(), 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ name }),
+                                          });
+                                          if (resp.status === 401) {
+                                            this.logout();
+                                            return;
+                                          }
+                                          if (resp.ok) {
+                                            const created = await resp.json();
+                                            this.selectedKeyId = created.id;
+                                            this.newKeyName = '';
+                                            await this.loadKeys();
+                                          } else {
+                                            alert((await resp.json()).error || 'Failed to create key');
+                                          }
+                                        } catch (e) {
+                                          console.error('createKey:', e);
+                                        } finally {
+                                          this.keyCreating = false;
+                                        }
+                                      },
 
-                                              const self = this;
-                                              _charts.performanceModel = new Chart(canvas, {
-                                                type: 'line',
-                                                data: { labels, datasets },
-                                                options: {
-                                                  responsive: true,
-                                                  maintainAspectRatio: false,
-                                                  animation: false,
-                                                  interaction: { mode: 'index', intersect: false },
-                                                  plugins: {
-                                                    legend: {
-                                                      position: 'bottom',
-                                                      labels: { color: '#9e9e9e', font: { size: 11, family: "'DM Sans', sans-serif" }, boxWidth: 12, padding: 16, usePointStyle: true, pointStyle: 'circle' },
-                                                    },
-                                                    tooltip: {
-                                                      backgroundColor: 'rgba(12,16,21,0.95)',
-                                                      borderColor: 'rgba(255,255,255,0.1)',
-                                                      borderWidth: 1,
-                                                      titleColor: '#e0e0e0',
-                                                      bodyColor: '#b0bec5',
-                                                      padding: 12,
-                                                      filter: (item) => item.parsed.y !== null,
-                                                      callbacks: { label: (ctx) => ctx.dataset.label + ': ' + formatDurationMs(ctx.parsed.y) },
-                                                    },
+                                      async deleteKeyById(id, name) {
+                                        if (!confirm('Delete key "' + name + '"? This cannot be undone.')) return;
+                                        this.keyDeleting = id;
+                                        try {
+                                          const resp = await fetch('/api/keys/' + id, { method: 'DELETE', headers: this.authHeaders() });
+                                          if (resp.status === 401) {
+                                            this.logout();
+                                            return;
+                                          }
+                                          if (resp.ok) {
+                                            await this.loadKeys();
+                                          } else {
+                                            alert((await resp.json()).error || 'Failed to delete key');
+                                          }
+                                        } catch (e) {
+                                          console.error('deleteKey:', e);
+                                        } finally {
+                                          this.keyDeleting = null;
+                                        }
+                                      },
+
+                                      async rotateKeyById(id, name) {
+                                        if (!confirm('Rotate key "' + name + '"? The old key will stop working immediately.')) return;
+                                        this.keyRotating = id;
+                                        try {
+                                          const resp = await fetch('/api/keys/' + id + '/rotate', { method: 'POST', headers: this.authHeaders() });
+                                          if (resp.status === 401) {
+                                            this.logout();
+                                            return;
+                                          }
+                                          if (resp.ok) {
+                                            this.selectedKeyId = id;
+                                            await this.loadKeys();
+                                          } else {
+                                            alert((await resp.json()).error || 'Failed to rotate key');
+                                          }
+                                        } catch (e) {
+                                          console.error('rotateKey:', e);
+                                        } finally {
+                                          this.keyRotating = null;
+                                        }
+                                      },
+
+                                      async renameKeyById(id, currentName) {
+                                        const newName = prompt('Rename key:', currentName);
+                                        if (!newName || newName === currentName) return;
+                                        try {
+                                          const resp = await fetch('/api/keys/' + id, {
+                                            method: 'PATCH',
+                                            headers: { ...this.authHeaders(), 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ name: newName }),
+                                          });
+                                          if (resp.status === 401) {
+                                            this.logout();
+                                            return;
+                                          }
+                                          if (resp.ok) {
+                                            await this.loadKeys();
+                                          } else {
+                                            alert((await resp.json()).error || 'Failed to rename key');
+                                          }
+                                        } catch (e) {
+                                          console.error('renameKey:', e);
+                                        }
+                                      },
+
+                                      async copySnippet(text, tag) {
+                                        await copyText(text);
+                                        this.copied = tag;
+                                        setTimeout(() => {
+                                          this.copied = false;
+                                        }, 2000);
+                                      },
+
+                                      localHourKey(d) {
+                                        return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) + 'T' + pad2(d.getHours());
+                                      },
+
+                                      localDateKey(d) {
+                                        return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate());
+                                      },
+
+                                      local8hBucketStart(d) {
+                                        const aligned = new Date(d);
+                                        aligned.setMinutes(0, 0, 0);
+                                        aligned.setHours(aligned.getHours() - (aligned.getHours() % 8));
+                                        return aligned;
+                                      },
+
+                                      local8hBucketKey(d) {
+                                        return this.localHourKey(this.local8hBucketStart(d));
+                                      },
+
+                                      local4hBucketStart(d) {
+                                        const aligned = new Date(d);
+                                        aligned.setMinutes(0, 0, 0);
+                                        aligned.setHours(aligned.getHours() - (aligned.getHours() % 4));
+                                        return aligned;
+                                      },
+
+                                      local4hBucketKey(d) {
+                                        return this.localHourKey(this.local4hBucketStart(d));
+                                      },
+
+                                      build8hBucketMap(count) {
+                                        const map = new Map();
+                                        const start = this.local8hBucketStart(new Date());
+                                        let prevDateKey = null;
+                                        for (let i = count - 1; i >= 0; i--) {
+                                          const d = new Date(start.getTime() - i * 8 * 3600000);
+                                          const key = this.localHourKey(d);
+                                          const dateKey = this.localDateKey(d);
+                                          const startH = d.getHours();
+                                          const endH = (startH + 8) % 24;
+                                          const time = pad2(startH) + ':00 \\u2013 ' + pad2(endH) + ':00';
+                                          const datePrefix = dateKey !== prevDateKey
+                                            ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' '
+                                            : '';
+                                          map.set(key, datePrefix + time);
+                                          prevDateKey = dateKey;
+                                        }
+                                        return map;
+                                      },
+
+                                      build4hBucketMap(count) {
+                                        const map = new Map();
+                                        const start = this.local4hBucketStart(new Date());
+                                        let prevDateKey = null;
+                                        for (let i = count - 1; i >= 0; i--) {
+                                          const d = new Date(start.getTime() - i * 4 * 3600000);
+                                          const key = this.localHourKey(d);
+                                          const h = d.getHours();
+                                          const dateKey = this.localDateKey(d);
+                                          const endH = (h + 4) % 24;
+                                          const time = pad2(h) + ':00 \\u2013 ' + pad2(endH) + ':00';
+                                          const datePrefix = dateKey !== prevDateKey
+                                            ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' '
+                                            : '';
+                                          map.set(key, datePrefix + time);
+                                          prevDateKey = dateKey;
+                                        }
+                                        return map;
+                                      },
+
+                                      usageRangeParams() {
+                                        const now = new Date();
+                                        const rangeStart = new Date(now);
+                                        if (this.tokenRange === 'today') {
+                                          rangeStart.setTime(now.getTime() - 23 * 3600000);
+                                          rangeStart.setMinutes(0, 0, 0);
+                                        } else if (this.tokenRange === '7d') {
+                                          rangeStart.setTime(this.local4hBucketStart(now).getTime() - 41 * 4 * 3600000);
+                                        } else {
+                                          rangeStart.setDate(rangeStart.getDate() - 29);
+                                          rangeStart.setHours(0, 0, 0, 0);
+                                        }
+                                        return {
+                                          start: rangeStart.toISOString().slice(0, 13),
+                                          end: new Date(now.getTime() + 3600000).toISOString().slice(0, 13),
+                                        };
+                                      },
+
+                                      async fetchTokenData(range = this.usageRangeParams()) {
+                                        try {
+                                          const resp = await fetch('/api/token-usage?start=' + encodeURIComponent(range.start) + '&end=' + encodeURIComponent(range.end) + '&include_key_metadata=1', { headers: this.authHeaders() });
+                                          if (resp.status === 401) {
+                                            this.logout();
+                                            return;
+                                          }
+                                          if (resp.ok) {
+                                            const body = await resp.json();
+                                            if (Array.isArray(body)) {
+                                              this.tokenData = body;
+                                              this.tokenKeyMetadata = [];
+                                              this.tokenKeyColorOrder = [];
+                                            } else {
+                                              this.tokenData = Array.isArray(body.records) ? body.records : [];
+                                              this.tokenKeyMetadata = Array.isArray(body.keys) ? body.keys : [];
+                                              this.tokenKeyColorOrder = Array.isArray(body.keyColorOrder) ? body.keyColorOrder : [];
+                                            }
+                                          }
+                                        } catch (e) {
+                                          console.error('fetchTokenData:', e);
+                                        }
+                                      },
+
+                                      async fetchSearchUsageData(range = this.usageRangeParams()) {
+                                        try {
+                                          const resp = await fetch('/api/search-usage?start=' + encodeURIComponent(range.start) + '&end=' + encodeURIComponent(range.end) + '&include_key_metadata=1', { headers: this.authHeaders() });
+                                          if (resp.status === 401) {
+                                            this.logout();
+                                            return;
+                                          }
+                                          if (resp.ok) {
+                                            const body = await resp.json();
+                                            this.searchUsageData = Array.isArray(body.records) ? body.records : [];
+                                            this.searchUsageKeyMetadata = Array.isArray(body.keys) ? body.keys : [];
+                                            this.searchUsageKeyColorOrder = Array.isArray(body.keyColorOrder) ? body.keyColorOrder : [];
+                                            this.searchUsageActiveProvider = body.activeProvider || 'disabled';
+                                          }
+                                        } catch (e) {
+                                          console.error('fetchSearchUsageData:', e);
+                                        }
+                                      },
+
+                                      async fetchUsageTabData() {
+                                        const range = this.usageRangeParams();
+                                        await Promise.all([
+                                          this.fetchTokenData(range),
+                                          this.fetchSearchUsageData(range),
+                                        ]);
+                                      },
+
+                                      async loadUsageTabData(modelsReady = this.ensureModelsLoaded()) {
+                                        const expectedRange = this.tokenRange;
+                                        this.tokenLoading = true;
+                                        this.searchUsageLoading = true;
+                                        try {
+                                          await Promise.all([
+                                            modelsReady,
+                                            this.fetchUsageTabData(),
+                                          ]);
+                                          if (this.tab !== 'usage' || this.tokenRange !== expectedRange) return;
+                                          await this.$nextTick();
+                                          this.renderTokenCharts();
+                                        } finally {
+                                          this.tokenLoading = false;
+                                          this.searchUsageLoading = false;
+                                        }
+                                      },
+
+                                      performanceRangeParams() {
+                                        const now = new Date();
+                                        const rangeStart = new Date(now);
+                                        if (this.performanceRange === 'today') {
+                                          rangeStart.setTime(now.getTime() - 23 * 3600000);
+                                          rangeStart.setMinutes(0, 0, 0);
+                                        } else if (this.performanceRange === '7d') {
+                                          rangeStart.setTime(this.local4hBucketStart(now).getTime() - 41 * 4 * 3600000);
+                                        } else {
+                                          rangeStart.setDate(rangeStart.getDate() - 29);
+                                          rangeStart.setHours(0, 0, 0, 0);
+                                        }
+                                        return {
+                                          start: rangeStart.toISOString().slice(0, 13),
+                                          end: new Date(now.getTime() + 3600000).toISOString().slice(0, 13),
+                                        };
+                                      },
+
+                                      performanceBucketGranularity() {
+                                        if (this.performanceRange === 'today') return 'hour';
+                                        if (this.performanceRange === '7d') return '4h';
+                                        return 'day';
+                                      },
+
+                                      buildPerformanceBucketMap() {
+                                        const bucketMap = new Map();
+                                        const now = new Date();
+                                        if (this.performanceRange === 'today') {
+                                          const cur = new Date(now);
+                                          cur.setMinutes(0, 0, 0);
+                                          for (let i = 23; i >= 0; i--) {
+                                            const d = new Date(cur.getTime() - i * 3600000);
+                                            const h = d.getHours();
+                                            bucketMap.set(this.localHourKey(d), pad2(h) + ':00 \\u2013 ' + pad2((h + 1) % 24) + ':00');
+                                          }
+                                        } else if (this.performanceRange === '7d') {
+                                          return this.build4hBucketMap(42);
+                                        } else {
+                                          const days = 30;
+                                          for (let i = days - 1; i >= 0; i--) {
+                                            const d = new Date(now);
+                                            d.setDate(d.getDate() - i);
+                                            d.setHours(0, 0, 0, 0);
+                                            bucketMap.set(this.localDateKey(d), d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+                                          }
+                                        }
+                                        return bucketMap;
+                                      },
+
+                                      async fetchPerformanceOverview() {
+                                        const range = this.performanceRangeParams();
+                                        const params = new URLSearchParams({
+                                          start: range.start,
+                                          end: range.end,
+                                          bucket: this.performanceBucketGranularity(),
+                                          metric_scope: this.performanceMetricScope,
+                                          timezone_offset_minutes: String(new Date().getTimezoneOffset()),
+                                        });
+                                        const resp = await fetch('/api/performance/overview?' + params.toString(), { headers: this.authHeaders() });
+                                        if (resp.status === 401) {
+                                          this.logout();
+                                          return null;
+                                        }
+                                        if (!resp.ok) return null;
+                                        const body = await resp.json();
+                                        return body && typeof body === 'object' ? body : null;
+                                      },
+
+                                      async loadPerformanceTabData() {
+                                        const expectedRange = this.performanceRange;
+                                        const expectedScope = this.performanceMetricScope;
+                                        this.performanceLoading = true;
+                                        try {
+                                          const overview = await this.fetchPerformanceOverview();
+                                          if (this.tab !== 'performance' || this.performanceRange !== expectedRange || this.performanceMetricScope !== expectedScope) return;
+                                          this.performanceSeries = Array.isArray(overview?.series) ? overview.series : [];
+                                          this.performanceSummaryRows = Array.isArray(overview?.summaryRows) ? overview.summaryRows : [];
+                                          this.performanceModelRows = Array.isArray(overview?.modelRows) ? overview.modelRows : [];
+                                          const runtimeRows = Array.isArray(overview?.runtimeRows) ? overview.runtimeRows : [];
+                                          this.performanceRuntimeRows = runtimeRows.filter((row) => row.group !== 'unknown' || runtimeRows.length > 1);
+                                          this.ensurePerformanceModelSelected();
+                                          this.updatePerformanceSummary();
+                                          await this.$nextTick();
+                                          this.renderPerformanceChart();
+                                        } catch (e) {
+                                          console.error('loadPerformanceTabData:', e);
+                                        } finally {
+                                          this.performanceLoading = false;
+                                        }
+                                      },
+
+                                      updatePerformanceSummary() {
+                                        const row = this.performanceSummaryRows[0];
+                                        this.performanceSummary = row
+                                          ? { requests: row.requests, errors: row.errors, avgMs: row.avgMs, p50Ms: row.p50Ms, p95Ms: row.p95Ms, p99Ms: row.p99Ms }
+                                          : { requests: 0, errors: 0, avgMs: null, p50Ms: null, p95Ms: null, p99Ms: null };
+                                        },
+
+                                        renderPerformanceChart() {
+                                          const canvas = document.getElementById('performanceChartByModel');
+                                          if (!canvas || canvas.clientWidth === 0) return;
+                                          if (_charts.performanceModel) {
+                                            _charts.performanceModel.stop();
+                                            _charts.performanceModel.destroy();
+                                            _charts.performanceModel = null;
+                                          }
+
+                                          const sourceRows = this.performanceChartView === 'percentile'
+                                            ? this.performanceSeries.filter((row) => row.group === this.performanceModel)
+                                            : this.performanceSeries;
+                                          const bucketMap = this.buildPerformanceBucketMap();
+                                          const bucketKeysArr = [...bucketMap.keys()];
+                                          const labels = [...bucketMap.values()];
+                                          const percentileMetrics = ['p50Ms', 'p95Ms', 'p99Ms'];
+                                          const datasets = this.performanceChartView === 'percentile'
+                                            ? percentileMetrics.map((metric, index) => {
+                                              const color = usageChartColor(index);
+                                              const valueByBucket = new Map(sourceRows.map((row) => [row.bucket, row[metric]]));
+                                              return {
+                                                label: this.performancePercentileLabel(metric),
+                                                data: bucketKeysArr.map((bucket) => valueByBucket.get(bucket) ?? null),
+                                                borderColor: color,
+                                                backgroundColor: color + '25',
+                                                borderWidth: 2,
+                                                pointRadius: 2,
+                                                pointHoverRadius: 5,
+                                                tension: 0.25,
+                                                fill: false,
+                                                spanGaps: true,
+                                              };
+                                            })
+                                            : [...new Set(this.performanceSeries.map((row) => row.group))].sort().map((group, index) => {
+                                              const color = usageChartColor(index);
+                                              const valueByKey = new Map(this.performanceSeries.map((row) => [row.bucket + '\\0' + row.group, row[this.performancePercentile]]));
+                                              return {
+                                                label: group,
+                                                data: bucketKeysArr.map((bucket) => valueByKey.get(bucket + '\\0' + group) ?? null),
+                                                borderColor: color,
+                                                backgroundColor: color + '25',
+                                                borderWidth: 2,
+                                                pointRadius: 2,
+                                                pointHoverRadius: 5,
+                                                tension: 0.25,
+                                                fill: false,
+                                                spanGaps: true,
+                                              };
+                                            });
+
+                                            const self = this;
+                                            _charts.performanceModel = new Chart(canvas, {
+                                              type: 'line',
+                                              data: { labels, datasets },
+                                              options: {
+                                                responsive: true,
+                                                maintainAspectRatio: false,
+                                                animation: false,
+                                                interaction: { mode: 'index', intersect: false },
+                                                plugins: {
+                                                  legend: {
+                                                    position: 'bottom',
+                                                    labels: { color: '#9e9e9e', font: { size: 11, family: "'DM Sans', sans-serif" }, boxWidth: 12, padding: 16, usePointStyle: true, pointStyle: 'circle' },
                                                   },
-                                                  scales: {
-                                                    x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#9e9e9e', font: { size: 10, family: "'DM Sans', sans-serif" }, maxRotation: 45, callback: chartXAxisTickCallback(bucketKeysArr, labels, self.performanceRange === '7d') }, border: { color: 'rgba(255,255,255,0.06)' } },
-                                                    y: { type: 'logarithmic', beginAtZero: false, title: { display: true, text: self.performanceChartView === 'percentile' ? self.performanceModel + ' latency' : self.performancePercentileLabel() + ' latency', color: '#9e9e9e', font: { size: 10, family: "'DM Sans', sans-serif" } }, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#9e9e9e', font: { size: 10, family: "'JetBrains Mono', monospace" }, callback: (v) => formatDurationMs(Number(v)) }, border: { color: 'rgba(255,255,255,0.06)' } },
+                                                  tooltip: {
+                                                    backgroundColor: 'rgba(12,16,21,0.95)',
+                                                    borderColor: 'rgba(255,255,255,0.1)',
+                                                    borderWidth: 1,
+                                                    titleColor: '#e0e0e0',
+                                                    bodyColor: '#b0bec5',
+                                                    padding: 12,
+                                                    filter: (item) => item.parsed.y !== null,
+                                                    callbacks: { label: (ctx) => ctx.dataset.label + ': ' + formatDurationMs(ctx.parsed.y) },
                                                   },
                                                 },
-                                              });
-                                              this.chartsReady = true;
-                                            },
+                                                scales: {
+                                                  x: { grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#9e9e9e', font: { size: 10, family: "'DM Sans', sans-serif" }, maxRotation: 45, callback: chartXAxisTickCallback(bucketKeysArr, labels, self.performanceRange === '7d') }, border: { color: 'rgba(255,255,255,0.06)' } },
+                                                  y: { type: 'logarithmic', beginAtZero: false, title: { display: true, text: self.performanceChartView === 'percentile' ? self.performanceModel + ' latency' : self.performancePercentileLabel() + ' latency', color: '#9e9e9e', font: { size: 10, family: "'DM Sans', sans-serif" } }, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { color: '#9e9e9e', font: { size: 10, family: "'JetBrains Mono', monospace" }, callback: (v) => formatDurationMs(Number(v)) }, border: { color: 'rgba(255,255,255,0.06)' } },
+                                                },
+                                              },
+                                            });
+                                            this.chartsReady = true;
+                                          },
 
-                                            ensurePerformanceModelSelected() {
-                                              const models = this.performanceModelOptions();
-                                              if (models.length === 0) {
-                                                this.performanceModel = '';
-                                                return;
+                                          ensurePerformanceModelSelected() {
+                                            const models = this.performanceModelOptions();
+                                            if (models.length === 0) {
+                                              this.performanceModel = '';
+                                              return;
+                                            }
+                                            if (!models.includes(this.performanceModel)) {
+                                              this.performanceModel = models[0];
+                                            }
+                                          },
+
+                                          async loadTokenUsage() {
+                                            await this.loadUsageTabData();
+                                          },
+
+                                          buildBucketMap() {
+                                            const bucketMap = new Map();
+                                            const now = new Date();
+                                            if (this.tokenRange === 'today') {
+                                              const cur = new Date(now);
+                                              cur.setMinutes(0, 0, 0);
+                                              for (let i = 23; i >= 0; i--) {
+                                                const d = new Date(cur.getTime() - i * 3600000);
+                                                const h = d.getHours();
+                                                bucketMap.set(this.localHourKey(d), pad2(h) + ':00 \\u2013 ' + pad2((h + 1) % 24) + ':00');
                                               }
-                                              if (!models.includes(this.performanceModel)) {
-                                                this.performanceModel = models[0];
+                                            } else if (this.tokenRange === '7d') {
+                                              return this.build4hBucketMap(42);
+                                            } else {
+                                              const days = 30;
+                                              for (let i = days - 1; i >= 0; i--) {
+                                                const d = new Date(now);
+                                                d.setDate(d.getDate() - i);
+                                                d.setHours(0, 0, 0, 0);
+                                                bucketMap.set(this.localDateKey(d), d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
                                               }
-                                            },
+                                            }
+                                            return bucketMap;
+                                          },
 
-                                            async loadTokenUsage() {
-                                              await this.loadUsageTabData();
-                                            },
+                                          tokenBucketKeyFor(d) {
+                                            if (this.tokenRange === 'today') return this.localHourKey(d);
+                                            if (this.tokenRange === '7d') return this.local4hBucketKey(d);
+                                            return this.localDateKey(d);
+                                          },
 
-                                            buildBucketMap() {
-                                              const bucketMap = new Map();
-                                              const now = new Date();
-                                              if (this.tokenRange === 'today') {
-                                                const cur = new Date(now);
-                                                cur.setMinutes(0, 0, 0);
-                                                for (let i = 23; i >= 0; i--) {
-                                                  const d = new Date(cur.getTime() - i * 3600000);
-                                                  const h = d.getHours();
-                                                  bucketMap.set(this.localHourKey(d), pad2(h) + ':00 \\u2013 ' + pad2((h + 1) % 24) + ':00');
-                                                }
-                                              } else if (this.tokenRange === '7d') {
-                                                return this.build4hBucketMap(42);
-                                              } else {
-                                                const days = 30;
-                                                for (let i = days - 1; i >= 0; i--) {
-                                                  const d = new Date(now);
-                                                  d.setDate(d.getDate() - i);
-                                                  d.setHours(0, 0, 0, 0);
-                                                  bucketMap.set(this.localDateKey(d), d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-                                                }
+                                          aggregateBuckets(records, dimension, metric = this.tokenChartMetric) {
+                                            const bucketMap = this.buildBucketMap();
+                                            const agg = new Map();
+                                            const detail = new Map();
+                                            for (const [key] of bucketMap) {
+                                              agg.set(key, new Map());
+                                              detail.set(key, new Map());
+                                            }
+                                            for (const r of records) {
+                                              const utc = new Date(r.hour + ':00:00Z');
+                                              const bucket = this.tokenBucketKeyFor(utc);
+                                              if (!agg.has(bucket)) continue;
+                                              const m = agg.get(bucket);
+                                              const val = dimension === 'model' ? r.model : r[dimension];
+                                              if (!isTokenChartPercentMetric(metric)) {
+                                                m.set(val, (m.get(val) || 0) + tokenChartMetricRecordValue(r, metric));
                                               }
-                                              return bucketMap;
-                                            },
-
-                                            tokenBucketKeyFor(d) {
-                                              if (this.tokenRange === 'today') return this.localHourKey(d);
-                                              if (this.tokenRange === '7d') return this.local4hBucketKey(d);
-                                              return this.localDateKey(d);
-                                            },
-
-                                            aggregateBuckets(records, dimension, metric = this.tokenChartMetric) {
-                                              const bucketMap = this.buildBucketMap();
-                                              const agg = new Map();
-                                              const detail = new Map();
-                                              for (const [key] of bucketMap) {
-                                                agg.set(key, new Map());
-                                                detail.set(key, new Map());
-                                              }
-                                              for (const r of records) {
-                                                const utc = new Date(r.hour + ':00:00Z');
-                                                const bucket = this.tokenBucketKeyFor(utc);
-                                                if (!agg.has(bucket)) continue;
+                                              const dm = detail.get(bucket);
+                                              const prev = dm.get(val) || { requests: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cost: 0 };
+                                              prev.requests += r.requests;
+                                              prev.input += r.inputTokens;
+                                              prev.output += r.outputTokens;
+                                              prev.cacheRead += r.cacheReadTokens ?? 0;
+                                              prev.cacheCreation += r.cacheCreationTokens ?? 0;
+                                              prev.cost += r.cost ?? 0;
+                                              dm.set(val, prev);
+                                            }
+                                            if (isTokenChartPercentMetric(metric)) {
+                                              for (const [bucket, values] of detail) {
                                                 const m = agg.get(bucket);
-                                                const val = dimension === 'model' ? r.model : r[dimension];
-                                                if (!isTokenChartPercentMetric(metric)) {
-                                                  m.set(val, (m.get(val) || 0) + tokenChartMetricRecordValue(r, metric));
-                                                }
-                                                const dm = detail.get(bucket);
-                                                const prev = dm.get(val) || { requests: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, cost: 0 };
-                                                prev.requests += r.requests;
-                                                prev.input += r.inputTokens;
-                                                prev.output += r.outputTokens;
-                                                prev.cacheRead += r.cacheReadTokens ?? 0;
-                                                prev.cacheCreation += r.cacheCreationTokens ?? 0;
-                                                prev.cost += r.cost ?? 0;
-                                                dm.set(val, prev);
-                                              }
-                                              if (isTokenChartPercentMetric(metric)) {
-                                                for (const [bucket, values] of detail) {
-                                                  const m = agg.get(bucket);
-                                                  for (const [val, item] of values) {
-                                                    m.set(val, tokenChartMetricDetailValue(item, metric));
-                                                  }
+                                                for (const [val, item] of values) {
+                                                  m.set(val, tokenChartMetricDetailValue(item, metric));
                                                 }
                                               }
-                                              return { bucketMap, agg, detail };
-                                            },
+                                            }
+                                            return { bucketMap, agg, detail };
+                                          },
 
-                                            aggregateSearchUsageBuckets(records) {
-                                              const bucketMap = this.buildBucketMap();
-                                              const agg = new Map();
-                                              const detail = new Map();
-                                              for (const [key] of bucketMap) {
-                                                agg.set(key, new Map());
-                                                detail.set(key, new Map());
-                                              }
-                                              for (const r of records) {
-                                                const utc = new Date(r.hour + ':00:00Z');
-                                                const bucket = this.tokenBucketKeyFor(utc);
-                                                if (!agg.has(bucket)) continue;
-                                                const m = agg.get(bucket);
-                                                m.set(r.keyId, (m.get(r.keyId) || 0) + r.requests);
-                                                const dm = detail.get(bucket);
-                                                dm.set(r.keyId, (dm.get(r.keyId) || 0) + r.requests);
-                                              }
-                                              return { bucketMap, agg, detail };
-                                            },
+                                          aggregateSearchUsageBuckets(records) {
+                                            const bucketMap = this.buildBucketMap();
+                                            const agg = new Map();
+                                            const detail = new Map();
+                                            for (const [key] of bucketMap) {
+                                              agg.set(key, new Map());
+                                              detail.set(key, new Map());
+                                            }
+                                            for (const r of records) {
+                                              const utc = new Date(r.hour + ':00:00Z');
+                                              const bucket = this.tokenBucketKeyFor(utc);
+                                              if (!agg.has(bucket)) continue;
+                                              const m = agg.get(bucket);
+                                              m.set(r.keyId, (m.get(r.keyId) || 0) + r.requests);
+                                              const dm = detail.get(bucket);
+                                              dm.set(r.keyId, (dm.get(r.keyId) || 0) + r.requests);
+                                            }
+                                            return { bucketMap, agg, detail };
+                                          },
 
-                                            hasTokenChartMetricData(detail, dimensionValue) {
-                                              if (!isTokenChartPercentMetric(this.tokenChartMetric)) return null;
-                                              for (const values of detail.values()) {
-                                                const item = values.get(dimensionValue);
-                                                if (item && tokenChartMetricDetailValue(item, this.tokenChartMetric) !== null) return true;
-                                              }
-                                              return false;
-                                            },
+                                          hasTokenChartMetricData(detail, dimensionValue) {
+                                            if (!isTokenChartPercentMetric(this.tokenChartMetric)) return null;
+                                            for (const values of detail.values()) {
+                                              const item = values.get(dimensionValue);
+                                              if (item && tokenChartMetricDetailValue(item, this.tokenChartMetric) !== null) return true;
+                                            }
+                                            return false;
+                                          },
 
-                                            tokenChartBucketValue(agg, bucket, dimensionValue) {
-                                              const value = agg.get(bucket)?.get(dimensionValue);
-                                              if (value !== undefined) return value;
-                                              return isTokenChartPercentMetric(this.tokenChartMetric) ? null : 0;
-                                            },
+                                          tokenChartBucketValue(agg, bucket, dimensionValue) {
+                                            const value = agg.get(bucket)?.get(dimensionValue);
+                                            if (value !== undefined) return value;
+                                            return isTokenChartPercentMetric(this.tokenChartMetric) ? null : 0;
+                                          },
 
-                                            applyTokenChartMetricOptions(chart) {
-                                              const metric = this.tokenChartMetric;
-                                              const isPercentMetric = isTokenChartPercentMetric(metric);
-                                              chart.options.scales.y.stacked = !isPercentMetric;
-                                              chart.options.scales.y.title.text = tokenChartMetricLabel(metric);
-                                              chart.options.scales.y.suggestedMax = isPercentMetric ? 100 : undefined;
-                                              chart.options.scales.y.ticks.callback = (v) => formatTokenChartAxisValue(Number(v), metric);
-                                              for (const ds of chart.data.datasets) {
-                                                ds.fill = isPercentMetric ? false : 'stack';
-                                                ds.spanGaps = isPercentMetric;
-                                              }
-                                            },
+                                          applyTokenChartMetricOptions(chart) {
+                                            const metric = this.tokenChartMetric;
+                                            const isPercentMetric = isTokenChartPercentMetric(metric);
+                                            chart.options.scales.y.stacked = !isPercentMetric;
+                                            chart.options.scales.y.title.text = tokenChartMetricLabel(metric);
+                                            chart.options.scales.y.suggestedMax = isPercentMetric ? 100 : undefined;
+                                            chart.options.scales.y.ticks.callback = (v) => formatTokenChartAxisValue(Number(v), metric);
+                                            for (const ds of chart.data.datasets) {
+                                              ds.fill = isPercentMetric ? false : 'stack';
+                                              ds.spanGaps = isPercentMetric;
+                                            }
+                                          },
 
-                                            updateSummary() {
-                                              const filtered = this.tokenData.filter((r) => !this.hiddenKeys.has(r.keyId) && !this.hiddenModels.has(r.model));
-                                              let totalReqs = 0, totalIn = 0, totalOut = 0, totalCR = 0, totalCC = 0, totalCost = 0;
-                                              for (const r of filtered) {
-                                                totalReqs += r.requests;
-                                                totalIn += r.inputTokens;
-                                                totalOut += r.outputTokens;
-                                                totalCR += r.cacheReadTokens ?? 0;
-                                                totalCC += r.cacheCreationTokens ?? 0;
-                                                totalCost += r.cost ?? 0;
+                                          updateSummary() {
+                                            const filtered = this.tokenData.filter((r) => !this.hiddenKeys.has(r.keyId) && !this.hiddenModels.has(r.model));
+                                            let totalReqs = 0, totalIn = 0, totalOut = 0, totalCR = 0, totalCC = 0, totalCost = 0;
+                                            for (const r of filtered) {
+                                              totalReqs += r.requests;
+                                              totalIn += r.inputTokens;
+                                              totalOut += r.outputTokens;
+                                              totalCR += r.cacheReadTokens ?? 0;
+                                              totalCC += r.cacheCreationTokens ?? 0;
+                                              totalCost += r.cost ?? 0;
+                                            }
+                                            this.tokenSummary = {
+                                              requests: totalReqs,
+                                              cost: totalCost,
+                                              total: totalIn + totalOut,
+                                              input: totalIn,
+                                              output: totalOut,
+                                              cacheRead: totalCR,
+                                              cacheCreation: totalCC,
+                                              prefill: prefillInputTokens(totalIn, totalCR),
+                                            };
+                                          },
+
+                                          refreshChartsData() {
+                                            const bucketMap = this.buildBucketMap();
+                                            const bucketKeysArr = [...bucketMap.keys()];
+
+                                            if (_charts.key) {
+                                              const filtered = this.tokenData.filter((r) => !this.hiddenModels.has(r.model));
+                                              const { agg, detail } = this.aggregateBuckets(filtered, 'keyId');
+                                              _detailMaps.key = detail;
+                                              this.applyTokenChartMetricOptions(_charts.key);
+                                              for (let i = 0; i < _charts.key.data.datasets.length; i++) {
+                                                const ds = _charts.key.data.datasets[i];
+                                                ds.data = bucketKeysArr.map((k) => this.tokenChartBucketValue(agg, k, ds._keyId));
+                                                const userHidden = this.hiddenKeys.has(ds._keyId);
+                                                const hasData = this.hasTokenChartMetricData(detail, ds._keyId) ?? ds.data.some((v) => v !== 0);
+                                                _charts.key.setDatasetVisibility(i, !userHidden && hasData);
                                               }
-                                              this.tokenSummary = {
-                                                requests: totalReqs,
-                                                cost: totalCost,
-                                                total: totalIn + totalOut,
-                                                input: totalIn,
-                                                output: totalOut,
-                                                cacheRead: totalCR,
-                                                cacheCreation: totalCC,
-                                                prefill: prefillInputTokens(totalIn, totalCR),
+                                              _charts.key.update('none');
+                                            }
+
+                                            if (_charts.model) {
+                                              const filtered = this.tokenData.filter((r) => !this.hiddenKeys.has(r.keyId));
+                                              const { agg, detail } = this.aggregateBuckets(filtered, 'model');
+                                              _detailMaps.model = detail;
+                                              this.applyTokenChartMetricOptions(_charts.model);
+                                              for (let i = 0; i < _charts.model.data.datasets.length; i++) {
+                                                const ds = _charts.model.data.datasets[i];
+                                                ds.data = bucketKeysArr.map((k) => this.tokenChartBucketValue(agg, k, ds._model));
+                                                const userHidden = this.hiddenModels.has(ds._model);
+                                                const hasData = this.hasTokenChartMetricData(detail, ds._model) ?? ds.data.some((v) => v !== 0);
+                                                _charts.model.setDatasetVisibility(i, !userHidden && hasData);
+                                              }
+                                              _charts.model.update('none');
+                                            }
+
+                                            if (_charts.searchKey) {
+                                              const filtered = this.searchUsageData.filter((r) => r.provider === this.searchUsageActiveProvider);
+                                              const { agg, detail } = this.aggregateSearchUsageBuckets(filtered);
+                                              _detailMaps.searchKey = detail;
+                                              for (let i = 0; i < _charts.searchKey.data.datasets.length; i++) {
+                                                const ds = _charts.searchKey.data.datasets[i];
+                                                ds.data = bucketKeysArr.map((k) => agg.get(k)?.get(ds._keyId) ?? 0);
+                                                const userHidden = this.hiddenKeys.has(ds._keyId);
+                                                const hasData = ds.data.some((v) => v !== 0);
+                                                _charts.searchKey.setDatasetVisibility(i, !userHidden && hasData);
+                                              }
+                                              _charts.searchKey.update('none');
+                                            }
+
+                                            this.updateSummary();
+                                          },
+
+                                          renderTokenCharts() {
+                                            const canvasKey = document.getElementById('tokenChartByKey');
+                                            const canvasModel = document.getElementById('tokenChartByModel');
+                                            const canvasSearchKey = document.getElementById('searchUsageChartByKey');
+                                            if (!canvasKey || !canvasModel || canvasKey.clientWidth === 0) return;
+
+                                            const data = this.tokenData;
+                                            const self = this;
+
+                                            const keyNameMap = _keyNameMap;
+                                            keyNameMap.clear();
+                                            const keyMetaMap = new Map();
+                                            const allKeyIds = new Set();
+                                            const allKeyIdsForOrder = new Set();
+                                            const allSearchKeyIds = new Set();
+                                            const allSearchKeyIdsForOrder = new Set();
+                                            const allModels = new Set();
+                                            for (const k of this.tokenKeyMetadata) {
+                                              keyNameMap.set(k.id, k.name);
+                                              keyMetaMap.set(k.id, { name: k.name, createdAt: k.createdAt });
+                                              allKeyIdsForOrder.add(k.id);
+                                            }
+                                            for (const k of this.searchUsageKeyMetadata) {
+                                              keyNameMap.set(k.id, k.name);
+                                              keyMetaMap.set(k.id, { name: k.name, createdAt: k.createdAt });
+                                              allSearchKeyIdsForOrder.add(k.id);
+                                            }
+                                            for (const r of data) {
+                                              keyNameMap.set(r.keyId, r.keyName);
+                                              keyMetaMap.set(r.keyId, { name: r.keyName, createdAt: r.keyCreatedAt ?? keyMetaMap.get(r.keyId)?.createdAt });
+                                              allKeyIds.add(r.keyId);
+                                              allKeyIdsForOrder.add(r.keyId);
+                                              allModels.add(r.model);
+                                            }
+                                            const activeSearchUsageData = this.searchUsageData.filter((r) => r.provider === this.searchUsageActiveProvider);
+                                            for (const r of activeSearchUsageData) {
+                                              keyNameMap.set(r.keyId, r.keyName);
+                                              keyMetaMap.set(r.keyId, { name: r.keyName, createdAt: r.keyCreatedAt ?? keyMetaMap.get(r.keyId)?.createdAt });
+                                              allSearchKeyIds.add(r.keyId);
+                                              allSearchKeyIdsForOrder.add(r.keyId);
+                                            }
+
+                                            const bucketMap = this.buildBucketMap();
+                                            const labels = [...bucketMap.values()];
+                                            const bucketKeysArr = [...bucketMap.keys()];
+
+                                            const { agg: keyAgg, detail: keyDetail } = this.aggregateBuckets(data, 'keyId');
+                                            const { agg: modelAgg, detail: modelDetail } = this.aggregateBuckets(data, 'model');
+                                            const { agg: searchKeyAgg, detail: searchKeyDetail } = this.aggregateSearchUsageBuckets(activeSearchUsageData);
+                                            _detailMaps.key = keyDetail;
+                                            _detailMaps.model = modelDetail;
+                                            _detailMaps.searchKey = searchKeyDetail;
+
+                                            const keyList = usageKeyChartEntries([...allKeyIds], keyMetaMap, [...allKeyIdsForOrder], this.tokenKeyColorOrder);
+                                            const modelList = tokenModelChartEntries([...allModels], this.allModels.map((m) => m.id));
+                                            const searchKeyList = usageKeyChartEntries([...allSearchKeyIds], keyMetaMap, [...allSearchKeyIdsForOrder], this.searchUsageKeyColorOrder);
+
+                                            const keyDatasets = keyList.map(({ keyId, colorSlot }) => {
+                                              const c = usageChartColor(colorSlot);
+                                              return {
+                                                label: self.redactKeys ? keyId.slice(0, 8) : (keyNameMap.get(keyId) || keyId.slice(0, 8)),
+                                                data: bucketKeysArr.map((k) => self.tokenChartBucketValue(keyAgg, k, keyId)),
+                                                borderColor: c,
+                                                backgroundColor: c + '40',
+                                                borderWidth: 2,
+                                                pointRadius: 2,
+                                                pointHoverRadius: 5,
+                                                tension: 0.3,
+                                                fill: 'stack',
+                                                spanGaps: isTokenChartPercentMetric(self.tokenChartMetric),
+                                                _keyId: keyId,
                                               };
-                                            },
+                                            });
 
-                                            refreshChartsData() {
-                                              const bucketMap = this.buildBucketMap();
-                                              const bucketKeysArr = [...bucketMap.keys()];
+                                            const modelDatasets = modelList.map(({ model, colorSlot }) => {
+                                              const c = usageChartColor(colorSlot);
+                                              return {
+                                                label: model,
+                                                data: bucketKeysArr.map((k) => self.tokenChartBucketValue(modelAgg, k, model)),
+                                                borderColor: c,
+                                                backgroundColor: c + '40',
+                                                borderWidth: 2,
+                                                pointRadius: 2,
+                                                pointHoverRadius: 5,
+                                                tension: 0.3,
+                                                fill: 'stack',
+                                                spanGaps: isTokenChartPercentMetric(self.tokenChartMetric),
+                                                _model: model,
+                                              };
+                                            });
 
-                                              if (_charts.key) {
-                                                const filtered = this.tokenData.filter((r) => !this.hiddenModels.has(r.model));
-                                                const { agg, detail } = this.aggregateBuckets(filtered, 'keyId');
-                                                _detailMaps.key = detail;
-                                                this.applyTokenChartMetricOptions(_charts.key);
-                                                for (let i = 0; i < _charts.key.data.datasets.length; i++) {
-                                                  const ds = _charts.key.data.datasets[i];
-                                                  ds.data = bucketKeysArr.map((k) => this.tokenChartBucketValue(agg, k, ds._keyId));
-                                                  const userHidden = this.hiddenKeys.has(ds._keyId);
-                                                  const hasData = this.hasTokenChartMetricData(detail, ds._keyId) ?? ds.data.some((v) => v !== 0);
-                                                  _charts.key.setDatasetVisibility(i, !userHidden && hasData);
-                                                }
-                                                _charts.key.update('none');
-                                              }
+                                            const searchKeyDatasets = searchKeyList.map(({ keyId, colorSlot }) => {
+                                              const c = usageChartColor(colorSlot);
+                                              return {
+                                                label: self.redactKeys ? keyId.slice(0, 8) : (keyNameMap.get(keyId) || keyId.slice(0, 8)),
+                                                data: bucketKeysArr.map((k) => searchKeyAgg.get(k)?.get(keyId) ?? 0),
+                                                borderColor: c,
+                                                backgroundColor: c + '40',
+                                                borderWidth: 2,
+                                                pointRadius: 2,
+                                                pointHoverRadius: 5,
+                                                tension: 0.3,
+                                                fill: 'stack',
+                                                spanGaps: false,
+                                                _keyId: keyId,
+                                              };
+                                            });
 
-                                              if (_charts.model) {
-                                                const filtered = this.tokenData.filter((r) => !this.hiddenKeys.has(r.keyId));
-                                                const { agg, detail } = this.aggregateBuckets(filtered, 'model');
-                                                _detailMaps.model = detail;
-                                                this.applyTokenChartMetricOptions(_charts.model);
-                                                for (let i = 0; i < _charts.model.data.datasets.length; i++) {
-                                                  const ds = _charts.model.data.datasets[i];
-                                                  ds.data = bucketKeysArr.map((k) => this.tokenChartBucketValue(agg, k, ds._model));
-                                                  const userHidden = this.hiddenModels.has(ds._model);
-                                                  const hasData = this.hasTokenChartMetricData(detail, ds._model) ?? ds.data.some((v) => v !== 0);
-                                                  _charts.model.setDatasetVisibility(i, !userHidden && hasData);
-                                                }
-                                                _charts.model.update('none');
-                                              }
+                                            this.updateSummary();
 
-                                              if (_charts.searchKey) {
-                                                const filtered = this.searchUsageData.filter((r) => r.provider === this.searchUsageActiveProvider);
-                                                const { agg, detail } = this.aggregateSearchUsageBuckets(filtered);
-                                                _detailMaps.searchKey = detail;
-                                                for (let i = 0; i < _charts.searchKey.data.datasets.length; i++) {
-                                                  const ds = _charts.searchKey.data.datasets[i];
-                                                  ds.data = bucketKeysArr.map((k) => agg.get(k)?.get(ds._keyId) ?? 0);
-                                                  const userHidden = this.hiddenKeys.has(ds._keyId);
-                                                  const hasData = ds.data.some((v) => v !== 0);
-                                                  _charts.searchKey.setDatasetVisibility(i, !userHidden && hasData);
-                                                }
-                                                _charts.searchKey.update('none');
-                                              }
-
-                                              this.updateSummary();
-                                            },
-
-                                            renderTokenCharts() {
-                                              const canvasKey = document.getElementById('tokenChartByKey');
-                                              const canvasModel = document.getElementById('tokenChartByModel');
-                                              const canvasSearchKey = document.getElementById('searchUsageChartByKey');
-                                              if (!canvasKey || !canvasModel || canvasKey.clientWidth === 0) return;
-
-                                              const data = this.tokenData;
-                                              const self = this;
-
-                                              const keyNameMap = _keyNameMap;
-                                              keyNameMap.clear();
-                                              const keyMetaMap = new Map();
-                                              const allKeyIds = new Set();
-                                              const allKeyIdsForOrder = new Set();
-                                              const allSearchKeyIds = new Set();
-                                              const allSearchKeyIdsForOrder = new Set();
-                                              const allModels = new Set();
-                                              for (const k of this.tokenKeyMetadata) {
-                                                keyNameMap.set(k.id, k.name);
-                                                keyMetaMap.set(k.id, { name: k.name, createdAt: k.createdAt });
-                                                allKeyIdsForOrder.add(k.id);
-                                              }
-                                              for (const k of this.searchUsageKeyMetadata) {
-                                                keyNameMap.set(k.id, k.name);
-                                                keyMetaMap.set(k.id, { name: k.name, createdAt: k.createdAt });
-                                                allSearchKeyIdsForOrder.add(k.id);
-                                              }
-                                              for (const r of data) {
-                                                keyNameMap.set(r.keyId, r.keyName);
-                                                keyMetaMap.set(r.keyId, { name: r.keyName, createdAt: r.keyCreatedAt ?? keyMetaMap.get(r.keyId)?.createdAt });
-                                                allKeyIds.add(r.keyId);
-                                                allKeyIdsForOrder.add(r.keyId);
-                                                allModels.add(r.model);
-                                              }
-                                              const activeSearchUsageData = this.searchUsageData.filter((r) => r.provider === this.searchUsageActiveProvider);
-                                              for (const r of activeSearchUsageData) {
-                                                keyNameMap.set(r.keyId, r.keyName);
-                                                keyMetaMap.set(r.keyId, { name: r.keyName, createdAt: r.keyCreatedAt ?? keyMetaMap.get(r.keyId)?.createdAt });
-                                                allSearchKeyIds.add(r.keyId);
-                                                allSearchKeyIdsForOrder.add(r.keyId);
-                                              }
-
-                                              const bucketMap = this.buildBucketMap();
-                                              const labels = [...bucketMap.values()];
-                                              const bucketKeysArr = [...bucketMap.keys()];
-
-                                              const { agg: keyAgg, detail: keyDetail } = this.aggregateBuckets(data, 'keyId');
-                                              const { agg: modelAgg, detail: modelDetail } = this.aggregateBuckets(data, 'model');
-                                              const { agg: searchKeyAgg, detail: searchKeyDetail } = this.aggregateSearchUsageBuckets(activeSearchUsageData);
-                                              _detailMaps.key = keyDetail;
-                                              _detailMaps.model = modelDetail;
-                                              _detailMaps.searchKey = searchKeyDetail;
-
-                                              const keyList = usageKeyChartEntries([...allKeyIds], keyMetaMap, [...allKeyIdsForOrder], this.tokenKeyColorOrder);
-                                              const modelList = usageModelChartEntries([...allModels], this.allModels.map((m) => m.id));
-                                              const searchKeyList = usageKeyChartEntries([...allSearchKeyIds], keyMetaMap, [...allSearchKeyIdsForOrder], this.searchUsageKeyColorOrder);
-
-                                              const keyDatasets = keyList.map(({ keyId, colorSlot }) => {
-                                                const c = usageChartColor(colorSlot);
-                                                return {
-                                                  label: self.redactKeys ? keyId.slice(0, 8) : (keyNameMap.get(keyId) || keyId.slice(0, 8)),
-                                                  data: bucketKeysArr.map((k) => self.tokenChartBucketValue(keyAgg, k, keyId)),
-                                                  borderColor: c,
-                                                  backgroundColor: c + '40',
-                                                  borderWidth: 2,
-                                                  pointRadius: 2,
-                                                  pointHoverRadius: 5,
-                                                  tension: 0.3,
-                                                  fill: 'stack',
-                                                  spanGaps: isTokenChartPercentMetric(self.tokenChartMetric),
-                                                  _keyId: keyId,
-                                                };
-                                              });
-
-                                              const modelDatasets = modelList.map(({ model, colorSlot }) => {
-                                                const c = usageChartColor(colorSlot);
-                                                return {
-                                                  label: model,
-                                                  data: bucketKeysArr.map((k) => self.tokenChartBucketValue(modelAgg, k, model)),
-                                                  borderColor: c,
-                                                  backgroundColor: c + '40',
-                                                  borderWidth: 2,
-                                                  pointRadius: 2,
-                                                  pointHoverRadius: 5,
-                                                  tension: 0.3,
-                                                  fill: 'stack',
-                                                  spanGaps: isTokenChartPercentMetric(self.tokenChartMetric),
-                                                  _model: model,
-                                                };
-                                              });
-
-                                              const searchKeyDatasets = searchKeyList.map(({ keyId, colorSlot }) => {
-                                                const c = usageChartColor(colorSlot);
-                                                return {
-                                                  label: self.redactKeys ? keyId.slice(0, 8) : (keyNameMap.get(keyId) || keyId.slice(0, 8)),
-                                                  data: bucketKeysArr.map((k) => searchKeyAgg.get(k)?.get(keyId) ?? 0),
-                                                  borderColor: c,
-                                                  backgroundColor: c + '40',
-                                                  borderWidth: 2,
-                                                  pointRadius: 2,
-                                                  pointHoverRadius: 5,
-                                                  tension: 0.3,
-                                                  fill: 'stack',
-                                                  spanGaps: false,
-                                                  _keyId: keyId,
-                                                };
-                                              });
-
-                                              this.updateSummary();
-
-                                              const makeOptions = (onClick, chartType) => {
-                                                const isSearchChart = chartType === 'searchKey';
-                                                return {
-                                                  responsive: true,
-                                                  maintainAspectRatio: false,
-                                                  animation: false,
-                                                  interaction: { mode: 'index', intersect: false },
-                                                  plugins: {
-                                                    legend: {
-                                                      position: 'bottom',
-                                                      labels: {
-                                                        color: '#9e9e9e',
-                                                        font: { size: 11, family: "'DM Sans', sans-serif" },
-                                                        boxWidth: 12,
-                                                        padding: 16,
-                                                        usePointStyle: true,
-                                                        pointStyle: 'circle',
-                                                      },
-                                                      onClick,
+                                            const makeOptions = (onClick, chartType) => {
+                                              const isSearchChart = chartType === 'searchKey';
+                                              return {
+                                                responsive: true,
+                                                maintainAspectRatio: false,
+                                                animation: false,
+                                                interaction: { mode: 'index', intersect: false },
+                                                plugins: {
+                                                  legend: {
+                                                    position: 'bottom',
+                                                    labels: {
+                                                      color: '#9e9e9e',
+                                                      font: { size: 11, family: "'DM Sans', sans-serif" },
+                                                      boxWidth: 12,
+                                                      padding: 16,
+                                                      usePointStyle: true,
+                                                      pointStyle: 'circle',
                                                     },
-                                                    tooltip: {
-                                                      backgroundColor: 'rgba(12,16,21,0.95)',
-                                                      borderColor: 'rgba(255,255,255,0.1)',
-                                                      borderWidth: 1,
-                                                      titleColor: '#e0e0e0',
-                                                      bodyColor: '#b0bec5',
-                                                      padding: 12,
-                                                      beforeBodyFont: { family: "'JetBrains Mono', monospace", size: 11 },
-                                                      bodyFont: { family: "'JetBrains Mono', monospace", size: 11 },
-                                                      filter: (item) => item.parsed.y !== null && (isSearchChart ? item.parsed.y > 0 : (isTokenChartPercentMetric(self.tokenChartMetric) || item.parsed.y > 0)),
-                                                      itemSort: (a, b) => b.parsed.y - a.parsed.y,
-                                                      callbacks: {
-                                                        beforeBody: (items) => {
-                                                          if (isSearchChart) return [];
-                                                          if (!items.length) return [];
-                                                          return formatTooltipHeader(tooltipLabelWidth(items[0].chart));
-                                                        },
-                                                        label: (ctx) => {
-                                                          const bucket = bucketKeysArr[ctx.dataIndex];
-                                                          const dimKey = chartType === 'model' ? ctx.dataset._model : ctx.dataset._keyId;
-                                                          const detailMap = _detailMaps[chartType];
-                                                          const detail = detailMap?.get(bucket)?.get(dimKey);
-                                                          if (isSearchChart) return ctx.dataset.label + ': ' + Math.round(detail ?? ctx.parsed.y).toLocaleString();
-                                                          if (!detail) return ctx.dataset.label + ': ' + formatTokenChartAxisValue(ctx.parsed.y, self.tokenChartMetric);
-                                                          return formatTooltipRow(String(ctx.dataset.label || ''), tooltipLabelWidth(ctx.chart), detail);
-                                                        },
+                                                    onClick,
+                                                  },
+                                                  tooltip: {
+                                                    backgroundColor: 'rgba(12,16,21,0.95)',
+                                                    borderColor: 'rgba(255,255,255,0.1)',
+                                                    borderWidth: 1,
+                                                    titleColor: '#e0e0e0',
+                                                    bodyColor: '#b0bec5',
+                                                    padding: 12,
+                                                    beforeBodyFont: { family: "'JetBrains Mono', monospace", size: 11 },
+                                                    bodyFont: { family: "'JetBrains Mono', monospace", size: 11 },
+                                                    filter: (item) => item.parsed.y !== null && (isSearchChart ? item.parsed.y > 0 : (isTokenChartPercentMetric(self.tokenChartMetric) || item.parsed.y > 0)),
+                                                    itemSort: (a, b) => b.parsed.y - a.parsed.y,
+                                                    callbacks: {
+                                                      beforeBody: (items) => {
+                                                        if (isSearchChart) return [];
+                                                        if (!items.length) return [];
+                                                        return formatTooltipHeader(tooltipLabelWidth(items[0].chart));
+                                                      },
+                                                      label: (ctx) => {
+                                                        const bucket = bucketKeysArr[ctx.dataIndex];
+                                                        const dimKey = chartType === 'model' ? ctx.dataset._model : ctx.dataset._keyId;
+                                                        const detailMap = _detailMaps[chartType];
+                                                        const detail = detailMap?.get(bucket)?.get(dimKey);
+                                                        if (isSearchChart) return ctx.dataset.label + ': ' + Math.round(detail ?? ctx.parsed.y).toLocaleString();
+                                                        if (!detail) return ctx.dataset.label + ': ' + formatTokenChartAxisValue(ctx.parsed.y, self.tokenChartMetric);
+                                                        return formatTooltipRow(String(ctx.dataset.label || ''), tooltipLabelWidth(ctx.chart), detail);
                                                       },
                                                     },
                                                   },
-                                                  scales: {
-                                                    x: {
-                                                      stacked: true,
-                                                      grid: { color: 'rgba(255,255,255,0.04)' },
-                                                      ticks: { color: '#9e9e9e', font: { size: 10, family: "'DM Sans', sans-serif" }, maxRotation: 45, callback: chartXAxisTickCallback(bucketKeysArr, labels, self.tokenRange === '7d') },
-                                                      border: { color: 'rgba(255,255,255,0.06)' },
-                                                    },
-                                                    y: {
-                                                      stacked: isSearchChart || !isTokenChartPercentMetric(self.tokenChartMetric),
-                                                      beginAtZero: true,
-                                                      suggestedMax: !isSearchChart && isTokenChartPercentMetric(self.tokenChartMetric) ? 100 : undefined,
-                                                      title: {
-                                                        display: true,
-                                                        text: isSearchChart ? 'Search Requests' : tokenChartMetricLabel(self.tokenChartMetric),
-                                                        color: '#9e9e9e',
-                                                        font: { size: 10, family: "'DM Sans', sans-serif" },
-                                                      },
-                                                      grid: { color: 'rgba(255,255,255,0.04)' },
-                                                      ticks: {
-                                                        color: '#9e9e9e',
-                                                        font: { size: 10, family: "'JetBrains Mono', monospace" },
-                                                        callback: (v) => isSearchChart ? Math.round(Number(v)).toLocaleString() : formatTokenChartAxisValue(Number(v), self.tokenChartMetric),
-                                                      },
-                                                      border: { color: 'rgba(255,255,255,0.06)' },
-                                                    },
+                                                },
+                                                scales: {
+                                                  x: {
+                                                    stacked: true,
+                                                    grid: { color: 'rgba(255,255,255,0.04)' },
+                                                    ticks: { color: '#9e9e9e', font: { size: 10, family: "'DM Sans', sans-serif" }, maxRotation: 45, callback: chartXAxisTickCallback(bucketKeysArr, labels, self.tokenRange === '7d') },
+                                                    border: { color: 'rgba(255,255,255,0.06)' },
                                                   },
-                                                };
+                                                  y: {
+                                                    stacked: isSearchChart || !isTokenChartPercentMetric(self.tokenChartMetric),
+                                                    beginAtZero: true,
+                                                    suggestedMax: !isSearchChart && isTokenChartPercentMetric(self.tokenChartMetric) ? 100 : undefined,
+                                                    title: {
+                                                      display: true,
+                                                      text: isSearchChart ? 'Search Requests' : tokenChartMetricLabel(self.tokenChartMetric),
+                                                      color: '#9e9e9e',
+                                                      font: { size: 10, family: "'DM Sans', sans-serif" },
+                                                    },
+                                                    grid: { color: 'rgba(255,255,255,0.04)' },
+                                                    ticks: {
+                                                      color: '#9e9e9e',
+                                                      font: { size: 10, family: "'JetBrains Mono', monospace" },
+                                                      callback: (v) => isSearchChart ? Math.round(Number(v)).toLocaleString() : formatTokenChartAxisValue(Number(v), self.tokenChartMetric),
+                                                    },
+                                                    border: { color: 'rgba(255,255,255,0.06)' },
+                                                  },
+                                                },
                                               };
+                                            };
 
-                                              destroyCharts();
+                                            destroyCharts();
 
-                                              _charts.key = new Chart(canvasKey, {
+                                            _charts.key = new Chart(canvasKey, {
+                                              type: 'line',
+                                              data: { labels, datasets: keyDatasets },
+                                              options: makeOptions((_e, legendItem, legend) => {
+                                                const ds = legend.chart.data.datasets[legendItem.datasetIndex];
+                                                if (self.hiddenKeys.has(ds._keyId)) self.hiddenKeys.delete(ds._keyId);
+                                                else self.hiddenKeys.add(ds._keyId);
+                                                self.refreshChartsData();
+                                              }, 'key'),
+                                            });
+
+                                            _charts.model = new Chart(canvasModel, {
+                                              type: 'line',
+                                              data: { labels, datasets: modelDatasets },
+                                              options: makeOptions((_e, legendItem, legend) => {
+                                                const ds = legend.chart.data.datasets[legendItem.datasetIndex];
+                                                if (self.hiddenModels.has(ds._model)) self.hiddenModels.delete(ds._model);
+                                                else self.hiddenModels.add(ds._model);
+                                                self.refreshChartsData();
+                                              }, 'model'),
+                                            });
+
+                                            if (canvasSearchKey && this.searchUsageActiveProvider !== 'disabled') {
+                                              _charts.searchKey = new Chart(canvasSearchKey, {
                                                 type: 'line',
-                                                data: { labels, datasets: keyDatasets },
+                                                data: { labels, datasets: searchKeyDatasets },
                                                 options: makeOptions((_e, legendItem, legend) => {
                                                   const ds = legend.chart.data.datasets[legendItem.datasetIndex];
                                                   if (self.hiddenKeys.has(ds._keyId)) self.hiddenKeys.delete(ds._keyId);
                                                   else self.hiddenKeys.add(ds._keyId);
                                                   self.refreshChartsData();
-                                                }, 'key'),
+                                                }, 'searchKey'),
                                               });
+                                            }
 
-                                              _charts.model = new Chart(canvasModel, {
-                                                type: 'line',
-                                                data: { labels, datasets: modelDatasets },
-                                                options: makeOptions((_e, legendItem, legend) => {
-                                                  const ds = legend.chart.data.datasets[legendItem.datasetIndex];
-                                                  if (self.hiddenModels.has(ds._model)) self.hiddenModels.delete(ds._model);
-                                                  else self.hiddenModels.add(ds._model);
-                                                  self.refreshChartsData();
-                                                }, 'model'),
+                                            this.chartsReady = true;
+                                            this.refreshChartsData();
+                                          },
+
+                                          toggleRedactKeys() {
+                                            this.redactKeys = !this.redactKeys;
+                                            if (_charts.key) {
+                                              for (const ds of _charts.key.data.datasets) {
+                                                ds.label = this.redactKeys ? ds._keyId.slice(0, 8) : (_keyNameMap.get(ds._keyId) || ds._keyId.slice(0, 8));
+                                              }
+                                              _charts.key.update('none');
+                                            }
+                                            if (_charts.searchKey) {
+                                              for (const ds of _charts.searchKey.data.datasets) {
+                                                ds.label = this.redactKeys ? ds._keyId.slice(0, 8) : (_keyNameMap.get(ds._keyId) || ds._keyId.slice(0, 8));
+                                              }
+                                              _charts.searchKey.update('none');
+                                            }
+                                          },
+
+                                          switchTokenRange(range) {
+                                            this.tokenRange = range;
+                                            destroyCharts();
+                                            this.chartsReady = false;
+                                            this.loadUsageTabData();
+                                          },
+
+                                          switchTokenChartMetric(metric) {
+                                            if (!TOKEN_CHART_METRICS[metric] || this.tokenChartMetric === metric) return;
+                                            this.tokenChartMetric = metric;
+                                            this.refreshChartsData();
+                                          },
+
+                                          switchPerformanceRange(range) {
+                                            if (this.performanceRange === range) return;
+                                            this.performanceRange = range;
+                                            destroyCharts();
+                                            this.chartsReady = false;
+                                            this.loadPerformanceTabData();
+                                          },
+
+                                          switchPerformanceMetricScope(scope) {
+                                            if (this.performanceMetricScope === scope) return;
+                                            this.performanceMetricScope = scope;
+                                            destroyCharts();
+                                            this.chartsReady = false;
+                                            this.loadPerformanceTabData();
+                                          },
+
+                                          switchPerformanceChartView(view) {
+                                            if (this.performanceChartView === view) return;
+                                            this.performanceChartView = view;
+                                            if (view === 'percentile') this.ensurePerformanceModelSelected();
+                                            this.renderPerformanceChart();
+                                          },
+
+                                          switchPerformancePercentile(percentile) {
+                                            if (this.performancePercentile === percentile) return;
+                                            this.performancePercentile = percentile;
+                                            this.renderPerformanceChart();
+                                          },
+
+                                          async exportData() {
+                                            this.exportLoading = true;
+                                            try {
+                                              const resp = await fetch('/api/export' + (this.exportIncludePerformance ? '?include_performance=1' : ''), { headers: this.authHeaders() });
+                                              if (resp.status === 401) {
+                                                this.logout();
+                                                return;
+                                              }
+                                              if (!resp.ok) {
+                                                alert('Export failed: ' + (await resp.json()).error);
+                                                return;
+                                              }
+                                              const data = await resp.json();
+                                              const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                                              const url = URL.createObjectURL(blob);
+                                              const a = document.createElement('a');
+                                              a.href = url;
+                                              a.download = 'copilot-export-' + new Date().toISOString().slice(0, 10) + '.json';
+                                              a.click();
+                                              URL.revokeObjectURL(url);
+                                            } catch (e) {
+                                              console.error('exportData:', e);
+                                              alert('Export failed');
+                                            } finally {
+                                              this.exportLoading = false;
+                                            }
+                                          },
+
+                                          handleImportFile(event) {
+                                            const file = event.target.files[0];
+                                            if (!file) return;
+                                            this.importFile = file;
+                                            this.importPreview = { ready: false, exportedAt: null, apiKeys: 0, githubAccounts: 0, usage: 0, searchUsage: 0, performance: 0 };
+                                            this.importData = null;
+
+                                            const reader = new FileReader();
+                                            reader.onload = (e) => {
+                                              try {
+                                                const json = JSON.parse(e.target.result);
+                                                if (!json.data) {
+                                                  alert('Invalid export file: missing data field');
+                                                  this.importFile = null;
+                                                  return;
+                                                }
+                                                this.importData = json.data;
+                                                this.importPreview = {
+                                                  ready: true,
+                                                  exportedAt: json.exportedAt || null,
+                                                  apiKeys: Array.isArray(json.data.apiKeys) ? json.data.apiKeys.length : 0,
+                                                  githubAccounts: Array.isArray(json.data.githubAccounts) ? json.data.githubAccounts.length : 0,
+                                                  usage: Array.isArray(json.data.usage) ? json.data.usage.length : 0,
+                                                  searchUsage: Array.isArray(json.data.searchUsage) ? json.data.searchUsage.length : 0,
+                                                  performance: Array.isArray(json.data.performance) ? json.data.performance.length : 0,
+                                                };
+                                              } catch {
+                                                alert('Invalid JSON file');
+                                                this.importFile = null;
+                                              }
+                                            };
+                                            reader.readAsText(file);
+                                          },
+
+                                          async doImport() {
+                                            if (!this.importData) return;
+                                            if (this.importMode === 'replace') {
+                                              if (!confirm('This will DELETE ALL existing data and replace it with the imported file. Are you sure?')) return;
+                                            }
+                                            this.importLoading = true;
+                                            try {
+                                              const resp = await fetch('/api/import', {
+                                                method: 'POST',
+                                                headers: { ...this.authHeaders(), 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ mode: this.importMode, data: this.importData }),
                                               });
-
-                                              if (canvasSearchKey && this.searchUsageActiveProvider !== 'disabled') {
-                                                _charts.searchKey = new Chart(canvasSearchKey, {
-                                                  type: 'line',
-                                                  data: { labels, datasets: searchKeyDatasets },
-                                                  options: makeOptions((_e, legendItem, legend) => {
-                                                    const ds = legend.chart.data.datasets[legendItem.datasetIndex];
-                                                    if (self.hiddenKeys.has(ds._keyId)) self.hiddenKeys.delete(ds._keyId);
-                                                    else self.hiddenKeys.add(ds._keyId);
-                                                    self.refreshChartsData();
-                                                  }, 'searchKey'),
-                                                });
+                                              if (resp.status === 401) {
+                                                this.logout();
+                                                return;
                                               }
-
-                                              this.chartsReady = true;
-                                              this.refreshChartsData();
-                                            },
-
-                                            toggleRedactKeys() {
-                                              this.redactKeys = !this.redactKeys;
-                                              if (_charts.key) {
-                                                for (const ds of _charts.key.data.datasets) {
-                                                  ds.label = this.redactKeys ? ds._keyId.slice(0, 8) : (_keyNameMap.get(ds._keyId) || ds._keyId.slice(0, 8));
-                                                }
-                                                _charts.key.update('none');
+                                              const result = await resp.json();
+                                              if (resp.ok) {
+                                                alert('Import complete: ' + result.imported.apiKeys + ' keys, ' + result.imported.githubAccounts + ' accounts, ' + result.imported.usage + ' usage records, ' + result.imported.searchUsage + ' search usage records, ' + result.imported.performance + ' performance records');
+                                                this.importFile = null;
+                                                this.importData = null;
+                                                this.importPreview = { ready: false, exportedAt: null, apiKeys: 0, githubAccounts: 0, usage: 0, searchUsage: 0, performance: 0 };
+                                              } else {
+                                                alert('Import failed: ' + (result.error || 'Unknown error'));
                                               }
-                                              if (_charts.searchKey) {
-                                                for (const ds of _charts.searchKey.data.datasets) {
-                                                  ds.label = this.redactKeys ? ds._keyId.slice(0, 8) : (_keyNameMap.get(ds._keyId) || ds._keyId.slice(0, 8));
-                                                }
-                                                _charts.searchKey.update('none');
-                                              }
-                                            },
+                                            } catch (e) {
+                                              console.error('doImport:', e);
+                                              alert('Import failed');
+                                            } finally {
+                                              this.importLoading = false;
+                                            }
+                                          },
 
-                                            switchTokenRange(range) {
-                                              this.tokenRange = range;
-                                              destroyCharts();
-                                              this.chartsReady = false;
-                                              this.loadUsageTabData();
-                                            },
+                                          // ---- Models tab ----
 
-                                            switchTokenChartMetric(metric) {
-                                              if (!TOKEN_CHART_METRICS[metric] || this.tokenChartMetric === metric) return;
-                                              this.tokenChartMetric = metric;
-                                              this.refreshChartsData();
-                                            },
+                                          async loadAllModels() {
+                                            await this.ensureModelsLoaded();
+                                          },
 
-                                            switchPerformanceRange(range) {
-                                              if (this.performanceRange === range) return;
-                                              this.performanceRange = range;
-                                              destroyCharts();
-                                              this.chartsReady = false;
-                                              this.loadPerformanceTabData();
-                                            },
-
-                                            switchPerformanceMetricScope(scope) {
-                                              if (this.performanceMetricScope === scope) return;
-                                              this.performanceMetricScope = scope;
-                                              destroyCharts();
-                                              this.chartsReady = false;
-                                              this.loadPerformanceTabData();
-                                            },
-
-                                            switchPerformanceChartView(view) {
-                                              if (this.performanceChartView === view) return;
-                                              this.performanceChartView = view;
-                                              if (view === 'percentile') this.ensurePerformanceModelSelected();
-                                              this.renderPerformanceChart();
-                                            },
-
-                                            switchPerformancePercentile(percentile) {
-                                              if (this.performancePercentile === percentile) return;
-                                              this.performancePercentile = percentile;
-                                              this.renderPerformanceChart();
-                                            },
-
-                                            async exportData() {
-                                              this.exportLoading = true;
-                                              try {
-                                                const resp = await fetch('/api/export' + (this.exportIncludePerformance ? '?include_performance=1' : ''), { headers: this.authHeaders() });
-                                                if (resp.status === 401) {
-                                                  this.logout();
-                                                  return;
-                                                }
-                                                if (!resp.ok) {
-                                                  alert('Export failed: ' + (await resp.json()).error);
-                                                  return;
-                                                }
-                                                const data = await resp.json();
-                                                const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                                                const url = URL.createObjectURL(blob);
-                                                const a = document.createElement('a');
-                                                a.href = url;
-                                                a.download = 'copilot-export-' + new Date().toISOString().slice(0, 10) + '.json';
-                                                a.click();
-                                                URL.revokeObjectURL(url);
-                                              } catch (e) {
-                                                console.error('exportData:', e);
-                                                alert('Export failed');
-                                              } finally {
-                                                this.exportLoading = false;
-                                              }
-                                            },
-
-                                            handleImportFile(event) {
-                                              const file = event.target.files[0];
-                                              if (!file) return;
-                                              this.importFile = file;
-                                              this.importPreview = { ready: false, exportedAt: null, apiKeys: 0, githubAccounts: 0, usage: 0, searchUsage: 0, performance: 0 };
-                                              this.importData = null;
-
-                                              const reader = new FileReader();
-                                              reader.onload = (e) => {
-                                                try {
-                                                  const json = JSON.parse(e.target.result);
-                                                  if (!json.data) {
-                                                    alert('Invalid export file: missing data field');
-                                                    this.importFile = null;
-                                                    return;
-                                                  }
-                                                  this.importData = json.data;
-                                                  this.importPreview = {
-                                                    ready: true,
-                                                    exportedAt: json.exportedAt || null,
-                                                    apiKeys: Array.isArray(json.data.apiKeys) ? json.data.apiKeys.length : 0,
-                                                    githubAccounts: Array.isArray(json.data.githubAccounts) ? json.data.githubAccounts.length : 0,
-                                                    usage: Array.isArray(json.data.usage) ? json.data.usage.length : 0,
-                                                    searchUsage: Array.isArray(json.data.searchUsage) ? json.data.searchUsage.length : 0,
-                                                    performance: Array.isArray(json.data.performance) ? json.data.performance.length : 0,
-                                                  };
-                                                } catch {
-                                                  alert('Invalid JSON file');
-                                                  this.importFile = null;
-                                                }
-                                              };
-                                              reader.readAsText(file);
-                                            },
-
-                                            async doImport() {
-                                              if (!this.importData) return;
-                                              if (this.importMode === 'replace') {
-                                                if (!confirm('This will DELETE ALL existing data and replace it with the imported file. Are you sure?')) return;
-                                              }
-                                              this.importLoading = true;
-                                              try {
-                                                const resp = await fetch('/api/import', {
-                                                  method: 'POST',
-                                                  headers: { ...this.authHeaders(), 'Content-Type': 'application/json' },
-                                                  body: JSON.stringify({ mode: this.importMode, data: this.importData }),
-                                                });
-                                                if (resp.status === 401) {
-                                                  this.logout();
-                                                  return;
-                                                }
-                                                const result = await resp.json();
-                                                if (resp.ok) {
-                                                  alert('Import complete: ' + result.imported.apiKeys + ' keys, ' + result.imported.githubAccounts + ' accounts, ' + result.imported.usage + ' usage records, ' + result.imported.searchUsage + ' search usage records, ' + result.imported.performance + ' performance records');
-                                                  this.importFile = null;
-                                                  this.importData = null;
-                                                  this.importPreview = { ready: false, exportedAt: null, apiKeys: 0, githubAccounts: 0, usage: 0, searchUsage: 0, performance: 0 };
-                                                } else {
-                                                  alert('Import failed: ' + (result.error || 'Unknown error'));
-                                                }
-                                              } catch (e) {
-                                                console.error('doImport:', e);
-                                                alert('Import failed');
-                                              } finally {
-                                                this.importLoading = false;
-                                              }
-                                            },
-
-                                            // ---- Models tab ----
-
-                                            async loadAllModels() {
-                                              await this.ensureModelsLoaded();
-                                            },
-
-                                            selectChatModel(id) {
-                                              this.chatModelId = id;
-                                              if (this._chatAbort) {
-                                                this._chatAbort.abort();
-                                                this._chatAbort = null;
-                                                this.chatSending = false;
-                                              }
-                                            },
-
-                                            clearChat() {
-                                              if (this._chatAbort) {
-                                                this._chatAbort.abort();
-                                                this._chatAbort = null;
-                                              }
-                                              this.chatMessages = [];
+                                          selectChatModel(id) {
+                                            this.chatModelId = id;
+                                            if (this._chatAbort) {
+                                              this._chatAbort.abort();
+                                              this._chatAbort = null;
                                               this.chatSending = false;
-                                              this.chatStreamText = '';
-                                            },
+                                            }
+                                          },
 
-                                            buildChatApiMessages() {
-                                              return this.chatMessages.map(m => {
-                                                if (m.role === 'assistant') return { role: 'assistant', content: m.text };
-                                                if (m.imageUrl) {
-                                                  return {
-                                                    role: 'user',
-                                                    content: [
-                                                      { type: 'image_url', image_url: { url: m.imageUrl } },
-                                                      { type: 'text', text: m.text },
-                                                    ],
-                                                  };
-                                                }
-                                                return { role: 'user', content: m.text };
+                                          clearChat() {
+                                            if (this._chatAbort) {
+                                              this._chatAbort.abort();
+                                              this._chatAbort = null;
+                                            }
+                                            this.chatMessages = [];
+                                            this.chatSending = false;
+                                            this.chatStreamText = '';
+                                          },
+
+                                          buildChatApiMessages() {
+                                            return this.chatMessages.map(m => {
+                                              if (m.role === 'assistant') return { role: 'assistant', content: m.text };
+                                              if (m.imageUrl) {
+                                                return {
+                                                  role: 'user',
+                                                  content: [
+                                                    { type: 'image_url', image_url: { url: m.imageUrl } },
+                                                    { type: 'text', text: m.text },
+                                                  ],
+                                                };
+                                              }
+                                              return { role: 'user', content: m.text };
+                                            });
+                                          },
+
+                                          scrollChat() {
+                                            this.$nextTick(() => {
+                                              const el = this.$refs.chatScroll;
+                                              if (el) el.scrollTop = el.scrollHeight;
+                                            });
+                                          },
+
+                                          async sendChatMessage() {
+                                            const text = this.chatInput.trim();
+                                            const img = this.chatImageUrl.trim();
+                                            if (!text && !img) return;
+                                            if (!this.chatModelId) return;
+
+                                            this.chatMessages.push({ role: 'user', text: text || '(image)', imageUrl: img || null });
+                                            this.chatInput = '';
+                                            this.chatImageUrl = '';
+                                            this.chatShowImage = false;
+                                            this.chatSending = true;
+                                            this.chatStreamText = '';
+
+                                            const controller = new AbortController();
+                                            this._chatAbort = controller;
+
+                                            try {
+                                              const resp = await fetch('/v1/chat/completions', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json', 'x-api-key': this.authKey, 'x-models-playground': '1' },
+                                                body: JSON.stringify({
+                                                  model: this.chatModelId,
+                                                  messages: this.buildChatApiMessages(),
+                                                  stream: true,
+                                                }),
+                                                signal: controller.signal,
                                               });
-                                            },
 
-                                            scrollChat() {
-                                              this.$nextTick(() => {
-                                                const el = this.$refs.chatScroll;
-                                                if (el) el.scrollTop = el.scrollHeight;
-                                              });
-                                            },
-
-                                            async sendChatMessage() {
-                                              const text = this.chatInput.trim();
-                                              const img = this.chatImageUrl.trim();
-                                              if (!text && !img) return;
-                                              if (!this.chatModelId) return;
-
-                                              this.chatMessages.push({ role: 'user', text: text || '(image)', imageUrl: img || null });
-                                              this.chatInput = '';
-                                              this.chatImageUrl = '';
-                                              this.chatShowImage = false;
-                                              this.chatSending = true;
-                                              this.chatStreamText = '';
-
-                                              const controller = new AbortController();
-                                              this._chatAbort = controller;
-
-                                              try {
-                                                const resp = await fetch('/v1/chat/completions', {
-                                                  method: 'POST',
-                                                  headers: { 'Content-Type': 'application/json', 'x-api-key': this.authKey, 'x-models-playground': '1' },
-                                                  body: JSON.stringify({
-                                                    model: this.chatModelId,
-                                                    messages: this.buildChatApiMessages(),
-                                                    stream: true,
-                                                  }),
-                                                  signal: controller.signal,
-                                                });
-
-                                                if (!resp.ok) {
-                                                  const errText = await resp.text();
-                                                  this.chatMessages.push({ role: 'assistant', text: '[Error ' + resp.status + '] ' + errText });
-                                                  this.chatSending = false;
-                                                  this._chatAbort = null;
-                                                  this.scrollChat();
-                                                  return;
-                                                }
-
-                                                const reader = resp.body.getReader();
-                                                const decoder = new TextDecoder();
-                                                let buf = '';
-                                                let assistantText = '';
-                                                const idx = this.chatMessages.length;
-                                                this.chatMessages.push({ role: 'assistant', text: '' });
-
-                                                while (true) {
-                                                  const { done, value } = await reader.read();
-                                                  if (done) break;
-                                                  buf += decoder.decode(value, { stream: true });
-                                                  const lines = buf.split('\\n');
-                                                  buf = lines.pop();
-                                                  for (const line of lines) {
-                                                    if (!line.startsWith('data: ')) continue;
-                                                    const payload = line.slice(6);
-                                                    if (payload === '[DONE]') continue;
-                                                    try {
-                                                      const chunk = JSON.parse(payload);
-                                                      const delta = chunk.choices?.[0]?.delta?.content;
-                                                      if (delta) {
-                                                        assistantText += delta;
-                                                        this.chatMessages[idx].text = assistantText;
-                                                      }
-                                                    } catch {}
-                                                  }
-                                                  this.scrollChat();
-                                                }
-
-                                                if (!assistantText) {
-                                                  this.chatMessages[idx].text = '(empty response)';
-                                                }
-                                              } catch (e) {
-                                                if (e.name !== 'AbortError') {
-                                                  this.chatMessages.push({ role: 'assistant', text: '[Error] ' + e.message });
-                                                }
-                                              } finally {
+                                              if (!resp.ok) {
+                                                const errText = await resp.text();
+                                                this.chatMessages.push({ role: 'assistant', text: '[Error ' + resp.status + '] ' + errText });
                                                 this.chatSending = false;
                                                 this._chatAbort = null;
                                                 this.scrollChat();
+                                                return;
                                               }
-                                            },
 
-                                            logout() {
-                                              localStorage.removeItem('authKey');
-                                              localStorage.removeItem('isAdmin');
-                                              localStorage.removeItem('login_key_id');
-                                              localStorage.removeItem('login_key_name');
-                                              localStorage.removeItem('login_key_hint');
-                                              window.location.href = '/';
-                                            },
+                                              const reader = resp.body.getReader();
+                                              const decoder = new TextDecoder();
+                                              let buf = '';
+                                              let assistantText = '';
+                                              const idx = this.chatMessages.length;
+                                              this.chatMessages.push({ role: 'assistant', text: '' });
 
-                                            };
-                                          }
-                                        </script>
-                                      `;
-                                    }
+                                              while (true) {
+                                                const { done, value } = await reader.read();
+                                                if (done) break;
+                                                buf += decoder.decode(value, { stream: true });
+                                                const lines = buf.split('\\n');
+                                                buf = lines.pop();
+                                                for (const line of lines) {
+                                                  if (!line.startsWith('data: ')) continue;
+                                                  const payload = line.slice(6);
+                                                  if (payload === '[DONE]') continue;
+                                                  try {
+                                                    const chunk = JSON.parse(payload);
+                                                    const delta = chunk.choices?.[0]?.delta?.content;
+                                                    if (delta) {
+                                                      assistantText += delta;
+                                                      this.chatMessages[idx].text = assistantText;
+                                                    }
+                                                  } catch {}
+                                                }
+                                                this.scrollChat();
+                                              }
+
+                                              if (!assistantText) {
+                                                this.chatMessages[idx].text = '(empty response)';
+                                              }
+                                            } catch (e) {
+                                              if (e.name !== 'AbortError') {
+                                                this.chatMessages.push({ role: 'assistant', text: '[Error] ' + e.message });
+                                              }
+                                            } finally {
+                                              this.chatSending = false;
+                                              this._chatAbort = null;
+                                              this.scrollChat();
+                                            }
+                                          },
+
+                                          logout() {
+                                            localStorage.removeItem('authKey');
+                                            localStorage.removeItem('isAdmin');
+                                            localStorage.removeItem('login_key_id');
+                                            localStorage.removeItem('login_key_name');
+                                            localStorage.removeItem('login_key_hint');
+                                            window.location.href = '/';
+                                          },
+
+                                          };
+                                        }
+                                      </script>
+                                    `;
+                                  }

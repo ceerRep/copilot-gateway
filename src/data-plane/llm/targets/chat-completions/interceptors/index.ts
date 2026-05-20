@@ -1,5 +1,4 @@
 import type { ChatCompletionResponse } from "../../../shared/protocol/chat-completions.ts";
-import type { Upstream } from "../../../../../shared/upstream/types.ts";
 import type { OptionalInterceptor } from "../../optional-fix.ts";
 import type { TargetInterceptor } from "../../run-interceptors.ts";
 import type { EmitToChatCompletionsInput } from "../emit.ts";
@@ -40,13 +39,21 @@ export const chatCompletionsOptionalInterceptors = [
 >[];
 
 export const interceptorsForChatCompletions = (
-  upstream: Upstream,
+  provider: Pick<
+    EmitToChatCompletionsInput,
+    "enabledFixes" | "targetInterceptors"
+  >,
 ): readonly TargetInterceptor<
   EmitToChatCompletionsInput,
   ChatCompletionResponse
 >[] => [
   ...baseInterceptors,
+  ...((provider.targetInterceptors?.chatCompletions ??
+    []) as readonly TargetInterceptor<
+      EmitToChatCompletionsInput,
+      ChatCompletionResponse
+    >[]),
   ...chatCompletionsOptionalInterceptors
-    .filter(({ fixId }) => upstream.enabledFixes.has(fixId))
+    .filter(({ fixId }) => provider.enabledFixes.has(fixId))
     .map(({ run }) => run),
 ];

@@ -1,6 +1,6 @@
-// Copilot-only Responses target workarounds. Structurally bound to Copilot
-// upstreams via the assembler in ../index.ts — they never run for custom
-// OpenAI-compatible upstreams and are not exposed as admin-toggleable fixes.
+// Copilot-only Responses target workarounds. The Copilot provider attaches
+// this set to its provider metadata, so the generic target assembler does not
+// need to know which provider kind is running.
 
 import type {
   ResponsesPayload,

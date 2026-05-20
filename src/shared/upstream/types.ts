@@ -1,6 +1,5 @@
 // Generic upstream abstraction for OpenAI-compatible LLM providers.
-// Each upstream owns its base URL, auth headers, and per-endpoint quirks
-// (e.g. Copilot vision/initiator headers).
+// Each upstream owns its base URL, auth headers, and per-endpoint path rules.
 //
 // Callers identify the endpoint by a logical key (`messages`, `responses`,
 // `chat_completions`, `embeddings`, `models`, `messages_count_tokens`); the
@@ -12,8 +11,6 @@
 import type { EndpointKey } from "../../repo/types.ts";
 
 export interface UpstreamFetchOptions {
-  vision?: boolean;
-  initiator?: "user" | "agent";
   extraHeaders?: Record<string, string>;
 }
 
@@ -27,10 +24,9 @@ export interface Upstream {
   // when /models does not declare per-model `supported_endpoints` (Copilot
   // does; most third-party providers do not).
   supportedEndpoints: string[];
-  // Flag ids the upstream opted into. Each target's emit pipeline filters
-  // its OptionalInterceptor descriptors by this set before running them.
-  // Copilot-only workarounds live in `interceptors/copilot/` and are
-  // attached by upstream kind, not by this set.
+  // Flag ids the upstream opted into. Provider construction promotes this
+  // low-level setting into ModelProvider.enabledFixes before target emitters
+  // assemble optional interceptors.
   enabledFixes: ReadonlySet<string>;
   fetch(
     endpoint: EndpointKey,

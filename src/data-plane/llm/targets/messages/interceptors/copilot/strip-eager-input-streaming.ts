@@ -7,7 +7,7 @@ import type { EmitToMessagesInput } from "../../emit.ts";
  * that enables fine-grained tool input streaming. Copilot's native Messages
  * target has been observed to reject it with
  * `"tools.N.custom.eager_input_streaming: Extra inputs are not permitted"`, so
- * strip it only at the Copilot target boundary and leave other upstream kinds
+ * strip it only at the Copilot target boundary and leave other providers
  * untouched.
  *
  * References:

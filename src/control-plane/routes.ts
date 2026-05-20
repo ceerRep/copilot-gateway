@@ -36,7 +36,7 @@ import {
   performanceOverview,
   performanceTelemetry,
 } from "./performance/routes.ts";
-import { models } from "../data-plane/models/serve.ts";
+import { controlPlaneModels } from "./models/routes.ts";
 import { DashboardPage } from "../ui/dashboard.tsx";
 import { LoginPage } from "../ui/login.tsx";
 
@@ -75,7 +75,7 @@ export const mountControlPlane = (app: Hono) => {
   app.get("/api/search-usage", searchUsage);
   app.get("/api/performance", performanceTelemetry);
   app.get("/api/performance/overview", performanceOverview);
-  app.get("/api/models", models);
+  app.get("/api/models", controlPlaneModels);
 
   const adminApi = new Hono();
   adminApi.use("*", adminOnlyMiddleware);

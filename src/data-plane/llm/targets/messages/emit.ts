@@ -1,4 +1,3 @@
-import { isCopilotTokenFetchError } from "../../../../shared/copilot.ts";
 import type {
   MessagesPayload,
   MessagesResponse,
@@ -16,28 +15,35 @@ import { runTargetInterceptors } from "../run-interceptors.ts";
 import type { EmitInput, EmitResult, RawEmitResult } from "../emit-types.ts";
 import {
   recordUpstreamHttpFailure,
+  targetPerformanceContext,
   withUpstreamTelemetry,
 } from "../telemetry.ts";
 import { messagesStreamFramesToEvents } from "./events/from-stream.ts";
 import { interceptorsForMessages } from "./interceptors/index.ts";
+import type { ModelAccounting } from "../../../../repo/types.ts";
 
 const isSSEResponse = (response: Response): boolean =>
   (response.headers.get("content-type") ?? "").includes("text/event-stream");
 
 export interface EmitToMessagesInput extends EmitInput<MessagesPayload> {
-  rawBeta?: string;
+  anthropicBeta?: readonly string[];
 }
 
 const messagesRawResultToProtocolResult = (
   result: RawEmitResult<MessagesResponse>,
 ): EmitResult<MessagesStreamEventData> =>
   result.type === "events"
-    ? eventResult(messagesStreamFramesToEvents(result.events))
+    ? eventResult(
+      messagesStreamFramesToEvents(result.events),
+      result.accounting,
+      result.performance,
+    )
     : result;
 
 export const emitToMessages = async (
   input: EmitToMessagesInput,
 ): Promise<EmitResult<MessagesStreamEventData>> => {
+  let accounting: ModelAccounting | undefined;
   try {
     input.payload.stream = true;
 
@@ -46,22 +52,33 @@ export const emitToMessages = async (
       MessagesResponse
     >(
       input,
-      interceptorsForMessages(input.upstream),
+      interceptorsForMessages(input),
       async () => {
         const upstreamStartedAt = performance.now();
-        const response = await input.upstream.fetch(
+        const { model: _model, ...body } = input.payload;
+        const { response, modelKey } = await input.provider.callMessages(
+          input.upstreamModel,
+          body,
+          input.downstreamAbortSignal,
+          input.anthropicBeta,
+        );
+        accounting = {
+          model: input.model,
+          upstream: input.upstream,
+          modelKey,
+        };
+        const perfContext = targetPerformanceContext(
+          input,
           "messages",
-          {
-            method: "POST",
-            body: JSON.stringify(input.payload),
-            signal: input.downstreamAbortSignal,
-          },
-          input.fetchOptions,
+          accounting,
         );
 
         if (!response.ok) {
-          recordUpstreamHttpFailure(input, "messages");
-          return await readUpstreamError(response);
+          recordUpstreamHttpFailure(input, "messages", accounting);
+          return {
+            ...(await readUpstreamError(response)),
+            performance: perfContext,
+          };
         }
         if (!response.body) {
           return internalErrorResult(
@@ -71,45 +88,50 @@ export const emitToMessages = async (
               input.sourceApi,
               "messages",
             ),
+            perfContext,
           );
         }
 
         if (isSSEResponse(response)) {
-          return eventResult(withUpstreamTelemetry(
-            parseSSEStream(response.body, {
-              signal: input.downstreamAbortSignal,
-            }),
+          return eventResult(
+            withUpstreamTelemetry(
+              parseSSEStream(response.body, {
+                signal: input.downstreamAbortSignal,
+              }),
+              input,
+              "messages",
+              upstreamStartedAt,
+              accounting,
+            ),
+            accounting,
+            perfContext,
+          );
+        }
+
+        return eventResult(
+          withUpstreamTelemetry(
+            (async function* () {
+              yield jsonFrame(await response.json() as MessagesResponse);
+            })(),
             input,
             "messages",
             upstreamStartedAt,
-          ));
-        }
-
-        return eventResult(withUpstreamTelemetry(
-          (async function* () {
-            yield jsonFrame(await response.json() as MessagesResponse);
-          })(),
-          input,
-          "messages",
-          upstreamStartedAt,
-        ));
+            accounting,
+          ),
+          accounting,
+          perfContext,
+        );
       },
     );
 
     return messagesRawResultToProtocolResult(result);
   } catch (error) {
-    if (isCopilotTokenFetchError(error)) {
-      return {
-        type: "upstream-error",
-        status: error.status,
-        headers: new Headers(error.headers),
-        body: new TextEncoder().encode(error.body),
-      };
-    }
-
     return internalErrorResult(
       502,
       toInternalDebugError(error, input.sourceApi, "messages"),
+      accounting
+        ? targetPerformanceContext(input, "messages", accounting)
+        : undefined,
     );
   }
 };

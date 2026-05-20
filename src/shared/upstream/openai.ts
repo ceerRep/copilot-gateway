@@ -60,8 +60,6 @@ export const createOpenAiUpstream = (config: UpstreamConfig): Upstream => {
           headers.set(k, v);
         }
       }
-      // OpenAI-compatible providers do not understand Copilot's
-      // copilot-vision-request / X-Initiator headers, so we drop them here.
       const url = joinBaseAndPath(baseUrl, resolveOpenAiPath(config, endpoint));
       return await fetch(url, { ...init, headers });
     },

@@ -149,14 +149,14 @@ Deno.test("/v1beta/models/models/:model:generateContent accepts Gemini resource 
   assertEquals(upstreamBody.model, "gpt-chat-resource");
 });
 
-Deno.test("/v1beta/models/:model:generateContent prefers messages over other Gemini targets", async () => {
+Deno.test("/v1beta/models/:model:generateContent uses Messages for Copilot Claude because the provider hides Chat", async () => {
   const { apiKey } = await setupAppTest();
   let upstreamPath = "";
 
   await withMockedFetch((request) => {
     const mocked = mockTokenAndModels(request, [{
       id: "claude-gemini-native",
-      supported_endpoints: ["/v1/messages", "/chat/completions", "/responses"],
+      supported_endpoints: ["/v1/messages", "/chat/completions"],
     }]);
     if (mocked) return mocked;
 
@@ -676,7 +676,7 @@ Deno.test("/v1beta/models/:model:generateContent preserves custom upstream /mode
     enabledFixes: [],
   });
 
-  await withMockedFetch(async (request) => {
+  await withMockedFetch((request) => {
     const url = new URL(request.url);
 
     if (

@@ -1,7 +1,12 @@
 import { assertEquals } from "@std/assert";
+import { eventResult } from "../../../../shared/errors/result.ts";
 import type { MessagesResponse } from "../../../../shared/protocol/messages.ts";
 import { jsonFrame, sseFrame } from "../../../../shared/stream/types.ts";
-import { stubUpstream } from "../../../../../../test-helpers.ts";
+import {
+  stubProvider,
+  stubUpstreamModel,
+  testAccounting,
+} from "../../../../../../test-helpers.ts";
 import type { EmitToMessagesInput } from "../../emit.ts";
 import {
   resolveMessagesDownstreamThinkingDisplay,
@@ -22,13 +27,17 @@ const makeCtx = (
   } = {},
 ): EmitToMessagesInput => ({
   sourceApi: overrides.sourceApi ?? "messages",
+  model: overrides.model ?? "claude-opus-4.7-1m-internal",
+  upstream: "test-upstream",
   payload: {
     model: overrides.model ?? "claude-opus-4.7-1m-internal",
     messages: [{ role: "user", content: "hi" }],
     max_tokens: 128,
     ...(thinking ? { thinking } : {}),
   },
-  upstream: stubUpstream(),
+  provider: stubProvider(),
+  upstreamModel: stubUpstreamModel(),
+  enabledFixes: new Set<string>(),
   clientStream: true,
   runtimeLocation: "unknown",
 });
@@ -136,10 +145,7 @@ Deno.test("withThinkingDisplayPromoted overrides omitted but preserves full", as
   const fullCtx = makeCtx({ type: "adaptive", display: "full" });
 
   const run = () =>
-    Promise.resolve({
-      type: "events" as const,
-      events: (async function* () {})(),
-    });
+    Promise.resolve(eventResult((async function* () {})(), testAccounting));
 
   await withThinkingDisplayPromoted(omittedCtx, run);
   await withThinkingDisplayPromoted(fullCtx, run);
@@ -152,16 +158,16 @@ Deno.test("withThinkingDisplayPromoted leaves disabled or absent thinking untouc
   const disabledCtx = makeCtx({ type: "disabled" });
   const absentCtx = makeCtx(undefined);
 
-  await withThinkingDisplayPromoted(disabledCtx, () =>
-    Promise.resolve({
-      type: "events" as const,
-      events: (async function* () {})(),
-    }));
-  await withThinkingDisplayPromoted(absentCtx, () =>
-    Promise.resolve({
-      type: "events" as const,
-      events: (async function* () {})(),
-    }));
+  await withThinkingDisplayPromoted(
+    disabledCtx,
+    () =>
+      Promise.resolve(eventResult((async function* () {})(), testAccounting)),
+  );
+  await withThinkingDisplayPromoted(
+    absentCtx,
+    () =>
+      Promise.resolve(eventResult((async function* () {})(), testAccounting)),
+  );
 
   assertEquals(disabledCtx.payload.thinking, { type: "disabled" });
   assertEquals(absentCtx.payload.thinking, undefined);
@@ -171,11 +177,11 @@ Deno.test("withThinkingDisplayPromoted leaves unknown display values for upstrea
   const ctx = makeCtx({ type: "adaptive" });
   (ctx.payload.thinking as { display?: unknown }).display = "omit";
 
-  await withThinkingDisplayPromoted(ctx, () =>
-    Promise.resolve({
-      type: "events" as const,
-      events: (async function* () {})(),
-    }));
+  await withThinkingDisplayPromoted(
+    ctx,
+    () =>
+      Promise.resolve(eventResult((async function* () {})(), testAccounting)),
+  );
 
   assertEquals((ctx.payload.thinking as { display?: unknown }).display, "omit");
 });
@@ -183,27 +189,30 @@ Deno.test("withThinkingDisplayPromoted leaves unknown display values for upstrea
 Deno.test("withThinkingDisplayPromoted simulates omitted display on target SSE results", async () => {
   const ctx = makeCtx({ type: "adaptive" }, { sourceApi: "responses" });
 
-  const result = await withThinkingDisplayPromoted(ctx, () =>
-    Promise.resolve({
-      type: "events" as const,
-      events: (async function* () {
-        yield sseFrame(JSON.stringify({
-          type: "content_block_start",
-          index: 0,
-          content_block: { type: "thinking", thinking: "summary prefix" },
-        }));
-        yield sseFrame(JSON.stringify({
-          type: "content_block_delta",
-          index: 0,
-          delta: { type: "thinking_delta", thinking: "summary body" },
-        }));
-        yield sseFrame(JSON.stringify({
-          type: "content_block_delta",
-          index: 0,
-          delta: { type: "signature_delta", signature: "sig_unchanged" },
-        }));
-      })(),
-    }));
+  const result = await withThinkingDisplayPromoted(
+    ctx,
+    () =>
+      Promise.resolve(eventResult(
+        (async function* () {
+          yield sseFrame(JSON.stringify({
+            type: "content_block_start",
+            index: 0,
+            content_block: { type: "thinking", thinking: "summary prefix" },
+          }));
+          yield sseFrame(JSON.stringify({
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "thinking_delta", thinking: "summary body" },
+          }));
+          yield sseFrame(JSON.stringify({
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "signature_delta", signature: "sig_unchanged" },
+          }));
+        })(),
+        testAccounting,
+      )),
+  );
 
   assertEquals(result.type, "events");
   if (result.type !== "events") throw new Error("expected events");
@@ -225,20 +234,23 @@ Deno.test("withThinkingDisplayPromoted simulates omitted display on target SSE r
 Deno.test("withThinkingDisplayPromoted simulates omitted display on target JSON results", async () => {
   const ctx = makeCtx({ type: "adaptive" });
 
-  const result = await withThinkingDisplayPromoted(ctx, () =>
-    Promise.resolve({
-      type: "events" as const,
-      events: (async function* () {
-        yield jsonFrame(makeMessagesResponse([
-          {
-            type: "thinking",
-            thinking: "private summary",
-            signature: "sig_json",
-          },
-          { type: "text", text: "visible" },
-        ]));
-      })(),
-    }));
+  const result = await withThinkingDisplayPromoted(
+    ctx,
+    () =>
+      Promise.resolve(eventResult(
+        (async function* () {
+          yield jsonFrame(makeMessagesResponse([
+            {
+              type: "thinking",
+              thinking: "private summary",
+              signature: "sig_json",
+            },
+            { type: "text", text: "visible" },
+          ]));
+        })(),
+        testAccounting,
+      )),
+  );
 
   assertEquals(result.type, "events");
   if (result.type !== "events") throw new Error("expected events");

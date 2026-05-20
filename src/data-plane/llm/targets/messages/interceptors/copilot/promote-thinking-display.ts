@@ -2,7 +2,7 @@ import type {
   MessagesResponse,
   MessagesThinkingDisplay,
 } from "../../../../shared/protocol/messages.ts";
-import { normalizeModelName } from "../../../../../../shared/model-name.ts";
+import { copilotRawModelId } from "../../../../../providers/copilot/model-name.ts";
 import type { StreamFrame } from "../../../../shared/stream/types.ts";
 import type { TargetInterceptor } from "../../../run-interceptors.ts";
 import type { EmitToMessagesInput } from "../../emit.ts";
@@ -19,7 +19,7 @@ const isClaudeVersionAtLeast = (
   major: number,
   minor: number,
 ): boolean => {
-  const normalized = normalizeModelName(model);
+  const normalized = copilotRawModelId(model);
   if (!normalized.startsWith("claude-")) return false;
 
   const match = normalized.match(CLAUDE_VERSION_PATTERN);

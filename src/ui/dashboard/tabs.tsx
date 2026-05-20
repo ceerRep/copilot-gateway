@@ -1283,7 +1283,7 @@ export function renderSettingsTab() {
                         x-show="upstreamFixCatalog.length === 0"
                         class="text-[11px] text-gray-600"
                       >
-                        No opt-in target fixes are registered.
+                        No opt-in upstream behavior flags are registered.
                       </p>
                       <div
                         x-show="upstreamFixCatalog.length > 0"
@@ -1623,61 +1623,6 @@ export function renderSettingsTab() {
                               x-text="'@' + acct.login"
                             >
                             </p>
-                            <div class="mt-2" x-show="hasUnavailableModels(acct)">
-                              <button
-                                type="button"
-                                @click.stop="toggleUnavailableDetails(acct)"
-                                :aria-expanded="unavailablePanelOpen(acct).toString()"
-                                class="inline-flex min-h-7 items-center gap-1.5 rounded-md bg-accent-amber/10 px-2 text-[10px] font-medium uppercase tracking-widest text-accent-amber ring-1 ring-accent-amber/20 transition-colors hover:bg-accent-amber/15"
-                              >
-                                <span
-                                  class="h-1.5 w-1.5 rounded-full bg-accent-amber status-pulse"
-                                ></span>
-                                <span x-text="unavailableBadgeText(acct)"></span>
-                                <svg
-                                  x-show="hasUnavailableModels(acct)"
-                                  class="h-3 w-3 transition-transform"
-                                  :class="unavailablePanelOpen(acct) ? 'rotate-180' : ''"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  stroke-width="2"
-                                >
-                                  <polyline points="6 9 12 15 18 9" />
-                                </svg>
-                              </button>
-                            </div>
-                            <div
-                              x-show="unavailablePanelOpen(acct)"
-                              @click.stop
-                              class="mt-2 space-y-1.5 rounded-lg border border-accent-amber/10 bg-black/15 p-2"
-                            >
-                              <template
-                                x-for="status in unavailableModels(acct)"
-                                :key="status.model + ':' + status.status"
-                              >
-                                <div
-                                  class="flex flex-col gap-1 rounded-md bg-white/[0.03] px-2 py-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3"
-                                >
-                                  <div class="min-w-0">
-                                    <p
-                                      class="break-all font-mono text-[11px] text-white"
-                                      x-text="status.model"
-                                    >
-                                    </p>
-                                    <p
-                                      class="mt-0.5 text-[10px] text-gray-500"
-                                      x-text="'HTTP ' + status.status"
-                                    >
-                                    </p>
-                                  </div>
-                                  <span
-                                    class="w-fit shrink-0 font-mono text-[10px] text-accent-amber"
-                                    x-text="cooldownRecoveryText(status)"
-                                  ></span>
-                                </div>
-                              </template>
-                            </div>
                           </div>
                         </div>
                         <div

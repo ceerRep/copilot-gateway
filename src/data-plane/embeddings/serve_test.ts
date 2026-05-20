@@ -74,7 +74,7 @@ Deno.test("/v1/embeddings wraps scalar string input for Copilot upstream", async
 Deno.test("/v1/embeddings records usage under request model when upstream omits model", async () => {
   const { apiKey, repo } = await setupAppTest();
 
-  await withMockedFetch(async (request) => {
+  await withMockedFetch((request) => {
     const url = new URL(request.url);
 
     if (url.hostname === "update.code.visualstudio.com") {
@@ -196,7 +196,7 @@ Deno.test("/v1/embeddings routes to custom upstream when model is only declared 
   assertEquals(new URL(forwardedUrl).hostname, "embed.example.com");
   assertExists(forwardedBody);
   assertEquals(forwardedBody.model, "custom-embed-model");
-  assertEquals(forwardedBody.input, ["hello world"]);
+  assertEquals(forwardedBody.input, "hello world");
 });
 
 Deno.test("/v1/embeddings rejects model on custom upstream without /embeddings capability", async () => {
@@ -217,7 +217,7 @@ Deno.test("/v1/embeddings rejects model on custom upstream without /embeddings c
     enabledFixes: [],
   });
 
-  await withMockedFetch(async (request) => {
+  await withMockedFetch((request) => {
     const url = new URL(request.url);
 
     if (
@@ -271,7 +271,7 @@ Deno.test("/v1/embeddings preserves custom upstream /models HTTP errors", async 
     enabledFixes: [],
   });
 
-  await withMockedFetch(async (request) => {
+  await withMockedFetch((request) => {
     const url = new URL(request.url);
 
     if (
@@ -302,11 +302,71 @@ Deno.test("/v1/embeddings preserves custom upstream /models HTTP errors", async 
   });
 });
 
-Deno.test("/v1/embeddings passes malformed body to Copilot for upstream validation", async () => {
-  const { apiKey } = await setupAppTest();
-  let copilotReceivedBody: string | undefined;
+Deno.test("/v1/embeddings preserves model-load errors hidden by another provider", async () => {
+  const { apiKey, repo } = await setupAppTest();
+  clearModelsCache();
+  await clearCopilotTokenCache();
 
-  await withMockedFetch(async (request) => {
+  await repo.upstreamConfigs.save({
+    id: "up_embed",
+    name: "Embedding Provider",
+    baseUrl: "https://embed.example.com",
+    bearerToken: "sk-embed",
+    supportedEndpoints: ["/embeddings"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    enabledFixes: [],
+  });
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+
+    if (url.hostname === "update.code.visualstudio.com") {
+      return jsonResponse(["1.110.1"]);
+    }
+    if (url.pathname === "/copilot_internal/v2/token") {
+      return jsonResponse({
+        token: "copilot-access-token",
+        expires_at: 4102444800,
+        refresh_in: 3600,
+      });
+    }
+    if (
+      url.hostname === "api.githubcopilot.com" && url.pathname === "/models"
+    ) {
+      return jsonResponse(copilotModels([
+        { id: "copilot-chat", supported_endpoints: ["/chat/completions"] },
+      ]));
+    }
+    if (url.hostname === "embed.example.com" && url.pathname === "/v1/models") {
+      return jsonResponse({ error: { message: "bad embed key" } }, 403);
+    }
+
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const response = await requestApp("/v1/embeddings", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": apiKey.key,
+      },
+      body: JSON.stringify({
+        model: "custom-embed-model",
+        input: "hello",
+      }),
+    });
+
+    assertEquals(response.status, 403);
+    const body = await response.json();
+    assertEquals(body.error.message, "bad embed key");
+  });
+});
+
+Deno.test("/v1/embeddings rejects malformed body at the provider-independent boundary", async () => {
+  const { apiKey } = await setupAppTest();
+
+  await withMockedFetch((request) => {
     const url = new URL(request.url);
 
     if (url.hostname === "update.code.visualstudio.com") {
@@ -324,13 +384,6 @@ Deno.test("/v1/embeddings passes malformed body to Copilot for upstream validati
         { id: "text-embedding-real", supported_endpoints: ["/embeddings"] },
       ]));
     }
-    if (url.pathname === "/embeddings") {
-      copilotReceivedBody = await request.text();
-      return jsonResponse({
-        error: { message: "model is required", type: "invalid_request_error" },
-      }, 400);
-    }
-
     throw new Error(`Unhandled fetch ${request.url}`);
   }, async () => {
     const response = await requestApp("/v1/embeddings", {
@@ -344,8 +397,6 @@ Deno.test("/v1/embeddings passes malformed body to Copilot for upstream validati
 
     assertEquals(response.status, 400);
     const body = await response.json();
-    assertEquals(body.error.type, "invalid_request_error");
+    assertEquals(body.error.type, "api_error");
   });
-
-  assertExists(copilotReceivedBody);
 });

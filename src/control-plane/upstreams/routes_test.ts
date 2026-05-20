@@ -1,6 +1,6 @@
 // End-to-end validation of POST/PATCH /api/upstreams body validation
 // around the enabled_fixes field: unknown ids hard-reject (400),
-// known ids round-trip through serialize regardless of whether their
+// known ids round-trip through serialization regardless of whether their
 // appliesTo overlaps supported_endpoints.
 
 import { assertEquals } from "@std/assert";
@@ -105,7 +105,7 @@ Deno.test("GET /api/upstream-fixes returns the flag catalog", async () => {
   const catalog = await resp.json() as Array<Record<string, unknown>>;
   const deepseek = catalog.find((e) => e.id === "deepseek-reasoning-dialect");
   assertEquals(deepseek?.appliesTo, ["chat_completions"]);
-  assertEquals(deepseek?.defaultFor, []);
+  assertEquals("defaultFor" in deepseek!, false);
 });
 
 Deno.test("GET /api/upstream-fixes requires admin auth", async () => {

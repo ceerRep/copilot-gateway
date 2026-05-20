@@ -1,18 +1,17 @@
-// Copilot-only Messages target workarounds. These are structurally bound to
-// Copilot upstreams via the assembler in ../index.ts — they never run for
-// custom OpenAI-compatible upstreams and are not exposed as admin-toggleable
-// fixes.
+// Copilot-only Messages target workarounds. The Copilot provider attaches this
+// set to its provider metadata, so the generic target assembler does not need
+// to know which provider kind is running.
 
 import type { MessagesResponse } from "../../../../shared/protocol/messages.ts";
 import type { TargetInterceptor } from "../../../run-interceptors.ts";
 import type { EmitToMessagesInput } from "../../emit.ts";
 import { withThinkingDisplayPromoted } from "./promote-thinking-display.ts";
-import { withBetaHeaderFixed } from "./fix-beta-header.ts";
+import { withCacheControlScopeStripped } from "./strip-cache-control-scope.ts";
 import { withEagerInputStreamingStripped } from "./strip-eager-input-streaming.ts";
 
 export const messagesCopilotInterceptors = [
   withThinkingDisplayPromoted,
-  withBetaHeaderFixed,
+  withCacheControlScopeStripped,
   withEagerInputStreamingStripped,
 ] as const satisfies readonly TargetInterceptor<
   EmitToMessagesInput,

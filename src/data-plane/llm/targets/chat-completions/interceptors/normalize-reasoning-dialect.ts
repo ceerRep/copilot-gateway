@@ -135,7 +135,7 @@ export const withDeepseekReasoningDialect: TargetInterceptor<
   if (result.type !== "events") return result;
 
   return {
-    type: "events",
+    ...result,
     events: (async function* () {
       for await (const frame of result.events) {
         if (frame.type === "sse") {

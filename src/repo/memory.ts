@@ -1,8 +1,6 @@
 // In-memory repository implementation for testing
 
 import type {
-  AccountModelBackoffRecord,
-  AccountModelBackoffRepo,
   ApiKey,
   ApiKeyRepo,
   CacheRepo,
@@ -113,13 +111,26 @@ class MemoryGitHubRepo implements GitHubRepo {
 class MemoryUsageRepo implements UsageRepo {
   private store = new Map<string, UsageRecord>();
 
-  private key(r: { keyId: string; model: string; hour: string }): string {
-    return `${r.keyId}\0${r.model}\0${r.hour}`;
+  private key(r: {
+    keyId: string;
+    model: string;
+    upstream: string | null;
+    modelKey: string;
+    hour: string;
+  }): string {
+    return [
+      r.keyId,
+      r.model,
+      r.upstream ?? "",
+      r.modelKey,
+      r.hour,
+    ].join("\0");
   }
 
   private normalize(record: UsageRecord): UsageRecord {
     return {
       ...record,
+      upstream: record.upstream ?? null,
       cacheReadTokens: record.cacheReadTokens ?? 0,
       cacheCreationTokens: record.cacheCreationTokens ?? 0,
     };
@@ -128,6 +139,8 @@ class MemoryUsageRepo implements UsageRepo {
   record(
     keyId: string,
     model: string,
+    upstream: string | null,
+    modelKey: string,
     hour: string,
     requests: number,
     inputTokens: number,
@@ -135,7 +148,7 @@ class MemoryUsageRepo implements UsageRepo {
     cacheReadTokens = 0,
     cacheCreationTokens = 0,
   ): Promise<void> {
-    const k = this.key({ keyId, model, hour });
+    const k = this.key({ keyId, model, upstream, modelKey, hour });
     const existing = this.store.get(k);
     if (existing) {
       existing.requests += requests;
@@ -151,6 +164,8 @@ class MemoryUsageRepo implements UsageRepo {
         this.normalize({
           keyId,
           model,
+          upstream,
+          modelKey,
           hour,
           requests,
           inputTokens,
@@ -277,6 +292,8 @@ class MemoryPerformanceRepo implements PerformanceRepo {
       r.metricScope,
       r.keyId,
       r.model,
+      r.upstream ?? "",
+      r.modelKey,
       r.sourceApi,
       r.targetApi,
       r.stream ? "1" : "0",
@@ -293,6 +310,8 @@ class MemoryPerformanceRepo implements PerformanceRepo {
         metricScope: sample.metricScope,
         keyId: sample.keyId,
         model: sample.model,
+        upstream: sample.upstream ?? null,
+        modelKey: sample.modelKey,
         sourceApi: sample.sourceApi,
         targetApi: sample.targetApi,
         stream: sample.stream,
@@ -381,6 +400,8 @@ function comparePerformanceTelemetryRecords(
     a.metricScope.localeCompare(b.metricScope) ||
     a.keyId.localeCompare(b.keyId) ||
     a.model.localeCompare(b.model) ||
+    (a.upstream ?? "").localeCompare(b.upstream ?? "") ||
+    a.modelKey.localeCompare(b.modelKey) ||
     a.sourceApi.localeCompare(b.sourceApi) ||
     a.targetApi.localeCompare(b.targetApi) ||
     Number(a.stream) - Number(b.stream) ||
@@ -420,63 +441,6 @@ class MemoryCacheRepo implements CacheRepo {
     for (const key of this.store.keys()) {
       if (key.startsWith(prefix)) this.store.delete(key);
     }
-    return Promise.resolve();
-  }
-}
-
-class MemoryAccountModelBackoffRepo implements AccountModelBackoffRepo {
-  private store = new Map<string, AccountModelBackoffRecord>();
-
-  private key(accountId: number, model: string): string {
-    return `${accountId}\0${model}`;
-  }
-
-  get(
-    accountId: number,
-    model: string,
-  ): Promise<AccountModelBackoffRecord | null> {
-    const record = this.store.get(this.key(accountId, model));
-    return Promise.resolve(record ? { ...record } : null);
-  }
-
-  list(accountIds: number[]): Promise<AccountModelBackoffRecord[]> {
-    const accountIdSet = new Set(accountIds);
-    return Promise.resolve(
-      [...this.store.values()]
-        .filter((record) => accountIdSet.has(record.accountId))
-        .map((record) => ({ ...record }))
-        .sort((a, b) =>
-          a.accountId - b.accountId || a.model.localeCompare(b.model)
-        ),
-    );
-  }
-
-  mark(record: AccountModelBackoffRecord): Promise<void> {
-    this.store.set(this.key(record.accountId, record.model), { ...record });
-    return Promise.resolve();
-  }
-
-  clear(accountId: number, model: string): Promise<void> {
-    this.store.delete(this.key(accountId, model));
-    return Promise.resolve();
-  }
-
-  clearModel(accountIds: number[], model: string): Promise<void> {
-    for (const accountId of accountIds) {
-      this.store.delete(this.key(accountId, model));
-    }
-    return Promise.resolve();
-  }
-
-  clearAccount(accountId: number): Promise<void> {
-    for (const key of this.store.keys()) {
-      if (key.startsWith(`${accountId}\0`)) this.store.delete(key);
-    }
-    return Promise.resolve();
-  }
-
-  deleteAll(): Promise<void> {
-    this.store.clear();
     return Promise.resolve();
   }
 }
@@ -545,7 +509,6 @@ export class InMemoryRepo implements Repo {
   searchUsage: SearchUsageRepo;
   performance: PerformanceRepo;
   cache: CacheRepo;
-  accountModelBackoffs: AccountModelBackoffRepo;
   searchConfig: SearchConfigRepo;
   upstreamConfigs: UpstreamConfigRepo;
 
@@ -556,7 +519,6 @@ export class InMemoryRepo implements Repo {
     this.searchUsage = new MemorySearchUsageRepo();
     this.performance = new MemoryPerformanceRepo();
     this.cache = new MemoryCacheRepo();
-    this.accountModelBackoffs = new MemoryAccountModelBackoffRepo();
     this.searchConfig = new MemorySearchConfigRepo();
     this.upstreamConfigs = new MemoryUpstreamConfigRepo();
   }

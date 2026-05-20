@@ -14,14 +14,11 @@ import {
 } from "./interceptors/index.ts";
 import { runSourceInterceptors } from "../run-interceptors.ts";
 import { respondGemini } from "./respond.ts";
-import { geminiModelResolutionIntent, planGeminiRequest } from "./plan.ts";
+import { planGeminiRequest } from "./plan.ts";
 import { getModelCapabilities } from "../../shared/models/get-model-capabilities.ts";
-import { resolveModelForRequest } from "../../shared/models/resolve-model.ts";
-import {
-  modelLoadErrorResult,
-  runOnUpstream,
-} from "../../shared/upstream-run.ts";
-import { resolveUpstreamForModel } from "../../../../shared/upstream/resolver.ts";
+import { resolveModelForRequest } from "../../../providers/registry.ts";
+import { runOnModel, skipProvider } from "../../../providers/run.ts";
+import { modelLoadErrorResult } from "../../shared/errors/model-load-error.ts";
 import { emitToMessages } from "../../targets/messages/emit.ts";
 import { emitToResponses } from "../../targets/responses/emit.ts";
 import { emitToChatCompletions } from "../../targets/chat-completions/emit.ts";
@@ -40,6 +37,10 @@ import { toInternalDebugError } from "../../shared/errors/internal-debug-error.t
 import { thrownUpstreamErrorResult } from "../../shared/errors/upstream-error.ts";
 import type { ProtocolFrame } from "../../shared/stream/types.ts";
 import { countGeminiTokens } from "./count-tokens/serve.ts";
+import {
+  recordRequestPerformanceForApiKey,
+  recordUsageForApiKey,
+} from "../accounting.ts";
 
 const withTranslatedEvents = <T>(
   result: StreamExecuteResult<T>,
@@ -51,18 +52,9 @@ const withTranslatedEvents = <T>(
     ? { ...result, events: translate(result.events) }
     : result;
 
-const withResultMetadata = <T>(
-  result: StreamExecuteResult<T>,
-  usageModel: string,
-  performance: PerformanceTelemetryContext,
-): StreamExecuteResult<T> =>
-  result.type === "events"
-    ? { ...result, usageModel, performance }
-    : { ...result, performance };
-
 const unsupportedGeminiModelResult = (
   model: string,
-  performance: PerformanceTelemetryContext,
+  performance?: PerformanceTelemetryContext,
 ): UpstreamErrorResult => ({
   type: "upstream-error",
   status: 400,
@@ -75,7 +67,7 @@ const unsupportedGeminiModelResult = (
       status: "INVALID_ARGUMENT",
     },
   })),
-  performance,
+  ...(performance ? { performance } : {}),
 });
 
 export const serveGemini = async (
@@ -83,43 +75,31 @@ export const serveGemini = async (
   model: string,
   wantsStream: boolean,
 ): Promise<Response> => {
+  const requestStartedAt = performance.now();
+  const apiKeyId = c.get("apiKeyId") as string | undefined;
+  const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
+  const scheduleBackground = backgroundSchedulerFromContext(c);
+  const recordUsage = recordUsageForApiKey(apiKeyId);
+  const recordRequestPerformance = recordRequestPerformanceForApiKey(
+    apiKeyId,
+    scheduleBackground,
+  );
   let lastPerformance: PerformanceTelemetryContext | undefined;
   let downstreamAbortController: AbortController | undefined;
   try {
     const payload = await c.req.json<GeminiGenerateContentRequest>();
-    const apiKeyId = c.get("apiKeyId") as string | undefined;
 
     downstreamAbortController = wantsStream ? new AbortController() : undefined;
-    const runtimeLocation = runtimeLocationFromRequest(c.req.raw);
-    const scheduleBackground = backgroundSchedulerFromContext(c);
     const ctx: GeminiSourceContext = { payload, apiKeyId };
-    const performanceFor = (
-      usageModel: string,
-      targetApi: PerformanceTelemetryContext["targetApi"],
-    ): PerformanceTelemetryContext => {
-      lastPerformance = {
-        keyId: apiKeyId ?? "unknown",
-        model: usageModel,
-        sourceApi: "gemini",
-        targetApi,
-        stream: wantsStream,
-        runtimeLocation,
-      };
-      return lastPerformance;
-    };
 
     const result = await runSourceInterceptors(
       ctx,
       geminiSourceInterceptors,
       async () => {
-        const { id: modelId } = await resolveModelForRequest(
-          model,
-          geminiModelResolutionIntent(ctx.payload),
-        );
-        performanceFor(modelId, "gemini");
+        const { id: modelId, model: resolvedModel } =
+          await resolveModelForRequest(model);
 
-        const resolution = await resolveUpstreamForModel(modelId);
-        if (resolution.type === "not-found") {
+        if (!resolvedModel) {
           return {
             type: "upstream-error" as const,
             status: 404,
@@ -134,28 +114,17 @@ export const serveGemini = async (
             })),
           };
         }
-        if (resolution.type === "upstream-error") {
-          return modelLoadErrorResult(resolution.error, lastPerformance);
-        }
 
-        return await runOnUpstream(
-          resolution.selection,
-          modelId,
-          async (upstream) => {
+        return await runOnModel(
+          resolvedModel,
+          async (binding) => {
             const attemptPayload = structuredClone(ctx.payload);
-            const capabilities = await getModelCapabilities(
-              modelId,
-              upstream,
-            );
-            const plan = planGeminiRequest(
-              attemptPayload,
-              modelId,
-              capabilities,
-              wantsStream,
-            );
+            const capabilities = getModelCapabilities(binding.upstreamModel);
+            const plan = planGeminiRequest(capabilities);
             if (!plan) {
-              const performance = performanceFor(modelId, "gemini");
-              return unsupportedGeminiModelResult(modelId, performance);
+              return skipProvider(
+                unsupportedGeminiModelResult(modelId),
+              );
             }
 
             if (plan.target === "messages") {
@@ -165,26 +134,26 @@ export const serveGemini = async (
                 wantsStream,
                 capabilities,
               );
-              const performance = performanceFor(
-                targetPayload.model,
-                "messages",
-              );
               const result = await emitToMessages({
                 sourceApi: "gemini",
+                model: modelId,
+                upstream: binding.upstream,
                 payload: targetPayload,
-                upstream,
+                provider: binding.provider,
+                upstreamModel: binding.upstreamModel,
+                enabledFixes: binding.enabledFixes,
+                targetInterceptors: binding.targetInterceptors,
                 apiKeyId,
                 clientStream: wantsStream,
                 runtimeLocation,
                 scheduleBackground,
-                fetchOptions: plan.fetchOptions,
                 downstreamAbortSignal: downstreamAbortController?.signal,
               });
 
-              return withResultMetadata(
-                withTranslatedEvents(result, translateMessagesToSourceEvents),
-                targetPayload.model,
-                performance,
+              if (result.performance) lastPerformance = result.performance;
+              return withTranslatedEvents(
+                result,
+                translateMessagesToSourceEvents,
               );
             }
 
@@ -194,26 +163,26 @@ export const serveGemini = async (
                 modelId,
                 wantsStream,
               );
-              const performance = performanceFor(
-                targetPayload.model,
-                "responses",
-              );
               const result = await emitToResponses({
                 sourceApi: "gemini",
+                model: modelId,
+                upstream: binding.upstream,
                 payload: targetPayload,
-                upstream,
+                provider: binding.provider,
+                upstreamModel: binding.upstreamModel,
+                enabledFixes: binding.enabledFixes,
+                targetInterceptors: binding.targetInterceptors,
                 apiKeyId,
                 clientStream: wantsStream,
                 runtimeLocation,
                 scheduleBackground,
-                fetchOptions: plan.fetchOptions,
                 downstreamAbortSignal: downstreamAbortController?.signal,
               });
 
-              return withResultMetadata(
-                withTranslatedEvents(result, translateResponsesToSourceEvents),
-                targetPayload.model,
-                performance,
+              if (result.performance) lastPerformance = result.performance;
+              return withTranslatedEvents(
+                result,
+                translateResponsesToSourceEvents,
               );
             }
 
@@ -222,29 +191,26 @@ export const serveGemini = async (
               modelId,
               wantsStream,
             );
-            const performance = performanceFor(
-              targetPayload.model,
-              "chat-completions",
-            );
             const result = await emitToChatCompletions({
               sourceApi: "gemini",
+              model: modelId,
+              upstream: binding.upstream,
               payload: targetPayload,
-              upstream,
+              provider: binding.provider,
+              upstreamModel: binding.upstreamModel,
+              enabledFixes: binding.enabledFixes,
+              targetInterceptors: binding.targetInterceptors,
               apiKeyId,
               clientStream: wantsStream,
               runtimeLocation,
               scheduleBackground,
-              fetchOptions: plan.fetchOptions,
               downstreamAbortSignal: downstreamAbortController?.signal,
             });
 
-            return withResultMetadata(
-              withTranslatedEvents(
-                result,
-                translateChatCompletionsToSourceEvents,
-              ),
-              targetPayload.model,
-              performance,
+            if (result.performance) lastPerformance = result.performance;
+            return withTranslatedEvents(
+              result,
+              translateChatCompletionsToSourceEvents,
             );
           },
         );
@@ -255,15 +221,36 @@ export const serveGemini = async (
       c,
       result,
       wantsStream,
+      recordUsage,
+      recordRequestPerformance,
+      requestStartedAt,
       downstreamAbortController,
     );
   } catch (error) {
+    try {
+      const modelError = modelLoadErrorResult(error, lastPerformance);
+      return await respondGemini(
+        c,
+        modelError,
+        false,
+        recordUsage,
+        recordRequestPerformance,
+        requestStartedAt,
+        downstreamAbortController,
+      );
+    } catch {
+      // Not a model-load error; continue with normal request-boundary handling.
+    }
+
     const upstreamError = thrownUpstreamErrorResult(error, lastPerformance);
     if (upstreamError) {
       return await respondGemini(
         c,
         upstreamError,
         false,
+        recordUsage,
+        recordRequestPerformance,
+        requestStartedAt,
         downstreamAbortController,
       );
     }
@@ -276,6 +263,9 @@ export const serveGemini = async (
         lastPerformance,
       ),
       false,
+      recordUsage,
+      recordRequestPerformance,
+      requestStartedAt,
       downstreamAbortController,
     );
   }

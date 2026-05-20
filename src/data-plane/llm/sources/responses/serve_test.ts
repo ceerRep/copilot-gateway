@@ -1314,7 +1314,7 @@ Deno.test("/v1/responses preserves custom upstream /models HTTP errors", async (
     enabledFixes: [],
   });
 
-  await withMockedFetch(async (request) => {
+  await withMockedFetch((request) => {
     const url = new URL(request.url);
 
     if (

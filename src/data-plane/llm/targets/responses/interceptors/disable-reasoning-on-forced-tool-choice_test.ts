@@ -1,19 +1,28 @@
 import { assertEquals } from "@std/assert";
 import type { ResponsesPayload } from "../../../shared/protocol/responses.ts";
-import { stubUpstream } from "../../../../../test-helpers.ts";
+import {
+  stubProvider,
+  stubUpstreamModel,
+  testAccounting,
+} from "../../../../../test-helpers.ts";
 import type { EmitInput } from "../../emit-types.ts";
 import { eventResult } from "../../../shared/errors/result.ts";
 import { withReasoningDisabledOnForcedToolChoice } from "./disable-reasoning-on-forced-tool-choice.ts";
 
-const okEvents = () => Promise.resolve(eventResult((async function* () {})()));
+const okEvents = () =>
+  Promise.resolve(eventResult((async function* () {})(), testAccounting));
 
 const emitInput = (
   payload: ResponsesPayload,
   enabledFixes: ReadonlySet<string> = new Set(),
 ): EmitInput<ResponsesPayload> => ({
   sourceApi: "responses",
+  model: payload.model,
+  upstream: "test-upstream",
   payload,
-  upstream: stubUpstream({ enabledFixes }),
+  provider: stubProvider(),
+  upstreamModel: stubUpstreamModel(),
+  enabledFixes,
 });
 
 Deno.test("responses required tool_choice strips reasoning", async () => {

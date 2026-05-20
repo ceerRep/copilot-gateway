@@ -63,7 +63,7 @@ export const withOutputItemIdsSynchronized: TargetInterceptor<
   const tracker: StreamIdTracker = { outputItemIds: new Map() };
 
   return {
-    type: "events",
+    ...result,
     events: (async function* () {
       for await (const frame of result.events) {
         yield frame.type === "sse"

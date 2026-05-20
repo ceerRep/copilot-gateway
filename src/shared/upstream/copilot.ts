@@ -2,9 +2,22 @@
 // behind the generic Upstream interface. Reuses shared/copilot.ts so the token
 // cache (in-process + KV) stays shared across all callers.
 
-import { copilotFetch } from "../copilot.ts";
+import { copilotFetch, isCopilotTokenFetchError } from "../copilot.ts";
 import type { EndpointKey } from "../../repo/types.ts";
 import type { Upstream, UpstreamFetchOptions } from "./types.ts";
+
+export interface CopilotUpstreamFetchOptions extends UpstreamFetchOptions {
+  vision?: boolean;
+  initiator?: "user" | "agent";
+}
+
+export interface CopilotUpstream extends Upstream {
+  fetch(
+    endpoint: EndpointKey,
+    init: RequestInit,
+    options?: CopilotUpstreamFetchOptions,
+  ): Promise<Response>;
+}
 
 const COPILOT_UPSTREAM_ID = "copilot";
 
@@ -49,29 +62,34 @@ const tokenHash = async (
 export const createCopilotUpstream = async (
   githubToken: string,
   accountType: string,
-): Promise<Upstream> => {
+): Promise<CopilotUpstream> => {
   const tag = await tokenHash(githubToken, accountType);
   return {
     id: `${COPILOT_UPSTREAM_ID}:${tag}`,
     name: "GitHub Copilot",
     kind: "copilot",
     supportedEndpoints: COPILOT_SUPPORTED_ENDPOINTS,
-    // Admin's explicit opt-in set. Empty for Copilot — admin has no
-    // opt-in path here; per-kind defaults are layered on top in
-    // `data-plane/llm/shared/upstream-run.ts` before interceptors run.
-    // Copilot-only structural workarounds (anthropic beta header rewrite,
-    // [DONE] sentinel stripping, etc.) live in targets/<x>/interceptors/copilot/
-    // and are attached by the assembler purely on `kind === "copilot"`, so
-    // they don't appear here.
+    // Admin's explicit opt-in set. Empty for Copilot: Copilot provider code
+    // owns its default fixes and Copilot-only structural workarounds before
+    // this low-level adapter sends the HTTP request.
     enabledFixes: new Set<string>(),
-    fetch: (endpoint, init, options?: UpstreamFetchOptions) =>
-      copilotFetch(
-        COPILOT_PATHS[endpoint],
-        init,
-        githubToken,
-        accountType,
-        options,
-      ),
+    fetch: async (endpoint, init, options?: CopilotUpstreamFetchOptions) => {
+      try {
+        return await copilotFetch(
+          COPILOT_PATHS[endpoint],
+          init,
+          githubToken,
+          accountType,
+          options,
+        );
+      } catch (error) {
+        if (!isCopilotTokenFetchError(error)) throw error;
+        return new Response(error.body, {
+          status: error.status,
+          headers: new Headers(error.headers),
+        });
+      }
+    },
   };
 };
 

@@ -464,7 +464,6 @@ Deno.test("DashboardPage no longer ships pricing regexes to the client", () => {
   // model-name regex should appear in the rendered dashboard script.
   assertFalse(html.includes("MODEL_PRICING"));
   assertFalse(html.includes("getModelPricing"));
-  assertFalse(html.includes("usageModelName"));
 });
 
 Deno.test("DashboardPage renders clickable usage summary metrics for chart axis selection", () => {
@@ -1306,28 +1305,6 @@ Deno.test("DashboardPage uses frontend-only selected GitHub account for quota di
   assertFalse(html.includes("/auth/github/switch"));
 });
 
-Deno.test("DashboardPage only shows GitHub account backoff status when models are cooling down", () => {
-  const html = DashboardPage().toString();
-
-  assertStringIncludes(html, 'x-show="hasUnavailableModels(acct)"');
-  assertStringIncludes(html, "return count + ' backoff';");
-  assertStringIncludes(html, 'x-text="unavailableBadgeText(acct)"');
-  assertStringIncludes(html, 'x-text="cooldownRecoveryText(status)"');
-  assertStringIncludes(html, "expiresAt > this.now");
-  assertStringIncludes(html, "return 'in ' + this.cooldownRemaining(status);");
-  assertStringIncludes(
-    html,
-    "flex flex-col gap-1 rounded-md bg-white/[0.03] px-2 py-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3",
-  );
-  assertStringIncludes(
-    html,
-    "w-fit shrink-0 font-mono text-[10px] text-accent-amber",
-  );
-  assertFalse(html.includes("'Ready'"));
-  assertFalse(html.includes(" limited"));
-  assertFalse(html.includes("expired"));
-});
-
 Deno.test("DashboardPage renders Settings import preview responsively", () => {
   const html = DashboardPage().toString();
 
@@ -1453,6 +1430,7 @@ Deno.test("dashboardApp model search does not crash when model.name is missing",
               {
                 id: "named-model",
                 name: "Named Model",
+                display_name: "Friendly Named Model",
                 model_picker_enabled: true,
                 capabilities: { type: "chat", limits: {} },
                 supported_endpoints: ["/chat/completions"],
@@ -1474,6 +1452,10 @@ Deno.test("dashboardApp model search does not crash when model.name is missing",
       (m: { id: string }) => m.id === "custom-model-no-name",
     );
     assertEquals(nameless.name, "custom-model-no-name");
+    const named = app.allModels.find(
+      (m: { id: string }) => m.id === "named-model",
+    );
+    assertEquals(named.name, "Friendly Named Model");
 
     app.modelsSearch = "custom";
     const filtered = app.filteredChatModels
@@ -1481,7 +1463,7 @@ Deno.test("dashboardApp model search does not crash when model.name is missing",
       .map((m: { id: string }) => m.id);
     assertEquals(filtered, ["custom-model-no-name"]);
 
-    app.modelsSearch = "Named Model";
+    app.modelsSearch = "Friendly";
     const filtered2 = app.filteredChatModels
       .filter((m: { _divider?: boolean }) => !m._divider)
       .map((m: { id: string }) => m.id);

@@ -1,12 +1,14 @@
 // Merge Claude reasoning-effort and 1M-context variants into a single base id
 // for /v1/models surfacing. The data plane keeps requesting upstream by their
-// real ids — request planning still resolves the variant from intent in
-// src/data-plane/llm/shared/models/resolve-model.ts. This merge is purely an
+// real ids — each provider still resolves the raw variant from request fields
+// before calling upstream. This merge is purely an
 // outbound view so OpenAI/Anthropic-shaped clients see one Claude model id
 // per family.
 //
 // Field policy:
-//   id, version, name, policy.terms, capabilities.family    -> base
+//   id, version, capabilities.family                        -> public base id
+//   name, display_name                                      -> base display fields
+//   policy.terms                                            -> base
 //   capabilities.limits.max_*_tokens                        -> max across siblings
 //   capabilities.supports.reasoning_effort                  -> union
 //   billing.multiplier                                      -> base
@@ -21,10 +23,10 @@
 // questions. restricted_to is a union for the same reason: a permissive view
 // for clients that do happen to read it; upstream still enforces real access.
 
-import { displayModelName } from "../../shared/model-name.ts";
-import type { ModelInfo, ModelsResponse } from "./types.ts";
+import { copilotPublicModelId } from "./model-name.ts";
+import type { CopilotModelsResponse, CopilotRawModel } from "./types.ts";
 
-const isClaudeModel = (model: ModelInfo): boolean =>
+const isClaudeModel = (model: CopilotRawModel): boolean =>
   model.id.startsWith("claude-");
 
 const maxOf = (...values: (number | undefined)[]): number | undefined => {
@@ -48,8 +50,8 @@ const unionStrings = (
   return saw ? seen : undefined;
 };
 
-const pickBase = (variants: ModelInfo[]): ModelInfo => {
-  const baseId = displayModelName(variants[0].id);
+const pickBase = (variants: CopilotRawModel[]): CopilotRawModel => {
+  const baseId = copilotPublicModelId(variants[0].id);
   const exact = variants.find((m) => m.id === baseId);
   if (exact) return exact;
   // No exact base id (e.g. only suffixed variants exist); pick the shortest id
@@ -57,16 +59,19 @@ const pickBase = (variants: ModelInfo[]): ModelInfo => {
   return [...variants].sort((a, b) => a.id.length - b.id.length)[0];
 };
 
-const mergeVariantGroup = (variants: ModelInfo[]): ModelInfo => {
+const mergeVariantGroup = (variants: CopilotRawModel[]): CopilotRawModel => {
   const base = pickBase(variants);
-  const baseId = displayModelName(base.id);
+  const baseId = copilotPublicModelId(base.id);
+  const displayName = base.display_name ?? base.name ?? baseId;
   const limits = base.capabilities?.limits ?? {};
   const supports = base.capabilities?.supports ?? {};
 
-  const merged: ModelInfo = {
+  const merged: CopilotRawModel = {
     ...base,
     id: baseId,
+    name: displayName,
     version: baseId,
+    display_name: displayName,
     capabilities: {
       ...base.capabilities,
       family: baseId,
@@ -107,13 +112,15 @@ const mergeVariantGroup = (variants: ModelInfo[]): ModelInfo => {
 };
 
 export const mergeClaudeVariants = (
-  models: ModelsResponse,
-): ModelsResponse => {
-  const groups = new Map<string, ModelInfo[]>();
+  models: CopilotModelsResponse,
+): CopilotModelsResponse => {
+  const groups = new Map<string, CopilotRawModel[]>();
   const order: string[] = [];
 
   for (const model of models.data) {
-    const key = isClaudeModel(model) ? displayModelName(model.id) : model.id;
+    const key = isClaudeModel(model)
+      ? copilotPublicModelId(model.id)
+      : model.id;
     if (!groups.has(key)) {
       groups.set(key, []);
       order.push(key);

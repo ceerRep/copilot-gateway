@@ -5,6 +5,7 @@ import type {
 } from "../../../../shared/protocol/responses.ts";
 import { initRepo } from "../../../../../../repo/index.ts";
 import { InMemoryRepo } from "../../../../../../repo/memory.ts";
+import { testAccounting } from "../../../../../../test-helpers.ts";
 import { eventResult } from "../../../../shared/errors/result.ts";
 import { jsonFrame } from "../../../../shared/stream/types.ts";
 import { withConnectionMismatchRetried } from "./retry-connection-mismatch.ts";
@@ -90,19 +91,22 @@ Deno.test("withConnectionMismatchRetried rewrites already-spotted ids before the
     seenId = (payload.input as unknown as Array<Record<string, unknown>>)[0]
       .id as string;
 
-    return Promise.resolve(eventResult((async function* () {
-      yield jsonFrame(
-        {
-          id: "resp_ok",
-          object: "response",
-          model: "gpt-test",
-          status: "completed",
-          output_text: "ok",
-          output: [],
-          usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
-        } satisfies ResponsesResult,
-      );
-    })()));
+    return Promise.resolve(eventResult(
+      (async function* () {
+        yield jsonFrame(
+          {
+            id: "resp_ok",
+            object: "response",
+            model: "gpt-test",
+            status: "completed",
+            output_text: "ok",
+            output: [],
+            usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
+          } satisfies ResponsesResult,
+        );
+      })(),
+      testAccounting,
+    ));
   });
 
   assertEquals(attempts, 1);

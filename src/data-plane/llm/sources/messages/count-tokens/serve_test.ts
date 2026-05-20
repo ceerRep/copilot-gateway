@@ -27,6 +27,11 @@ Deno.test("/v1/messages/count_tokens proxies to Copilot upstream", async () => {
     if (url.hostname === "update.code.visualstudio.com") {
       return jsonResponse(["1.110.1"]);
     }
+    if (url.pathname === "/models") {
+      return jsonResponse(copilotModels([
+        { id: "claude-sonnet-4", supported_endpoints: ["/v1/messages"] },
+      ]));
+    }
     capturedPath = url.pathname;
     return jsonResponse({ input_tokens: 42 });
   }, async () => {
@@ -49,6 +54,52 @@ Deno.test("/v1/messages/count_tokens proxies to Copilot upstream", async () => {
   });
 });
 
+Deno.test("/v1/messages/count_tokens rejects body anthropic_beta", async () => {
+  const { apiKey } = await setupAppTest();
+
+  const response = await requestApp("/v1/messages/count_tokens", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey.key,
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4",
+      max_tokens: 64,
+      anthropic_beta: ["context-1m-2025-08-07"],
+      messages: [{ role: "user", content: "hello" }],
+    }),
+  });
+
+  assertEquals(response.status, 400);
+  const body = await response.json();
+  assertEquals(body.error.type, "invalid_request_error");
+  assertEquals(body.error.param, "anthropic_beta");
+});
+
+Deno.test("/v1/messages/count_tokens rejects body betas", async () => {
+  const { apiKey } = await setupAppTest();
+
+  const response = await requestApp("/v1/messages/count_tokens", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey.key,
+    },
+    body: JSON.stringify({
+      model: "claude-sonnet-4",
+      max_tokens: 64,
+      betas: ["context-1m-2025-08-07"],
+      messages: [{ role: "user", content: "hello" }],
+    }),
+  });
+
+  assertEquals(response.status, 400);
+  const body = await response.json();
+  assertEquals(body.error.type, "invalid_request_error");
+  assertEquals(body.error.param, "betas");
+});
+
 Deno.test("/messages/count_tokens aliases /v1/messages/count_tokens", async () => {
   const { apiKey } = await setupAppTest();
   let capturedPath = "";
@@ -58,6 +109,11 @@ Deno.test("/messages/count_tokens aliases /v1/messages/count_tokens", async () =
     if (url.hostname === "api.github.com") return copilotTokenResponse();
     if (url.hostname === "update.code.visualstudio.com") {
       return jsonResponse(["1.110.1"]);
+    }
+    if (url.pathname === "/models") {
+      return jsonResponse(copilotModels([
+        { id: "claude-sonnet-4", supported_endpoints: ["/v1/messages"] },
+      ]));
     }
     capturedPath = url.pathname;
     return jsonResponse({ input_tokens: 24 });
@@ -148,7 +204,7 @@ Deno.test("/v1/messages/count_tokens rejects custom-upstream-only models", async
     enabledFixes: [],
   });
 
-  await withMockedFetch(async (request) => {
+  await withMockedFetch((request) => {
     const url = new URL(request.url);
 
     if (
@@ -180,7 +236,9 @@ Deno.test("/v1/messages/count_tokens rejects custom-upstream-only models", async
     const body = await response.json();
     assertEquals(body.error.type, "invalid_request_error");
     assertEquals(
-      body.error.message.includes("only supported for Copilot-hosted models"),
+      body.error.message.includes(
+        "does not support the /messages/count_tokens endpoint",
+      ),
       true,
     );
   });
@@ -204,7 +262,7 @@ Deno.test("/v1/messages/count_tokens preserves custom upstream /models HTTP erro
     enabledFixes: [],
   });
 
-  await withMockedFetch(async (request) => {
+  await withMockedFetch((request) => {
     const url = new URL(request.url);
 
     if (
