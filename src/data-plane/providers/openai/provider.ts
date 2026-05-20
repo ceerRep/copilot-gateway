@@ -56,10 +56,24 @@ export const createOpenAiProvider = (
       const result = await loadModels(upstream);
       if (result.type === "error") throw result.error;
 
+      // When the admin trusts the upstream-level endpoint configuration, the
+      // per-model supported_endpoints from /v1/models is intentionally
+      // ignored. The cascaded-gateway escape hatch: if this upstream is
+      // itself a gateway that already knows how to translate, we want plan()
+      // to pick a same-shape passthrough target so the wire body stays
+      // byte-stable end-to-end and prefix caching at the real upstream keeps
+      // hitting, rather than picking a translated target based on the inner
+      // gateway's narrower per-model surface.
+      const trustUpstreamEndpoints = enabledFixes.has(
+        "trust-upstream-endpoints",
+      );
+
       const models: UpstreamModel[] = [];
       for (const rawModel of result.data.data) {
         if (!rawModel.id) continue;
-        const rawEndpoints = rawModel.supported_endpoints
+        const rawEndpoints = trustUpstreamEndpoints
+          ? configuredEndpoints
+          : rawModel.supported_endpoints
           ? publicPathsToModelEndpoints(rawModel.supported_endpoints)
           : configuredEndpoints;
         const model = withModelInfoDefaults(rawModel);

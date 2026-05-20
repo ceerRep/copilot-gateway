@@ -177,3 +177,82 @@ Deno.test("collectProviderModels merges Copilot and cascaded Claude bindings int
     );
   });
 });
+
+Deno.test("trust-upstream-endpoints overrides per-model supported_endpoints with the upstream-configured set", async () => {
+  const { githubAccount, repo } = await setupAppTest();
+  // Drop the seeded Copilot account so the cascaded upstream is the only
+  // provider that exposes Claude — the configuration where this fix
+  // actually changes routing.
+  await repo.github.deleteAccount(githubAccount.user.id);
+
+  await repo.upstreamConfigs.save({
+    id: "up_cascaded",
+    name: "Cascaded copilot-gateway",
+    baseUrl: "https://cascaded.example.com",
+    bearerToken: "sk-cascaded",
+    supportedEndpoints: ["/v1/messages", "/v1/responses", "/chat/completions"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    enabledFixes: ["trust-upstream-endpoints"],
+  });
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+    if (
+      url.hostname === "cascaded.example.com" && url.pathname === "/v1/models"
+    ) {
+      // The cascaded upstream narrows Claude to /v1/messages — the very
+      // condition that, without the fix, forces local
+      // responses-via-messages translation.
+      return jsonResponse({
+        object: "list",
+        data: [{ id: "claude-sonnet-4-6", supported_endpoints: ["/v1/messages"] }],
+      });
+    }
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const resolved = await resolveModelForRequest("claude-sonnet-4-6");
+    // The model's own ["/v1/messages"] is ignored in favor of the
+    // upstream-configured set — plan() can now pick Responses→Responses
+    // passthrough and avoid translating at this hop.
+    assertEquals(resolved.model?.supportedEndpoints.sort(), [
+      "chat_completions",
+      "messages",
+      "responses",
+    ]);
+  });
+});
+
+Deno.test("trust-upstream-endpoints stays opt-in: without the flag, per-model supported_endpoints is honored", async () => {
+  const { githubAccount, repo } = await setupAppTest();
+  await repo.github.deleteAccount(githubAccount.user.id);
+
+  await repo.upstreamConfigs.save({
+    id: "up_cascaded",
+    name: "Cascaded copilot-gateway",
+    baseUrl: "https://cascaded.example.com",
+    bearerToken: "sk-cascaded",
+    supportedEndpoints: ["/v1/messages", "/v1/responses", "/chat/completions"],
+    enabled: true,
+    sortOrder: 100,
+    createdAt: "2026-05-01T00:00:00.000Z",
+    enabledFixes: [],
+  });
+
+  await withMockedFetch((request) => {
+    const url = new URL(request.url);
+    if (
+      url.hostname === "cascaded.example.com" && url.pathname === "/v1/models"
+    ) {
+      return jsonResponse({
+        object: "list",
+        data: [{ id: "claude-sonnet-4-6", supported_endpoints: ["/v1/messages"] }],
+      });
+    }
+    throw new Error(`Unhandled fetch ${request.url}`);
+  }, async () => {
+    const resolved = await resolveModelForRequest("claude-sonnet-4-6");
+    assertEquals(resolved.model?.supportedEndpoints, ["messages"]);
+  });
+});

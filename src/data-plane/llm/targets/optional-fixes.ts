@@ -73,6 +73,13 @@ export const OPTIONAL_FIXES = [
       "Disable reasoning in the outbound request when the caller forces a specific tool. Combine with a vendor flag above to also emit that vendor's disable signal.",
     appliesTo: ["messages", "responses", "chat_completions"],
   },
+  {
+    id: "trust-upstream-endpoints",
+    label: "Trust upstream-configured endpoints (cache-friendly passthrough)",
+    description:
+      "Ignore per-model supported_endpoints from this upstream's /v1/models and route by the admin-configured upstream-level supported endpoints instead. Use when the upstream is itself a cascaded gateway you want to own translation end-to-end — the plan layer then prefers same-shape passthrough (Responses→Responses, Messages→Messages, etc.) so upstream prefix caching keeps hitting.",
+    appliesTo: ["messages", "responses", "chat_completions"],
+  },
 ] as const satisfies readonly Flag[];
 
 export type OptionalFixId = typeof OPTIONAL_FIXES[number]["id"];
