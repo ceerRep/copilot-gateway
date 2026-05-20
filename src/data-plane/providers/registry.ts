@@ -4,6 +4,17 @@ import { endpointsIncludeLlmGeneration } from "./endpoints.ts";
 import { createOpenAiProvider } from "./openai/provider.ts";
 import type { Model, ModelEndpoint, ModelProviderInstance } from "./types.ts";
 
+// Dot/dash-insensitive canonical form for Claude ids. A cascaded
+// copilot-gateway exposes claude ids in dashed public form
+// (claude-sonnet-4-7) while Copilot's native /models is dotted
+// (claude-sonnet-4.7); both forms must resolve to the same Model regardless
+// of which side a caller hits. Strips ONLY the dot/dash distinction — date
+// suffixes and variant suffixes are intentionally preserved so the alias path
+// keeps owning that rewrite (and its provider-scoping). Non-claude ids pass
+// through unchanged.
+const claudeDotDashKey = (id: string): string =>
+  id.startsWith("claude-") ? id.replace(/(\d)\.(\d)/g, "$1-$2") : id;
+
 interface ProviderModelsResult {
   models: Model[];
   sawSuccess: boolean;
@@ -44,6 +55,11 @@ const collectProviderModels = async (
   providers: readonly ModelProviderInstance[],
 ): Promise<ProviderModelsResult> => {
   const byId = new Map<string, Model>();
+  // For claude-* ids we also key by canonical (dashed public) form so a
+  // Copilot account (publishing dotted upstream ids in some legacy paths) and
+  // a cascaded copilot-gateway (publishing dashed public ids) merge into one
+  // Model with both bindings, instead of becoming two separate entries.
+  const claudeCanonicalToId = new Map<string, string>();
   let sawSuccess = false;
   let lastError: unknown = null;
 
@@ -58,7 +74,13 @@ const collectProviderModels = async (
           supportedEndpoints: upstreamSupportedEndpoints,
           ...modelInfo
         } = upstreamModel;
-        const existing = byId.get(upstreamModel.id);
+        const canonical = upstreamModel.id.startsWith("claude-")
+          ? claudeDotDashKey(upstreamModel.id)
+          : undefined;
+        const existingKey = canonical
+          ? claudeCanonicalToId.get(canonical) ?? upstreamModel.id
+          : upstreamModel.id;
+        const existing = byId.get(existingKey);
         if (!existing) {
           byId.set(upstreamModel.id, {
             ...modelInfo,
@@ -75,6 +97,7 @@ const collectProviderModels = async (
               targetInterceptors: instance.targetInterceptors,
             }],
           });
+          if (canonical) claudeCanonicalToId.set(canonical, upstreamModel.id);
           continue;
         }
 
@@ -83,7 +106,7 @@ const collectProviderModels = async (
         // public /models metadata. Runtime execution still uses the selected
         // provider's own UpstreamModel, so capability-sensitive calls do not
         // depend on this merged view being perfectly representative.
-        byId.set(upstreamModel.id, {
+        byId.set(existingKey, {
           ...existing,
           supportedEndpoints: unionEndpoints(
             existing.supportedEndpoints,
@@ -204,6 +227,23 @@ export const resolveModelForRequest = async (
 
   const exact = byId.get(modelId);
   if (exact) return { id: exact.id, model: exact };
+
+  // Fall back to dot/dash-insensitive Claude lookup before alias resolution:
+  // an OpenAI-compatible upstream (notably a cascaded copilot-gateway) only
+  // gets its alias normalization through its provider's own /models view, not
+  // through resolveProviderAlias, so a caller sending the opposite form of
+  // what the upstream publishes must still resolve.
+  if (modelId.startsWith("claude-")) {
+    const canonical = claudeDotDashKey(modelId);
+    for (const model of models) {
+      if (
+        model.id.startsWith("claude-") &&
+        claudeDotDashKey(model.id) === canonical
+      ) {
+        return { id: model.id, model };
+      }
+    }
+  }
 
   const alias = resolveProviderAlias(providers, byId, modelId);
   if (alias) return { id: alias.id, model: alias };
