@@ -12,7 +12,7 @@
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelKind, type ModelPricing, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
-import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall } from '@floway-dev/provider';
+import { chatField, fetchUpstreamModels, type Fetcher, identityWrapUpstreamCall, ProviderModelsUnavailableError, type UpstreamChatModelConfig } from '@floway-dev/provider';
 
 export interface CustomRawModel {
   id: string;
@@ -135,8 +135,53 @@ const parseCustomModelsResponse = (value: unknown): CustomModelsResponse | null 
   return { data };
 };
 
-export const fetchCustomModels = (config: CustomUpstreamConfig, fetcher: Fetcher): Promise<CustomModelsResponse> =>
-  fetchUpstreamModels(
-    () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
-    parseCustomModelsResponse,
-  );
+// Custom upstreams point at arbitrary third-party URLs, so a slow or
+// unresponsive one must not be able to wedge the whole get-model path with an
+// unbounded fetch. Each attempt gives the upstream 2s to start responding
+// (headers in) and 5s for the full round-trip (headers + body); whichever
+// budget is breached aborts the attempt. A breached attempt is retried up to
+// 3 times. Only timeouts and transport failures are retried — a delivered HTTP
+// response (even a non-2xx) or an unparseable body is the upstream's final
+// answer and is surfaced immediately.
+const RESPONSE_TIMEOUT_MS = 2000;
+const TOTAL_TIMEOUT_MS = 5000;
+const MODELS_FETCH_MAX_RETRIES = 3;
+
+export const fetchCustomModels = async (config: CustomUpstreamConfig, fetcher: Fetcher): Promise<CustomModelsResponse> => {
+  let lastCause: unknown;
+  for (let attempt = 0; attempt <= MODELS_FETCH_MAX_RETRIES; attempt++) {
+    const controller = new AbortController();
+    const responseTimer = setTimeout(() => controller.abort(new DOMException(`/models response not started within ${RESPONSE_TIMEOUT_MS}ms`, 'TimeoutError')), RESPONSE_TIMEOUT_MS);
+    const totalTimer = setTimeout(() => controller.abort(new DOMException(`/models fetch exceeded ${TOTAL_TIMEOUT_MS}ms`, 'TimeoutError')), TOTAL_TIMEOUT_MS);
+    try {
+      return await fetchUpstreamModels(
+        async () => {
+          const response = await customFetchModels(
+            config,
+            { method: 'GET', signal: controller.signal },
+            { fetcher, wrapUpstreamCall: identityWrapUpstreamCall },
+          );
+          // Headers are in: the response budget no longer applies, only the total.
+          clearTimeout(responseTimer);
+          return response;
+        },
+        parseCustomModelsResponse,
+      );
+    } catch (error) {
+      // The upstream's own answer (non-2xx HTTP, malformed body, bad shape) is
+      // final — surface it without burning retries. Only a timeout (the
+      // controller aborted) or a transport-level failure earns a retry.
+      if (!(error instanceof ProviderModelsUnavailableError)) {
+        throw new ProviderModelsUnavailableError(null, error);
+      }
+      const retryable = error.httpResponse === null
+        && (controller.signal.aborted || error.cause instanceof TypeError);
+      if (!retryable) throw error;
+      lastCause = error.cause ?? error;
+    } finally {
+      clearTimeout(responseTimer);
+      clearTimeout(totalTimer);
+    }
+  }
+  throw new ProviderModelsUnavailableError(null, lastCause);
+};
