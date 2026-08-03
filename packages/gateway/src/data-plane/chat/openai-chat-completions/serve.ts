@@ -6,7 +6,8 @@ import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { maybeDeferPrefillKeepAlive, type PrefillKeepAliveFailure } from '../shared/prefill-keepalive.ts';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { ExecuteResult } from '@floway-dev/provider';
 
@@ -14,6 +15,7 @@ export interface OpenAIChatCompletionsServeGenerateArgs {
   readonly payload: OpenAIChatCompletionsPayload;
   readonly ctx: ChatGatewayCtx;
   readonly headers: Headers;
+  readonly prefillKeepAlive?: boolean;
 }
 
 export const openaiChatCompletionsServe = {
@@ -46,10 +48,28 @@ export const openaiChatCompletionsServe = {
       ctx,
       'chat',
       async candidate => {
-        const result = await openaiChatCompletionsAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers });
+        const attempt = openaiChatCompletionsAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers });
+        const result = await maybeDeferPrefillKeepAlive({
+          enabled: args.prefillKeepAlive === true,
+          ctx,
+          candidate,
+          attempt,
+          failureFrames: openaiChatCompletionsPrefillFailureFrames,
+        });
         if (result.type === 'events') ctx.affinity.select(candidate);
         return result;
       },
     );
   },
+};
+
+const openaiChatCompletionsPrefillFailureFrames = function* (failure: PrefillKeepAliveFailure): Iterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>> {
+  yield eventFrame({
+    error: {
+      message: failure.message,
+      type: failure.openAIType,
+      param: failure.openAIParam,
+      code: failure.openAICode,
+    },
+  } as unknown as OpenAIChatCompletionsStreamEvent);
 };

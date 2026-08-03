@@ -9,6 +9,7 @@ import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
+import { isPrefillKeepAliveDeferred } from '../shared/prefill-keepalive.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
 import { eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
@@ -68,6 +69,7 @@ export const respondOpenAIChatCompletions = async (
       completion = await writeSSEFrames(stream, openaiChatCompletionsSseFrames(frames, includeUsageChunk, state, ctx), {
         keepAlive: { frame: sseCommentFrame('keepalive') },
         ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
+        writeInitialKeepAlive: isPrefillKeepAliveDeferred(result),
       });
     } finally {
       const metadata = await eventResultMetadata(result);
@@ -118,6 +120,10 @@ const observeOpenAIChatCompletionsFrames = async function* (frames: AsyncIterabl
 const openaiChatCompletionsSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>, includeUsageChunk: boolean, state: SourceStreamState, ctx: GatewayCtx) {
   try {
     for await (const frame of frames) {
+      if (frame.type === 'event' && openaiChatCompletionsErrorPayloadMessage(frame.event) !== null) {
+        yield sseFrame(JSON.stringify(frame.event), 'error');
+        continue;
+      }
       const sse = openaiChatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk });
       if (sse) yield sse;
     }

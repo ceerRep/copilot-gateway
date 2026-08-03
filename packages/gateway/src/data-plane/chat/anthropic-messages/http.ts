@@ -76,7 +76,7 @@ export const anthropicMessagesHttp = {
 
       const wantsStream = payload.stream === true;
       ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonOpenAIResponsesSourceStore(apiKey.id));
-      const result = await anthropicMessagesServe.generate({ payload, ctx, headers: inboundHeaders(c) });
+      const result = await anthropicMessagesServe.generate({ payload, ctx, headers: inboundHeaders(c), prefillKeepAlive: wantsStream });
       const response = await respondAnthropicMessages(c, result, wantsStream, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {
