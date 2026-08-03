@@ -25,4 +25,5 @@ export const OLLAMA_DEFAULT_FLAGS: FlagDefaults = {
   // So a subsequent turn would look like a fresh context with no history to models.
   // There is no point to request stateful mode from Ollama.
   'openai-responses-store-false': true,
+  'stream-prefill-keepalive': false,
 };

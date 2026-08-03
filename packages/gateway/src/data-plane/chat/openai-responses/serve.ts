@@ -3,18 +3,21 @@ import { openaiResponsesCreatedAt, wrapOpenAIResponsesStatefulOutput } from './c
 import { completeOpenAIResponsesCompaction } from './compaction-resource.ts';
 import type { OpenAIResponsesAttemptResult } from './interceptors/types.ts';
 import { syntheticEventsFromCompaction } from './items/output.ts';
+import { createOpenAIResponsesResponseId } from './response-id.ts';
 import { prepareOpenAIResponsesServePlan } from './serve-prep.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { maybeDeferPrefillKeepAlive, type PrefillKeepAliveFailure } from '../shared/prefill-keepalive.ts';
 import { serializeOpenAIResponsesStream, shouldSerializeStreamItems } from '../shared/stream-compatibility/index.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesCompaction, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { collectOpenAIResponsesProtocolEventsToResult, type CanonicalOpenAIResponsesPayload, type ClientOpenAIResponsesCompaction, type OpenAIResponsesResultEx, type OpenAIResponsesStreamEventEx } from '@floway-dev/protocols/openai-responses';
 import { providerModelOf, type ExecuteResult } from '@floway-dev/provider';
 
 interface OpenAIResponsesServeArgs {
   readonly payload: CanonicalOpenAIResponsesPayload;
   readonly ctx: ChatGatewayCtx;
   readonly headers: Headers;
+  readonly prefillKeepAlive?: boolean;
 }
 
 export const openaiResponsesServe = {
@@ -34,7 +37,7 @@ export const openaiResponsesServe = {
       ctx,
       'chat',
       async candidate => {
-        const result = await openaiResponsesAttempt.generate({
+        const attempt = openaiResponsesAttempt.generate({
           payload: plan.affinitySelection.payloadFor(candidate),
           sourceState: {
             privatePayloads: plan.privatePayloads,
@@ -42,6 +45,13 @@ export const openaiResponsesServe = {
           ctx,
           candidate,
           headers,
+        });
+        const result = await maybeDeferPrefillKeepAlive({
+          enabled: args.prefillKeepAlive === true,
+          ctx,
+          candidate,
+          attempt,
+          failureFrames: failure => openaiResponsesPrefillFailureFrames(failure, candidate.model.id),
         });
         if (result.type !== 'events') return result;
         ctx.affinity.select(candidate);
@@ -94,4 +104,20 @@ export const openaiResponsesServe = {
       result: completeOpenAIResponsesCompaction(persisted, openaiResponsesCreatedAt(ctx)),
     };
   },
+};
+
+const openaiResponsesPrefillFailureFrames = function* (failure: PrefillKeepAliveFailure, model: string): Iterable<ProtocolFrame<OpenAIResponsesStreamEventEx>> {
+  const response: OpenAIResponsesResultEx = {
+    id: createOpenAIResponsesResponseId(),
+    object: 'response',
+    model,
+    output: [],
+    status: 'failed',
+    error: {
+      code: failure.responsesCode,
+      message: failure.message,
+    },
+    incomplete_details: null,
+  };
+  yield eventFrame({ type: 'response.failed', response });
 };

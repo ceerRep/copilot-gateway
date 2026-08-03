@@ -22,4 +22,5 @@ export const AZURE_DEFAULT_FLAGS: FlagDefaults = {
   'strip-prompt-cache-key': false,
   'usage-exclusive-cached-tokens': false,
   'openai-responses-store-false': false,
+  'stream-prefill-keepalive': false,
 };

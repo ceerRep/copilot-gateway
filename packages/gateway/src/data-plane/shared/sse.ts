@@ -18,6 +18,7 @@ interface SseKeepAliveOptions {
 interface SseStreamOptions {
   keepAlive?: SseKeepAliveOptions;
   downstreamAbortController?: AbortController;
+  writeInitialKeepAlive?: boolean;
 }
 
 type ResolvedSseKeepAliveOptions = Required<SseKeepAliveOptions>;
@@ -103,6 +104,7 @@ const drainSSEFrames = async (
   events: AsyncIterable<SseWritableFrame>,
   keepAlive: ResolvedSseKeepAliveOptions | undefined,
   downstreamAbortController: AbortController | undefined,
+  writeInitialKeepAlive: boolean,
 ): Promise<StreamCompletion> => {
   const iterator = events[Symbol.asyncIterator]();
   const abortDownstream = () => {
@@ -122,6 +124,8 @@ const drainSSEFrames = async (
     stoppedByDownstream = true;
     abortDownstream();
   };
+
+  if (writeInitialKeepAlive && keepAlive) await writeSSEFrame(stream, keepAlive.frame);
 
   try {
     while (true) {
@@ -171,5 +175,5 @@ const drainSSEFrames = async (
 
 export const writeSSEFrames = async (stream: SSEStreamingApi, events: AsyncIterable<SseWritableFrame>, options: SseStreamOptions = {}): Promise<StreamCompletion> => {
   const keepAlive = resolveKeepAliveOptions(options.keepAlive);
-  return await drainSSEFrames(stream, events, keepAlive, options.downstreamAbortController);
+  return await drainSSEFrames(stream, events, keepAlive, options.downstreamAbortController, options.writeInitialKeepAlive === true);
 };

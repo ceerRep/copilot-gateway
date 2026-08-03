@@ -33,6 +33,7 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   // `400 {"error":{"message":"store is not
   // supported","code":"unsupported_value","param":"store"}}`.
   'openai-responses-store-false': true,
+  'stream-prefill-keepalive': false,
 };
 
 // True when the model id names a Claude release Copilot can serve an inline

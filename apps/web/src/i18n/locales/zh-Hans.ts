@@ -732,6 +732,11 @@ const zhHansCN = {
               description:
                   '使用 OpenAI Responses 协议连接上游时，不论下游如何设置 `store` 参数，总是指定 `{"store": false}` 来关闭有状态模式。\nFloway 在上游方向不使用有状态的功能，因此关闭状态或有助于控制数据留存。',
             },
+            'stream-prefill-keepalive': {
+              label: '流式预填充保活',
+              description:
+                  '部分上游在返回流式响应头之前，可能需要超过一分钟来准备响应。\n开启此选项后，Floway 会在等待 60 秒后先打开下游 SSE 响应，并在继续等待时发送符合源协议的保活帧。若上游随后失败，Floway 会发送源协议的流式错误并关闭连接。',
+            },
           },
         },
         models: {

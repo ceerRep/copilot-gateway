@@ -29,4 +29,5 @@ export const CODEX_DEFAULT_FLAGS: FlagDefaults = {
   // the server side. Therefore, turning on stateless mode would cause models to
   // lose web search results across turns.
   'openai-responses-store-false': false,
+  'stream-prefill-keepalive': false,
 };

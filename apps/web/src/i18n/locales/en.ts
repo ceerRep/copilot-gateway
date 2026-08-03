@@ -764,6 +764,11 @@ const en = {
               description:
                   'When connecting to upstreams using the OpenAI Responses protocol, always specify `{"store": false}` to disable stateful features, regardless of how downstream clients set their `store` parameter.\nFloway does not use stateful features on the upstream direction. Disabling upstream states may help control data residency.',
             },
+            'stream-prefill-keepalive': {
+              label: 'Stream Prefill Keepalive',
+              description:
+                  'Some upstreams can spend more than a minute preparing a streaming response before returning response headers.\nEnable this option to open the downstream SSE response after 60 seconds and emit protocol-shaped keepalive frames while Floway continues waiting. If the upstream later fails, Floway emits the source protocol\'s streaming error and closes the stream.',
+            },
           },
         },
         models: {

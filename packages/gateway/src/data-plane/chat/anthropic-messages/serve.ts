@@ -6,15 +6,17 @@ import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { maybeDeferPrefillKeepAlive, type PrefillKeepAliveFailure } from '../shared/prefill-keepalive.ts';
 import { serializeAnthropicMessagesStream, shouldSerializeStreamItems } from '../shared/stream-compatibility/index.ts';
 import { parseAnthropicBetaHeader, type AnthropicMessagesPayload, type AnthropicMessagesStreamEventEx } from '@floway-dev/protocols/anthropic-messages';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { providerModelOf, type ExecuteResult, type PlainResult } from '@floway-dev/provider';
 
 export interface AnthropicMessagesServeGenerateArgs {
   readonly payload: AnthropicMessagesPayload;
   readonly ctx: ChatGatewayCtx;
   readonly headers: Headers;
+  readonly prefillKeepAlive?: boolean;
 }
 
 export interface AnthropicMessagesServeCountTokensArgs {
@@ -52,7 +54,14 @@ export const anthropicMessagesServe = {
       ctx,
       'chat',
       async candidate => {
-        const result = await anthropicMessagesAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers, anthropicBeta });
+        const attempt = anthropicMessagesAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers, anthropicBeta });
+        const result = await maybeDeferPrefillKeepAlive({
+          enabled: args.prefillKeepAlive === true,
+          ctx,
+          candidate,
+          attempt,
+          failureFrames: anthropicMessagesPrefillFailureFrames,
+        });
         if (result.type !== 'events') return result;
         ctx.affinity.select(candidate);
         const enabled = shouldSerializeStreamItems(providerModelOf(candidate).enabledFlags, 'anthropicMessages', headers.get('user-agent'));
@@ -85,4 +94,14 @@ export const anthropicMessagesServe = {
       candidate => anthropicMessagesAttempt.countTokens({ payload: selection.payloadFor(candidate), ctx, candidate, headers, anthropicBeta }),
     );
   },
+};
+
+const anthropicMessagesPrefillFailureFrames = function* (failure: PrefillKeepAliveFailure): Iterable<ProtocolFrame<AnthropicMessagesStreamEventEx>> {
+  yield eventFrame({
+    type: 'error',
+    error: {
+      type: failure.anthropicType,
+      message: failure.message,
+    },
+  } as AnthropicMessagesStreamEventEx);
 };
