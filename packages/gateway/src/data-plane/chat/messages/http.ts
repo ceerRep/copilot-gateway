@@ -76,7 +76,7 @@ export const messagesHttp = {
 
       const wantsStream = payload.stream === true;
       ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonResponsesSourceStore(apiKey.id));
-      const result = await messagesServe.generate({ payload, ctx, headers: inboundHeaders(c) });
+      const result = await messagesServe.generate({ payload, ctx, headers: inboundHeaders(c), prefillKeepAlive: wantsStream });
       const response = await respondMessages(c, result, wantsStream, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {

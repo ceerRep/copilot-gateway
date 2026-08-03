@@ -28,4 +28,5 @@ export const CLAUDE_CODE_DEFAULT_FLAGS: FlagDefaults = {
   'strip-billing-attribution': false,
   'strip-prompt-cache-key': false,
   'usage-exclusive-cached-tokens': false,
+  'stream-prefill-keepalive': false,
 };

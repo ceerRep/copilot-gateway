@@ -1,14 +1,16 @@
 import { type Context, Hono } from 'hono';
 import { test, vi } from 'vitest';
 
+import { PREFILL_KEEPALIVE_TIMEOUT_MS } from '../../../../src/data-plane/chat/shared/prefill-keepalive.ts';
 import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { FakeTime } from '../../../test-time.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
-import { type ModelCandidate, directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
+import { type FlagId, type ModelCandidate, directFetcher, type ProviderStreamResult, type UpstreamCallOptions } from '@floway-dev/provider';
+import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
 
 const candidatesQueue: { readonly candidates: readonly ModelCandidate[]; readonly sawModel: boolean; readonly failedUpstreams: readonly string[] }[] = [];
 vi.mock('../../../../src/data-plane/providers/resolution.ts', async importOriginal => {
@@ -29,6 +31,30 @@ const API_KEY_ID = 'key_chat_completions_http_test';
 
 const queueCandidates = (candidates: readonly ModelCandidate[], sawModel = candidates.length > 0): void => {
   candidatesQueue.push({ candidates, sawModel, failedUpstreams: [] });
+};
+
+interface Deferred<T> {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+}
+
+const deferred = <T>(): Deferred<T> => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(res => {
+    resolve = res;
+  });
+  return { promise, resolve };
+};
+
+const decodeChunk = (value: Uint8Array | undefined): string => new TextDecoder().decode(value);
+
+const waitForCall = async (fn: { mock: { calls: unknown[] } }): Promise<void> => {
+  for (let i = 0; i < 10; i++) {
+    if (fn.mock.calls.length > 0) return;
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+  }
+  throw new Error('expected provider call to start');
 };
 
 const installRepo = (): InMemoryRepo => {
@@ -102,16 +128,26 @@ const makeProtocolFrames = async function* <TEvent>(events: readonly TEvent[]): 
 const makeCandidate = (overrides: {
   upstream?: string;
   endpoints?: ModelEndpoints;
+  enabledFlags?: ReadonlySet<FlagId>;
   callChatCompletions?: (model: unknown, body: unknown, signal?: AbortSignal, opts?: UpstreamCallOptions) => Promise<ProviderStreamResult<ChatCompletionsStreamEvent>>;
 } = {}): ModelCandidate => {
   const upstream = overrides.upstream ?? 'up_test';
+  const endpoints = overrides.endpoints ?? { chatCompletions: {}, responses: {}, messages: {} };
   const provider = stubProvider({ callChatCompletions: overrides.callChatCompletions });
   return {
     provider: {
       upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
       disabledPublicModelIds: [], modelPrefix: null, modelsCache: null, instance: provider,
     },
-    model: stubInternalModel(overrides.endpoints ? { endpoints: overrides.endpoints } : {}, upstream),
+    model: stubInternalModel({
+      endpoints,
+      providerModels: {
+        [upstream]: stubProviderModel({
+          endpoints,
+          enabledFlags: overrides.enabledFlags ?? new Set<FlagId>(),
+        }),
+      },
+    }, upstream),
     fetcher: directFetcher,
   };
 };
@@ -137,6 +173,126 @@ test('POST /v1/chat/completions streams a successful SSE body', async () => {
   assert(body.includes('chatcmpl_http'));
   assert(body.includes('[DONE]'));
   assertEquals(callChatCompletions.mock.calls.length, 1);
+});
+
+test('POST /v1/chat/completions opens SSE after prefill timeout and emits a Chat Completions error', async () => {
+  installRepo();
+  const time = new FakeTime();
+  const upstream = deferred<ProviderStreamResult<ChatCompletionsStreamEvent>>();
+  const callChatCompletions = vi.fn(() => upstream.promise);
+  queueCandidates([makeCandidate({ enabledFlags: new Set<FlagId>(['stream-prefill-keepalive']), callChatCompletions })]);
+
+  try {
+    const responsePromise = Promise.resolve(makeApp().request('/v1/chat/completions', {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ model: 'test-model', stream: true, messages: [{ role: 'user', content: 'hello' }] }),
+    }));
+
+    await waitForCall(callChatCompletions);
+    await time.tickAsync(PREFILL_KEEPALIVE_TIMEOUT_MS);
+
+    const response = await responsePromise;
+    assertEquals(response.status, 200);
+    assertEquals(response.headers.get('content-type')?.split(';')[0], 'text/event-stream');
+    const reader = response.body!.getReader();
+    assertEquals(decodeChunk((await reader.read()).value), ': keepalive\n\n');
+
+    upstream.resolve({
+      ok: false,
+      modelKey: 'k',
+      response: new Response('', { status: 504 }),
+    });
+    const errorChunk = decodeChunk((await reader.read()).value);
+    assert(errorChunk.includes('event: error'));
+    assert(errorChunk.includes('"message":"upstream timeout during prefill"'));
+    assert(errorChunk.includes('"type":"server_error"'));
+    assert(errorChunk.includes('"code":"upstream_timeout"'));
+    assert(!errorChunk.includes('[DONE]'));
+    assertEquals((await reader.read()).done, true);
+  } finally {
+    time.restore();
+  }
+});
+
+test('POST /v1/chat/completions continues the upstream stream after the prefill keepalive', async () => {
+  installRepo();
+  const time = new FakeTime();
+  const upstream = deferred<ProviderStreamResult<ChatCompletionsStreamEvent>>();
+  const callChatCompletions = vi.fn(() => upstream.promise);
+  queueCandidates([makeCandidate({ enabledFlags: new Set<FlagId>(['stream-prefill-keepalive']), callChatCompletions })]);
+
+  try {
+    const responsePromise = Promise.resolve(makeApp().request('/v1/chat/completions', {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ model: 'test-model', stream: true, messages: [{ role: 'user', content: 'hello' }] }),
+    }));
+
+    await waitForCall(callChatCompletions);
+    await time.tickAsync(PREFILL_KEEPALIVE_TIMEOUT_MS);
+
+    const response = await responsePromise;
+    const reader = response.body!.getReader();
+    assertEquals(decodeChunk((await reader.read()).value), ': keepalive\n\n');
+
+    upstream.resolve({
+      ok: true,
+      events: makeProtocolFrames(makeChatCompletionsEvents()),
+      modelKey: 'k',
+      headers: new Headers(),
+    });
+    let tail = '';
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      tail += decodeChunk(chunk.value);
+    }
+    assert(tail.includes('chatcmpl_http'));
+    assert(tail.includes('[DONE]'));
+  } finally {
+    time.restore();
+  }
+});
+
+test('POST /v1/chat/completions preserves pre-stream HTTP errors when prefill keepalive flag is disabled', async () => {
+  installRepo();
+  const time = new FakeTime();
+  const upstream = deferred<ProviderStreamResult<ChatCompletionsStreamEvent>>();
+  const callChatCompletions = vi.fn(() => upstream.promise);
+  queueCandidates([makeCandidate({ callChatCompletions })]);
+
+  try {
+    const responsePromise = Promise.resolve(makeApp().request('/v1/chat/completions', {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ model: 'test-model', stream: true, messages: [{ role: 'user', content: 'hello' }] }),
+    }));
+    let settled = false;
+    void responsePromise.then(() => {
+      settled = true;
+    }).catch(() => {
+      settled = true;
+    });
+
+    await waitForCall(callChatCompletions);
+    await time.tickAsync(PREFILL_KEEPALIVE_TIMEOUT_MS);
+    await Promise.resolve();
+    assertEquals(settled, false);
+
+    upstream.resolve({
+      ok: false,
+      modelKey: 'k',
+      response: Response.json({ error: { message: 'prefill failed', type: 'server_error', code: null } }, { status: 500 }),
+    });
+    const response = await responsePromise;
+    assertEquals(response.status, 500);
+    assertEquals(response.headers.get('content-type')?.split(';')[0], 'application/json');
+    const body = await response.json() as { error: { message: string } };
+    assertEquals(body.error.message, 'prefill failed');
+  } finally {
+    time.restore();
+  }
 });
 
 test('POST /v1/chat/completions returns a single JSON body when stream is omitted', async () => {

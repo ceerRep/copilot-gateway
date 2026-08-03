@@ -6,7 +6,8 @@ import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { maybeDeferPrefillKeepAlive, type PrefillKeepAliveFailure } from '../shared/prefill-keepalive.ts';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { parseAnthropicBetaHeader, type MessagesPayload, type MessagesStreamEvent } from '@floway-dev/protocols/messages';
 import type { ExecuteResult, PlainResult } from '@floway-dev/provider';
 
@@ -14,6 +15,7 @@ export interface MessagesServeGenerateArgs {
   readonly payload: MessagesPayload;
   readonly ctx: ChatGatewayCtx;
   readonly headers: Headers;
+  readonly prefillKeepAlive?: boolean;
 }
 
 export interface MessagesServeCountTokensArgs {
@@ -51,7 +53,14 @@ export const messagesServe = {
       ctx,
       'chat',
       async candidate => {
-        const result = await messagesAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers, anthropicBeta });
+        const attempt = messagesAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers, anthropicBeta });
+        const result = await maybeDeferPrefillKeepAlive({
+          enabled: args.prefillKeepAlive === true,
+          ctx,
+          candidate,
+          attempt,
+          failureFrames: messagesPrefillFailureFrames,
+        });
         if (result.type === 'events') ctx.affinity.select(candidate);
         return result;
       },
@@ -82,4 +91,14 @@ export const messagesServe = {
       candidate => messagesAttempt.countTokens({ payload: selection.payloadFor(candidate), ctx, candidate, headers, anthropicBeta }),
     );
   },
+};
+
+const messagesPrefillFailureFrames = function* (failure: PrefillKeepAliveFailure): Iterable<ProtocolFrame<MessagesStreamEvent>> {
+  yield eventFrame({
+    type: 'error',
+    error: {
+      type: failure.anthropicType,
+      message: failure.message,
+    },
+  } as MessagesStreamEvent);
 };

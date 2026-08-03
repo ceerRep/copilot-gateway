@@ -3,10 +3,12 @@ import { test, vi } from 'vitest';
 
 import { TEST_RESPONSES_RETENTION_SECONDS } from './test-policy.ts';
 import { missingRequiredCompactionKeys, missingRequiredResourceKeys, responseOnlyKeysAdded } from './test-required-resource-keys.ts';
+import { PREFILL_KEEPALIVE_TIMEOUT_MS } from '../../../../src/data-plane/chat/shared/prefill-keepalive.ts';
 import type { AuthVars } from '../../../../src/middleware/auth.ts';
 import { initRepo } from '../../../../src/repo/index.ts';
 import type { ApiKey, User } from '../../../../src/repo/types.ts';
 import { InMemoryRepo } from '../../../repo/memory.ts';
+import { FakeTime } from '../../../test-time.ts';
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import { responsesResultToEvents, type CanonicalResponsesPayload, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type FlagId, type ModelCandidate, directFetcher, type ProviderResponsesResult, type ResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
@@ -49,6 +51,30 @@ const queueResolution = (
     sawModel: extra.sawModel ?? candidates.length > 0,
     failedUpstreams: [],
   });
+};
+
+interface Deferred<T> {
+  readonly promise: Promise<T>;
+  readonly resolve: (value: T) => void;
+}
+
+const deferred = <T>(): Deferred<T> => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(res => {
+    resolve = res;
+  });
+  return { promise, resolve };
+};
+
+const decodeChunk = (value: Uint8Array | undefined): string => new TextDecoder().decode(value);
+
+const waitForCall = async (fn: { mock: { calls: unknown[] } }): Promise<void> => {
+  for (let i = 0; i < 10; i++) {
+    if (fn.mock.calls.length > 0) return;
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+  }
+  throw new Error('expected provider call to start');
 };
 
 const installRepo = (): InMemoryRepo => {
@@ -191,6 +217,57 @@ test('POST /v1/responses streams a successful SSE body', async () => {
   assertEquals(body.split('data: [DONE]').length - 1, 1);
   assert(body.endsWith('data: [DONE]\n\n'), 'expected the SSE body to terminate on the [DONE] sentinel');
   assertEquals(callResponses.mock.calls.length, 1);
+});
+
+test('POST /v1/responses opens SSE after prefill timeout and emits a complete response.failed resource', async () => {
+  installRepo();
+  const time = new FakeTime();
+  const upstream = deferred<ProviderResponsesResult>();
+  const callResponses = vi.fn(() => upstream.promise);
+  queueResolution([makeCandidate({ enabledFlags: new Set<FlagId>(['stream-prefill-keepalive']), callResponses })]);
+
+  try {
+    const responsePromise = makeApp().request('/v1/responses', {
+      method: 'POST',
+      headers: new Headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ model: 'test-model', input: 'hello', stream: true }),
+    });
+
+    await waitForCall(callResponses);
+    await time.tickAsync(PREFILL_KEEPALIVE_TIMEOUT_MS);
+
+    const response = await responsePromise;
+    assertEquals(response.status, 200);
+    assertEquals(response.headers.get('content-type')?.split(';')[0], 'text/event-stream');
+    const reader = response.body!.getReader();
+    assertEquals(decodeChunk((await reader.read()).value), ': keepalive\n\n');
+
+    upstream.resolve({
+      action: 'generate',
+      ok: false,
+      modelKey: 'k',
+      response: Response.json({ error: { message: 'prefill failed', type: 'server_error', code: 'server_error' } }, { status: 500 }),
+    });
+    let tail = '';
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      tail += decodeChunk(chunk.value);
+    }
+    assert(tail.includes('event: response.failed'));
+    assert(tail.includes('"type":"response.failed"'));
+    assert(tail.includes('"status":"failed"'));
+    assert(tail.includes('"code":"server_error"'));
+    assert(tail.includes('"message":"prefill failed"'));
+    assert(tail.endsWith('data: [DONE]\n\n'));
+
+    const failedBlock = tail.split('\n\n').find(block => block.startsWith('event: response.failed'));
+    assert(failedBlock !== undefined);
+    const failed = JSON.parse(failedBlock.split('\ndata: ')[1]!) as { response: Record<string, unknown> };
+    assertEquals(missingRequiredResourceKeys(failed.response), []);
+  } finally {
+    time.restore();
+  }
 });
 
 test('POST /v1/responses makes a done reasoning item reusable before terminal', async () => {

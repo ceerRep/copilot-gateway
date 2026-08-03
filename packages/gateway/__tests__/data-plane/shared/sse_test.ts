@@ -128,6 +128,21 @@ test('writeSSEFrames emits SSE comment keepalive frames while idle', async () =>
   }
 });
 
+test('writeSSEFrames emits an initial keepalive while the first event is pending', async () => {
+  const idle = createIdleSSEEvents();
+  const response = await requestSSE(idle.events, {
+    keepAlive: { intervalMs: 1_000, frame: sseCommentFrame('keepalive') },
+    writeInitialKeepAlive: true,
+  });
+  const reader = response.body!.getReader();
+
+  await waitForIteratorStart(idle);
+  const chunk = await reader.read();
+  assertEquals(decodeChunk(chunk.value), ': keepalive\n\n');
+
+  await reader.cancel();
+});
+
 test('writeSSEFrames emits Messages ping keepalive frames while idle', async () => {
   const time = new FakeTime();
   const idle = createIdleSSEEvents();

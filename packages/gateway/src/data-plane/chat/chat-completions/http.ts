@@ -56,7 +56,7 @@ export const chatCompletionsHttp = {
       // the request.
       const includeUsageChunk = payload.stream_options?.include_usage === true;
       ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonResponsesSourceStore(apiKey.id));
-      const result = await chatCompletionsServe.generate({ payload, ctx, headers: inboundHeaders(c) });
+      const result = await chatCompletionsServe.generate({ payload, ctx, headers: inboundHeaders(c), prefillKeepAlive: wantsStream });
       const response = await respondChatCompletions(c, result, wantsStream, includeUsageChunk, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {

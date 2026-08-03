@@ -6,14 +6,17 @@ import { syntheticEventsFromCompaction } from './items/output.ts';
 import { prepareResponsesServePlan } from './serve-prep.ts';
 import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
-import { collectResponsesProtocolEventsToResult, type CanonicalResponsesPayload, type ClientResponsesCompaction, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { maybeDeferPrefillKeepAlive, type PrefillKeepAliveFailure } from '../shared/prefill-keepalive.ts';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
+import { collectResponsesProtocolEventsToResult, type CanonicalResponsesPayload, type ClientResponsesCompaction, type ResponsesResult, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
+import { createResponsesResponseId } from './response-id.ts';
 import type { ExecuteResult } from '@floway-dev/provider';
 
 interface ResponsesServeArgs {
   readonly payload: CanonicalResponsesPayload;
   readonly ctx: ChatGatewayCtx;
   readonly headers: Headers;
+  readonly prefillKeepAlive?: boolean;
 }
 
 export const responsesServe = {
@@ -33,7 +36,7 @@ export const responsesServe = {
       ctx,
       'chat',
       async candidate => {
-        const result = await responsesAttempt.generate({
+        const attempt = responsesAttempt.generate({
           payload: plan.affinitySelection.payloadFor(candidate),
           sourceState: {
             privatePayloads: plan.privatePayloads,
@@ -41,6 +44,13 @@ export const responsesServe = {
           ctx,
           candidate,
           headers,
+        });
+        const result = await maybeDeferPrefillKeepAlive({
+          enabled: args.prefillKeepAlive === true,
+          ctx,
+          candidate,
+          attempt,
+          failureFrames: failure => responsesPrefillFailureFrames(failure, candidate.model.id),
         });
         if (result.type === 'events') ctx.affinity.select(candidate);
         return result;
@@ -90,4 +100,20 @@ export const responsesServe = {
       result: completeResponsesCompaction(persisted, responsesCreatedAt(ctx)),
     };
   },
+};
+
+const responsesPrefillFailureFrames = function* (failure: PrefillKeepAliveFailure, model: string): Iterable<ProtocolFrame<ResponsesStreamEvent>> {
+  const response: ResponsesResult = {
+    id: createResponsesResponseId(),
+    object: 'response',
+    model,
+    output: [],
+    status: 'failed',
+    error: {
+      code: failure.responsesCode,
+      message: failure.message,
+    },
+    incomplete_details: null,
+  };
+  yield eventFrame({ type: 'response.failed', response });
 };

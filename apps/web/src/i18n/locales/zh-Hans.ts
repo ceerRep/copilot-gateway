@@ -653,6 +653,11 @@ const zhHansCN = {
               description:
                   'OpenAI API 将缓存命中的 Token 计入输入 Token 总数，但部分上游会将两者分开上报，使输入 Token 仅表示未命中缓存的部分。这是 Anthropic 的约定。\n开启此开关，以将缓存读取与缓存写入的 Token 数加回输入 Token 总数，使用量与费用得以正确记录。\n当上游上报的 `total_tokens` 足以判定采用的是哪一种约定时，Floway 会据此自行处理，无需开启此开关。当上游的 `total_tokens` 无法区分两种约定时，才需要开启。',
             },
+            'stream-prefill-keepalive': {
+              label: '流式预填充保活',
+              description:
+                  '部分上游在返回流式响应头之前，可能需要超过一分钟来准备响应。\n开启此选项后，Floway 会在等待 60 秒后先打开下游 SSE 响应，并在继续等待时发送符合源协议的保活帧。若上游随后失败，Floway 会发送源协议的流式错误并关闭连接。',
+            },
           },
         },
         models: {

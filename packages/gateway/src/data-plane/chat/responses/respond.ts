@@ -9,6 +9,7 @@ import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
+import { isPrefillKeepAliveDeferred } from '../shared/prefill-keepalive.ts';
 import { doneFrame, eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
 import { responsesProtocolFrameToSSEFrame, RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
 import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ClientResponseResource, type ClientResponsesStreamEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
@@ -78,6 +79,7 @@ export const respondResponses = async (
       completion = await writeSSEFrames(stream, responsesSseFrames(frames, state, ctx), {
         keepAlive: { frame: sseCommentFrame('keepalive') },
         ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
+        writeInitialKeepAlive: isPrefillKeepAliveDeferred(result),
       });
     } finally {
       const metadata = await eventResultMetadata(result);

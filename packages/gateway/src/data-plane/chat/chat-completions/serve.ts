@@ -6,14 +6,16 @@ import { iterateCandidates } from '../../shared/iterate-candidates.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
 import { noViableCandidateFailure } from '../shared/errors.ts';
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
+import { maybeDeferPrefillKeepAlive, type PrefillKeepAliveFailure } from '../shared/prefill-keepalive.ts';
 import type { ChatCompletionsPayload, ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
-import type { ProtocolFrame } from '@floway-dev/protocols/common';
+import { eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult } from '@floway-dev/provider';
 
 export interface ChatCompletionsServeGenerateArgs {
   readonly payload: ChatCompletionsPayload;
   readonly ctx: ChatGatewayCtx;
   readonly headers: Headers;
+  readonly prefillKeepAlive?: boolean;
 }
 
 export const chatCompletionsServe = {
@@ -46,10 +48,28 @@ export const chatCompletionsServe = {
       ctx,
       'chat',
       async candidate => {
-        const result = await chatCompletionsAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers });
+        const attempt = chatCompletionsAttempt.generate({ payload: selection.payloadFor(candidate), ctx, candidate, headers });
+        const result = await maybeDeferPrefillKeepAlive({
+          enabled: args.prefillKeepAlive === true,
+          ctx,
+          candidate,
+          attempt,
+          failureFrames: chatCompletionsPrefillFailureFrames,
+        });
         if (result.type === 'events') ctx.affinity.select(candidate);
         return result;
       },
     );
   },
+};
+
+const chatCompletionsPrefillFailureFrames = function* (failure: PrefillKeepAliveFailure): Iterable<ProtocolFrame<ChatCompletionsStreamEvent>> {
+  yield eventFrame({
+    error: {
+      message: failure.message,
+      type: failure.openAIType,
+      param: failure.openAIParam,
+      code: failure.openAICode,
+    },
+  } as unknown as ChatCompletionsStreamEvent);
 };

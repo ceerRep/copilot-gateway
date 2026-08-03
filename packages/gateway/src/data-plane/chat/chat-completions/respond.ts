@@ -9,6 +9,7 @@ import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { affinityEgressOptions } from '../shared/affinity/index.ts';
+import { isPrefillKeepAliveDeferred } from '../shared/prefill-keepalive.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
 import type { ChatCompletionsStreamEvent } from '@floway-dev/protocols/chat-completions';
 import { chatCompletionsProtocolFrameToSSEFrame, CHAT_COMPLETIONS_MISSING_TERMINAL_MESSAGE, collectChatCompletionsProtocolEventsToResult, chatCompletionsErrorPayloadMessage } from '@floway-dev/protocols/chat-completions';
@@ -68,6 +69,7 @@ export const respondChatCompletions = async (
       completion = await writeSSEFrames(stream, chatCompletionsSseFrames(frames, includeUsageChunk, state, ctx), {
         keepAlive: { frame: sseCommentFrame('keepalive') },
         ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
+        writeInitialKeepAlive: isPrefillKeepAliveDeferred(result),
       });
     } finally {
       const metadata = await eventResultMetadata(result);
