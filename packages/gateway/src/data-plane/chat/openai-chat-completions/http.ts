@@ -56,7 +56,7 @@ export const openaiChatCompletionsHttp = {
       // the request.
       const includeUsageChunk = payload.stream_options?.include_usage === true;
       ctx = createChatGatewayCtxFromHono(c, { wantsStream, requestBody: takeRequestBody(requestBody), model: payload.model, backgroundScheduler: backgroundSchedulerFromContext(c) }, apiKey => createNonOpenAIResponsesSourceStore(apiKey.id));
-      const result = await openaiChatCompletionsServe.generate({ payload, ctx, headers: inboundHeaders(c) });
+      const result = await openaiChatCompletionsServe.generate({ payload, ctx, headers: inboundHeaders(c), prefillKeepAlive: wantsStream });
       const response = await respondOpenAIChatCompletions(c, result, wantsStream, includeUsageChunk, ctx);
       return finalizeGatewayResponse(ctx, response);
     } catch (error) {

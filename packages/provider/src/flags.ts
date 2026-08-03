@@ -35,6 +35,7 @@ export const OPTIONAL_FLAG_IDS = [
   'strip-billing-attribution',
   'strip-prompt-cache-key',
   'usage-exclusive-cached-tokens',
+  'stream-prefill-keepalive',
 ] as const;
 
 export type FlagId = (typeof OPTIONAL_FLAG_IDS)[number];
