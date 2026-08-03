@@ -4,6 +4,12 @@ import type { SseFrame, SseWritableFrame } from '@floway-dev/protocols/common';
 
 export const DOWNSTREAM_KEEP_ALIVE_INTERVAL_MS = 15_000;
 
+export const prepareSSEStreamResponse = (response: Response): Response => {
+  response.headers.set('X-Accel-Buffering', 'no');
+  response.headers.set('Cache-Control', 'no-cache, no-transform');
+  return response;
+};
+
 interface SseKeepAliveOptions {
   intervalMs?: number;
   frame: SseWritableFrame;

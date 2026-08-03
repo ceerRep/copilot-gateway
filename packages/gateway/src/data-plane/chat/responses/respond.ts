@@ -3,7 +3,7 @@ import { streamSSE } from 'hono/streaming';
 
 import { wrapResponsesClientEgress } from './client-output.ts';
 import type { GatewayCtx } from '../../shared/gateway-ctx.ts';
-import { type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
+import { prepareSSEStreamResponse, type StreamCompletion, writeSSEFrames } from '../../shared/sse.ts';
 import { recordFailedRequest } from '../../shared/telemetry/performance.ts';
 import { settle } from '../../shared/telemetry/settle.ts';
 import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
@@ -72,7 +72,7 @@ export const respondResponses = async (
   }
 
   forwardUpstreamHeaders(c, result.headers);
-  const response = streamSSE(c, async stream => {
+  const response = prepareSSEStreamResponse(streamSSE(c, async stream => {
     let completion: StreamCompletion = 'error';
     try {
       completion = await writeSSEFrames(stream, responsesSseFrames(frames, state, ctx), {
@@ -89,7 +89,7 @@ export const respondResponses = async (
       }
       settle(ctx, metadata.performance, metadata.modelIdentity, tokenUsageFromBillableUsage(metadata.billableUsage), failed);
     }
-  });
+  }));
 
   return response;
 };

@@ -180,6 +180,8 @@ test('POST /v1/responses streams a successful SSE body', async () => {
 
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('content-type')?.split(';')[0], 'text/event-stream');
+  assertEquals(response.headers.get('x-accel-buffering'), 'no');
+  assertEquals(response.headers.get('cache-control'), 'no-cache, no-transform');
   const body = await response.text();
   assert(body.includes('event: response.completed'));
   // The source boundary mints its own response id; upstream's "resp_test" is discarded.
