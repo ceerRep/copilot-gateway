@@ -27,6 +27,22 @@ export interface UpstreamModelConfig {
   // Floway-internal (camelCase, not surfaced on PublicModel).
   upstreamModelId: string;
   publicModelId?: string;
+  // Operator's call on the `use_responses_lite` field Floway announces for
+  // this model in the Codex client catalog (`GET /azure-api.codex/models`).
+  // Absent = inherit whatever the resolved Codex release catalog says for the
+  // matched slug (or `false` when nothing matched); `true` / `false` = force.
+  //
+  // The flag is not a model capability — it selects how the Codex CLI shapes
+  // its own request. Under Responses Lite, Codex moves the whole tool set
+  // into a leading `additional_tools` developer input item, omits top-level
+  // `tools`, empties `instructions`, forces `parallel_tool_calls: false`,
+  // asks for `reasoning.context: all_turns`, strips image `detail`, and adds
+  // an `x-openai-internal-codex-responses-lite` header. Only a native
+  // Responses upstream can serve that shape: translated Chat Completions and
+  // Messages targets reject `additional_tools` outright.
+  // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/protocol/src/openai_models.rs#L419
+  // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/core/src/client.rs#L847-L864
+  codexResponsesLite?: boolean;
   // Layer 3 in resolveEffectiveFlags for a manual row: operator-declared
   // per-model override, applied on top of the upstream default +
   // operator upstream override. Absent / `{}` = no per-model override
@@ -99,6 +115,12 @@ const limitsField = (value: unknown, label: string): PublicModelLimits | undefin
     ...(record.max_prompt_tokens !== undefined ? { max_prompt_tokens: optionalNumberField(record.max_prompt_tokens, `${label}.max_prompt_tokens`) } : {}),
     ...(record.max_output_tokens !== undefined ? { max_output_tokens: optionalNumberField(record.max_output_tokens, `${label}.max_output_tokens`) } : {}),
   };
+};
+
+const optionalBooleanField = (value: unknown, label: string): boolean | undefined => {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'boolean') throw new Error(`Malformed ${label}: must be a boolean`);
+  return value;
 };
 
 const flagOverridesField = (value: unknown, label: string): FlagOverrides | undefined => {
@@ -279,8 +301,14 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
   const effectiveKind = kindForEndpoints(endpoints);
   const chat = chatField(value.chat, `${label}.chat`);
   const rerankTarget = rerankTargetField(value.rerankTarget, `${label}.rerankTarget`);
+  const codexResponsesLite = optionalBooleanField(value.codexResponsesLite, `${label}.codexResponsesLite`);
   if (chat !== undefined && kind !== 'chat') {
     throw new Error(`Malformed ${label}: chat field is only allowed when kind === 'chat'`);
+  }
+  // The Codex client catalog carries chat models only, so the announcement
+  // has nowhere to land on any other kind.
+  if (codexResponsesLite !== undefined && kind !== 'chat') {
+    throw new Error(`Malformed ${label}: codexResponsesLite is only allowed when kind === 'chat'`);
   }
   if (effectiveKind === 'rerank' && rerankTarget === undefined) {
     throw new Error(`Malformed ${label}: rerankTarget is required when endpoints select rerank`);
@@ -298,6 +326,7 @@ const modelField = (value: unknown, label: string): UpstreamModelConfig => {
     ...(rerankTarget ? { rerankTarget } : {}),
     upstreamModelId: nonEmptyStringField(value.upstreamModelId, `${label}.upstreamModelId`),
     ...(value.publicModelId !== undefined ? { publicModelId: optionalStringField(value.publicModelId, `${label}.publicModelId`) } : {}),
+    ...(codexResponsesLite !== undefined ? { codexResponsesLite } : {}),
     ...(value.flagOverrides !== undefined ? { flagOverrides: flagOverridesField(value.flagOverrides, `${label}.flagOverrides`) } : {}),
   };
 };

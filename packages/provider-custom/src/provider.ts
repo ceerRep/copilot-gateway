@@ -98,6 +98,7 @@ export const projectCustomModels = (
     if (model.display_name !== undefined) internal.display_name = model.display_name;
     if (model.pricing) internal.pricing = model.pricing;
     if (model.chat) internal.chat = model.chat;
+    if (model.codexResponsesLite !== undefined) internal.codexResponsesLite = model.codexResponsesLite;
     return internal;
   });
   if (!config.modelsFetch.enabled || response === undefined) return manualModels;

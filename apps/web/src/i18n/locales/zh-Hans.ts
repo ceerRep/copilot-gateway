@@ -722,6 +722,12 @@ const zhHansCN = {
           mandatory: '强制思考',
           minimum: '最小值',
           maximum: '最大值',
+          codexResponsesLite: 'Codex Responses Lite',
+          codexResponsesLiteHint:
+            'Floway 在 Codex 客户端模型目录中声明的 use_responses_lite 值。开启后 Codex CLI 会把工具集放进 additional_tools 输入项、不再发送顶层 tools，只有原生 Responses 上游能处理这种形状。',
+          codexResponsesLiteInherit: '继承（Codex 目录）',
+          codexResponsesLiteOn: '强制开启',
+          codexResponsesLiteOff: '强制关闭',
           pricing: '定价',
           pricingHint:
               '仅用于 Floway 的用量统计和费用估算，并展示在 Usage 页面；不会修改上游计费或请求参数。价格单位为美元/百万 Token。',

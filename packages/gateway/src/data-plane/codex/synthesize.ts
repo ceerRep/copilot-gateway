@@ -33,6 +33,11 @@
 //      `chat.reasoning.effort ?? source's` precedence as the modalities.
 //      Ultra is appended only when the exact client-version catalog proves
 //      v2 Ultra semantics and the resulting model supports Max.
+//   7. `use_responses_lite` — `registry ?? source ?? absent`. The registry
+//      value is the operator's per-model `codexResponsesLite`; absent leaves
+//      the base's own value, which is the resolved Codex release catalog's
+//      call on a hit and (via BASELINE carrying no key) codex's `false`
+//      serde default on a miss.
 //
 // Fields not listed above ride through from `source` unchanged: the base
 // pass supplies resolved catalog defaults for a hit and hardcoded baselines
@@ -173,6 +178,16 @@ export const synthesizeCatalogEntry = (
   // Max. The caller supplies this capability only from an exact Codex catalog;
   // a model advertising Max alone does not establish either client behavior.
   if (shouldEnableUltra) entry.multi_agent_version = 'v2';
+
+  // Responses Lite is a client request-shaping mode, not a model capability:
+  // it makes Codex send its whole tool set as a leading `additional_tools`
+  // developer input item and drop top-level `tools`. Only a native Responses
+  // upstream can serve that. A catalog match binds by slug segment, so a
+  // registry model that merely shares a name with a Lite-enabled OpenAI slug
+  // inherits `true` from the base — the operator's per-model call is how that
+  // gets corrected in either direction.
+  // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/core/src/client.rs#L847-L864
+  if (model.codexResponsesLite !== undefined) entry.use_responses_lite = model.codexResponsesLite;
 
   // `default_reasoning_level` pairs with `supported_reasoning_levels` — both
   // come from the same source. When registry supplied `effort`, its schema

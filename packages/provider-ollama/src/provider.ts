@@ -120,6 +120,7 @@ export const createOllamaProvider = (record: UpstreamRecord): Provider => {
     const pricing = model.pricing ?? pricingForOllamaModelKey(model.upstreamModelId);
     if (pricing) internal.pricing = pricing;
     if (model.chat) internal.chat = model.chat;
+    if (model.codexResponsesLite !== undefined) internal.codexResponsesLite = model.codexResponsesLite;
     return internal;
   });
   const call = (

@@ -125,6 +125,14 @@ interface ModelMetadata {
   pricing?: ModelPricing;
   chat?: UpstreamChatModelConfig;
   endpoints: ModelEndpoints;
+  // Operator's `use_responses_lite` call for the Codex client catalog, carried
+  // verbatim from `UpstreamModelConfig.codexResponsesLite`. Absent = inherit
+  // the Codex release catalog's own value for the matched slug. Not projected
+  // onto `PublicModel` — `toPublicModel` picks its fields explicitly — so it
+  // stays an operator-visible catalog knob rather than a public wire field.
+  // Merged rows follow the same first-writer-wins rule as every other
+  // `ModelMetadata` field; see `mergeIntoCatalog`.
+  codexResponsesLite?: boolean;
 }
 
 // The neutral internal model shape consumed across the gateway. Metadata fields

@@ -753,6 +753,12 @@ const en = {
           mandatory: 'Mandatory',
           minimum: 'Minimum',
           maximum: 'Maximum',
+          codexResponsesLite: 'Codex Responses Lite',
+          codexResponsesLiteHint:
+            'What Floway announces as use_responses_lite in the Codex client catalog. Under Responses Lite the Codex CLI sends its tools as an additional_tools input item instead of top-level tools, which only a native Responses upstream can serve.',
+          codexResponsesLiteInherit: 'Inherit (Codex catalog)',
+          codexResponsesLiteOn: 'On (force)',
+          codexResponsesLiteOff: 'Off (force)',
           pricing: 'Pricing',
           pricingHint:
               'Used only for Floway usage statistics and estimated cost reporting on the Usage page. This does not change upstream billing or request parameters. Prices are in USD per million tokens.',

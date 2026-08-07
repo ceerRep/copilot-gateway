@@ -31,6 +31,7 @@ const reshapeModelForDashboard = (model: ProviderModel): ListedUpstreamModel => 
     ...(Object.keys(model.limits).length > 0 ? { limits: model.limits } : {}),
     ...(model.pricing ? { pricing: model.pricing } : {}),
     ...(model.chat ? { chat: model.chat } : {}),
+    ...(model.codexResponsesLite !== undefined ? { codexResponsesLite: model.codexResponsesLite } : {}),
     ...(model.flagOverrides ? { flagOverrides: model.flagOverrides } : {}),
   };
 };
