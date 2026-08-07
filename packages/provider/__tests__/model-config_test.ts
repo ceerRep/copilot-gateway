@@ -441,3 +441,46 @@ test('modelsField rejects flagOverrides with an unknown flag id', () => {
     'Malformed azure models[0].flagOverrides: unknown flag ids: made-up-flag',
   );
 });
+
+test('modelsField round-trips codexResponsesLite in both directions', () => {
+  const [on, off] = modelsField(
+    [
+      { upstreamModelId: 'gpt-5.6-sol', endpoints: { responses: {} }, codexResponsesLite: true },
+      { upstreamModelId: 'gpt-5.6-luna', endpoints: { chatCompletions: {} }, codexResponsesLite: false },
+    ],
+    'custom',
+  );
+  expect(on.codexResponsesLite).toBe(true);
+  // `false` is the whole point of the knob — a model whose id segment matches
+  // a Lite-enabled Codex slug but whose upstream speaks Chat Completions.
+  expect(off.codexResponsesLite).toBe(false);
+});
+
+test('modelsField omits codexResponsesLite when the operator made no call', () => {
+  const [model] = modelsField([{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} } }], 'custom');
+  expect(model).not.toHaveProperty('codexResponsesLite');
+});
+
+test('modelsField rejects a non-boolean codexResponsesLite', () => {
+  assertThrows(
+    () =>
+      modelsField(
+        [{ upstreamModelId: 'gpt-prod', endpoints: { chatCompletions: {} }, codexResponsesLite: 'true' }],
+        'azure',
+      ),
+    Error,
+    'Malformed azure models[0].codexResponsesLite: must be a boolean',
+  );
+});
+
+test('modelsField rejects codexResponsesLite on a non-chat model', () => {
+  assertThrows(
+    () =>
+      modelsField(
+        [{ upstreamModelId: 'text-embed', endpoints: { embeddings: {} }, codexResponsesLite: false }],
+        'azure',
+      ),
+    Error,
+    "Malformed azure models[0]: codexResponsesLite is only allowed when kind === 'chat'",
+  );
+});
