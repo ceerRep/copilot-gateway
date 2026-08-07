@@ -70,6 +70,9 @@ export function ModelDetail({
   const setKind = (kind: UpstreamModelConfig['kind']) => patch({
     kind,
     chat: kind === 'chat' ? row.config.chat : undefined,
+    // Both are chat-only in `modelsField`; carrying either onto another kind
+    // would make the row fail contract validation on save.
+    codexResponsesLite: kind === 'chat' ? row.config.codexResponsesLite : undefined,
     rerankTarget: undefined,
     ...(kind === 'image' ? { limits: undefined } : {}),
     ...shapeForKind(kind, row.config),
@@ -99,6 +102,7 @@ export function ModelDetail({
   const budget = row.config.chat?.reasoning?.budget_tokens;
   const mandatory = row.config.chat?.reasoning?.mandatory === true;
   const controlledReasoning = effort !== undefined || budget !== undefined || row.config.chat?.reasoning?.adaptive === true;
+  const codexLite = row.config.codexResponsesLite === undefined ? 'inherit' : row.config.codexResponsesLite ? 'on' : 'off';
 
   useEffect(() => {
     if (revealValidation && upstreamIdError) upstreamIdRef.current?.focus();
@@ -197,6 +201,22 @@ export function ModelDetail({
                 <NumberField label={t('dashboard.upstreamEditor.models.maximum')} placeholder="e.g. 32000" readOnly={fieldsReadOnly} value={budget.max} onChange={raw => updateReasoning({ budget_tokens: numberRange(budget, 'max', raw) })} />
               </div>}
             </div>
+            <Field
+              className="min-w-0 max-w-[420px]"
+              hint={t('dashboard.upstreamEditor.models.codexResponsesLiteHint')}
+              label={t('dashboard.upstreamEditor.models.codexResponsesLite')}
+            >
+              <Dropdown
+                readOnly={fieldsReadOnly}
+                selectedOptions={[codexLite]}
+                value={t(`dashboard.upstreamEditor.models.codexResponsesLite${codexLite === 'inherit' ? 'Inherit' : codexLite === 'on' ? 'On' : 'Off'}`)}
+                onOptionSelect={(_, data) => data.optionValue !== undefined && patch({ codexResponsesLite: data.optionValue === 'on' ? true : data.optionValue === 'off' ? false : undefined })}
+              >
+                <Option value="inherit">{t('dashboard.upstreamEditor.models.codexResponsesLiteInherit')}</Option>
+                <Option value="on">{t('dashboard.upstreamEditor.models.codexResponsesLiteOn')}</Option>
+                <Option value="off">{t('dashboard.upstreamEditor.models.codexResponsesLiteOff')}</Option>
+              </Dropdown>
+            </Field>
           </>}
         </EditorSection>}
 

@@ -57,6 +57,7 @@ export const createAzureProvider = (record: UpstreamRecord): Provider => {
           ...(model.display_name !== undefined ? { display_name: model.display_name } : {}),
           ...(model.pricing ? { pricing: model.pricing } : {}),
           ...(model.chat ? { chat: model.chat } : {}),
+          ...(model.codexResponsesLite !== undefined ? { codexResponsesLite: model.codexResponsesLite } : {}),
           kind: kindForEndpoints(endpoints),
           endpoints,
           providerData: { upstreamModelId: model.upstreamModelId },

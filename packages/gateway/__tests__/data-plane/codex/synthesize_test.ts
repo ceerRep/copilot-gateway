@@ -299,5 +299,43 @@ describe('synthesizeCatalogEntry', () => {
       }, bundledBase);
       expect(entry.service_tiers).toEqual([{ id: 'fast', name: 'fast', description: '' }]);
     });
+
+    describe('use_responses_lite', () => {
+      // A slug the release catalog ships with Responses Lite on. matchCatalog
+      // binds by id segment, so any registry model whose id carries this
+      // segment lands on this base regardless of which upstream serves it.
+      const liteBase: CatalogModel = { ...bundledBase, slug: 'gpt-5.6-sol', use_responses_lite: true };
+
+      test('inherits the base value when the operator made no call', () => {
+        expect(synthesizeCatalogEntry(base, liteBase).use_responses_lite).toBe(true);
+        expect(synthesizeCatalogEntry(base, bundledBase).use_responses_lite).toBeUndefined();
+      });
+
+      test('operator false overrides a Lite-enabled base', () => {
+        const entry = synthesizeCatalogEntry({ ...base, codexResponsesLite: false }, liteBase);
+        expect(entry.use_responses_lite).toBe(false);
+      });
+
+      test('operator true forces it on a base that omits the field', () => {
+        const entry = synthesizeCatalogEntry({ ...base, codexResponsesLite: true }, bundledBase);
+        expect(entry.use_responses_lite).toBe(true);
+      });
+    });
+  });
+
+  describe('use_responses_lite on the miss path', () => {
+    // BASELINE carries no `use_responses_lite` key, so an unmatched model
+    // emits nothing and codex's `#[serde(default)] bool` resolves it to false.
+    test('absent by default so codex defaults it to false', () => {
+      expect(synthesizeCatalogEntry(base)).not.toHaveProperty('use_responses_lite');
+    });
+
+    test('operator true is announced even with no catalog match', () => {
+      expect(synthesizeCatalogEntry({ ...base, codexResponsesLite: true }).use_responses_lite).toBe(true);
+    });
+
+    test('operator false is announced explicitly rather than elided', () => {
+      expect(synthesizeCatalogEntry({ ...base, codexResponsesLite: false }).use_responses_lite).toBe(false);
+    });
   });
 });
