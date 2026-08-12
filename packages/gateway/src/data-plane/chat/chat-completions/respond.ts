@@ -120,6 +120,10 @@ const observeChatCompletionsFrames = async function* (frames: AsyncIterable<Prot
 const chatCompletionsSseFrames = async function* (frames: AsyncIterable<ProtocolFrame<ChatCompletionsStreamEvent>>, includeUsageChunk: boolean, state: SourceStreamState, ctx: GatewayCtx) {
   try {
     for await (const frame of frames) {
+      if (frame.type === 'event' && chatCompletionsErrorPayloadMessage(frame.event) !== null) {
+        yield sseFrame(JSON.stringify(frame.event), 'error');
+        continue;
+      }
       const sse = chatCompletionsProtocolFrameToSSEFrame(frame, { includeUsageChunk });
       if (sse) yield sse;
     }
