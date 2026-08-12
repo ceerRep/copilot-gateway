@@ -1,6 +1,7 @@
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
 import { withUsageStreamOptionsIncluded } from './include-usage-stream-options.ts';
+import { withEmptyToolsToolChoiceNormalized } from './normalize-empty-tools-tool-choice.ts';
 import { withExclusiveCachedTokensNormalized } from './normalize-exclusive-cached-tokens.ts';
 import { withUsageNormalized } from './normalize-usage.ts';
 import { withPromptCacheKeyStripped } from './strip-prompt-cache-key.ts';
@@ -50,6 +51,7 @@ export const chatCompletionsInterceptors: readonly ChatCompletionsInterceptor[] 
   withUsageStreamOptionsIncluded,
   withUsageNormalized,
   withReasoningDisabledOnForcedToolChoice,
+  withEmptyToolsToolChoiceNormalized,
   withRoleCompatibilityApplied,
   withPromptCacheKeyStripped,
   withExclusiveCachedTokensNormalized,

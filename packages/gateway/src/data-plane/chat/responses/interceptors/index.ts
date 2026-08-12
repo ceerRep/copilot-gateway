@@ -1,6 +1,7 @@
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withResponsesCompactShim } from './compact-shim.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
+import { withEmptyToolsToolChoiceNormalized } from './normalize-empty-tools-tool-choice.ts';
 import { withExclusiveCachedTokensNormalized } from './normalize-exclusive-cached-tokens.ts';
 import { withResponsesServerToolShim } from './server-tool-shim.ts';
 import { imageGenerationServerTool } from './server-tools/image-generation.ts';
@@ -52,6 +53,7 @@ export const responsesInterceptors: readonly ResponsesInterceptor[] = [
     imageGenerationServerTool,
   ]),
   withReasoningDisabledOnForcedToolChoice,
+  withEmptyToolsToolChoiceNormalized,
   withRoleCompatibilityApplied,
   withPromptCacheKeyStripped,
   withExclusiveCachedTokensNormalized,

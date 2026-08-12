@@ -1,6 +1,7 @@
 import { answerClaudeCodeProbe } from './answer-claude-code-probe.ts';
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
+import { withEmptyToolsToolChoiceNormalized } from './normalize-empty-tools-tool-choice.ts';
 import { stripBillingAttribution } from './strip-billing-attribution.ts';
 import type { MessagesCountTokensInterceptor, MessagesInterceptor, MessagesPayloadInterceptor } from './types.ts';
 import { withMessagesWebSearchRequestPrepared, withMessagesWebSearchShim } from './web-search-shim.ts';
@@ -44,6 +45,7 @@ import { withMessagesWebSearchRequestPrepared, withMessagesWebSearchShim } from 
 const messagesPayloadInterceptors: readonly MessagesPayloadInterceptor[] = [
   stripBillingAttribution,
   withReasoningDisabledOnForcedToolChoice,
+  withEmptyToolsToolChoiceNormalized,
   withRoleCompatibilityApplied,
 ];
 
