@@ -24,6 +24,9 @@ import { withVendorQwenChatCompletionsNormalize } from './vendor-qwen-normalize.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
 //     `disable-reasoning-on-forced-tool-choice`. Emits the gateway's canonical
 //     "no reasoning" sentinel only; vendor wire form is the vendor's job.
+//   - withEmptyToolsToolChoiceNormalized: gated by
+//     `empty-tools-tool-choice-none`. Makes an explicitly empty tool list use
+//     the target protocol's no-tool choice.
 //   - withRoleCompatibilityApplied: applies role flags in the fixed order
 //     `system → developer → system → user`; later rewrites are authoritative
 //     when flags overlap, and the final step affects only mid-conversation system.
