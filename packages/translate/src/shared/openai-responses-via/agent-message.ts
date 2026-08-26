@@ -5,6 +5,7 @@ interface AgentContentFields {
   type: string;
   text?: unknown;
   refusal?: unknown;
+  encrypted_content?: unknown;
   image_url?: unknown;
   file_id?: unknown;
   detail?: unknown;
@@ -86,6 +87,12 @@ export const agentMessageContent = (
       break;
     case 'refusal':
       pushTypedTextPart(content, part.type, requiredString((part as AgentContentFields).refusal, `${path}.refusal`));
+      break;
+    case 'encrypted_content':
+      // Codex uses this beta slot for plaintext agent-task payloads. It is
+      // not an opaque reasoning carrier, so retain it as labeled text when
+      // projecting an agent notification to a target protocol.
+      pushTypedTextPart(content, part.type, requiredString((part as AgentContentFields).encrypted_content, `${path}.encrypted_content`));
       break;
     case 'input_image':
       content.push({
