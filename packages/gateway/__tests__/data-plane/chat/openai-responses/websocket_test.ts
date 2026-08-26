@@ -506,7 +506,7 @@ test('OpenAI Responses WebSocket keep-alive starts before the first event and ta
 
         await tickKeepAliveIntervals(1);
         assert(
-          await drainFramesUntil(() => messages.length >= 2),
+          await drainFramesUntil(() => messages.length >= 1),
           `expected a keep-alive before the turn opened, got ${JSON.stringify(messages)}`,
         );
         assertEquals(
@@ -526,7 +526,7 @@ test('OpenAI Responses WebSocket keep-alive starts before the first event and ta
         const inProgress = { ...response, status: 'in_progress', output: [], output_text: '' };
         enqueueSseEvent('response.created', { type: 'response.created', response: inProgress, sequence_number: 0 });
         assert(
-          await drainFramesUntil(() => messages.length >= 1),
+          await drainFramesUntil(() => messages.length >= 2),
           `expected the turn to open, got ${JSON.stringify(messages)}`,
         );
         assertEquals(

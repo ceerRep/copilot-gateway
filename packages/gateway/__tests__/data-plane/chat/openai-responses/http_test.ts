@@ -67,12 +67,13 @@ const deferred = <T>(): Deferred<T> => {
 };
 
 const decodeChunk = (value: Uint8Array | undefined): string => new TextDecoder().decode(value);
+const realSetTimeout = globalThis.setTimeout;
 
 const waitForCall = async (fn: { mock: { calls: unknown[] } }): Promise<void> => {
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 200; i++) {
     if (fn.mock.calls.length > 0) return;
+    await new Promise<void>(resolve => { realSetTimeout(resolve, 0); });
     await vi.advanceTimersByTimeAsync(0);
-    await Promise.resolve();
   }
   throw new Error('expected provider call to start');
 };
@@ -222,9 +223,9 @@ test('POST /v1/responses streams a successful SSE body', async () => {
 test('POST /v1/responses opens SSE after prefill timeout and emits a complete response.failed resource', async () => {
   installRepo();
   const time = new FakeTime();
-  const upstream = deferred<ProviderResponsesResult>();
-  const callResponses = vi.fn(() => upstream.promise);
-  queueResolution([makeCandidate({ enabledFlags: new Set<FlagId>(['stream-prefill-keepalive']), callResponses })]);
+  const upstream = deferred<ProviderOpenAIResponsesResult>();
+  const callOpenAIResponses = vi.fn(() => upstream.promise);
+  queueResolution([makeCandidate({ enabledFlags: new Set<FlagId>(['stream-prefill-keepalive']), callOpenAIResponses })]);
 
   try {
     const responsePromise = makeApp().request('/v1/responses', {
@@ -233,7 +234,7 @@ test('POST /v1/responses opens SSE after prefill timeout and emits a complete re
       body: JSON.stringify({ model: 'test-model', input: 'hello', stream: true }),
     });
 
-    await waitForCall(callResponses);
+    await waitForCall(callOpenAIResponses);
     await time.tickAsync(PREFILL_KEEPALIVE_TIMEOUT_MS);
 
     const response = await responsePromise;
