@@ -148,7 +148,7 @@ test('Copilot item-id and generic affinity trailers compose and unwrap in bounda
       const exact = acceptedAffinityEvaluation(prepared, candidate).materialize();
       const foreign = acceptedAffinityEvaluation(prepared, otherCandidate).materialize();
       expect(exact.input[0]).toMatchObject({ type: 'reasoning', id: publicItem.id });
-      expect(foreign.input[0]).toEqual({ type: 'reasoning', id: publicItem.id, summary: [] });
+      expect(foreign.input).toEqual([]);
 
       const { model: _model, ...exactBody } = exact;
       const second = await provider.instance.callOpenAIResponses(

@@ -76,7 +76,7 @@ test('copies only paths carrying an affinity projection', async () => {
   expect(materialized.input[1]).toBe(unchanged);
 });
 
-test('restores an owned blob only for its exact target without changing item ids', async () => {
+test('drops reasoning whose opaque affinity belongs to another target', async () => {
   const mismatchedRules = { ...candidateA, rules: { reasoning: { effort: 'low' } } };
   const carrier = await codec.wrap(
     'encrypted',
@@ -97,11 +97,7 @@ test('restores an owned blob only for its exact target without changing item ids
     summary: [{ type: 'summary_text', text: 'visible' }],
     encrypted_content: 'encrypted',
   }]);
-  expect(projectionB.materialize().input).toEqual([{
-    type: 'reasoning',
-    id: 'rs_client',
-    summary: [{ type: 'summary_text', text: 'visible' }],
-  }]);
+  expect(projectionB.materialize().input).toEqual([]);
   expect(projectionA.degrades).toBe(false);
   expect(mismatchedProjection.degrades).toBe(true);
   expect(select([mismatchedRules, candidateA], prepared).candidates).toEqual([candidateA, mismatchedRules]);
