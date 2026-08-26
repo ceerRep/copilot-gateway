@@ -240,7 +240,7 @@ test('POST /v1/responses opens SSE after prefill timeout and emits a complete re
     assertEquals(response.status, 200);
     assertEquals(response.headers.get('content-type')?.split(';')[0], 'text/event-stream');
     const reader = response.body!.getReader();
-    assertEquals(decodeChunk((await reader.read()).value), ': keepalive\n\n');
+    assertEquals(decodeChunk((await reader.read()).value), 'event: ping\ndata: {}\n\n');
 
     upstream.resolve({
       action: 'generate',
