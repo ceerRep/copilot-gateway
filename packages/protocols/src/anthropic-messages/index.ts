@@ -9,16 +9,17 @@ import type { AnthropicMessagesUsage, AnthropicMessagesUsageDelta } from './usag
  * payload and the model capability are silent.
  *
  * There is no single ecosystem standard catch-all value here: `new-api`
- * defaults Claude to `8192`, while `one-api` and LiteLLM use `4096`. We keep
- * `8192` to match the gateway's prior behavior. Native Anthropic Messages requests are
- * untouched: their `max_tokens` is whatever the client sent.
+ * defaults Claude to `8192`, while `one-api` and LiteLLM use `4096`. Floway
+ * uses `32768` as its last-resort policy value; this is not an upstream
+ * default. Native Anthropic Messages requests are untouched: their
+ * `max_tokens` is whatever the client sent.
  *
  * References:
  * - https://github.com/BerriAI/litellm/blob/e9e86ed956ba53d5192e10b75634fe0246e836a7/litellm/llms/anthropic/chat/transformation.py
  * - https://github.com/QuantumNous/new-api/blob/65b16547329625f619cf797ae1eb9b748525056c/setting/model_setting/claude.go
  * - https://github.com/songquanpeng/one-api/blob/8df4a2670b98266bd287c698243fff327d9748cf/relay/adaptor/anthropic/main.go
  */
-export const ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS = 8192;
+export const ANTHROPIC_MESSAGES_FALLBACK_MAX_TOKENS = 32768;
 
 export type AnthropicMessagesThinkingDisplay = 'omitted' | 'summarized' | 'full';
 
