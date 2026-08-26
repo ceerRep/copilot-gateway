@@ -10,7 +10,7 @@ import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { isPrefillKeepAliveDeferred } from '../shared/prefill-keepalive.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
-import { doneFrame, eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import { responsesProtocolFrameToSSEFrame, RESPONSES_MISSING_TERMINAL_MESSAGE, collectResponsesProtocolEventsToResult } from '@floway-dev/protocols/responses';
 import { isResponsesTerminalEvent, type CanonicalResponsesPayload, type ClientResponseResource, type ClientResponsesStreamEvent, type ResponsesStreamEvent } from '@floway-dev/protocols/responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
@@ -77,7 +77,9 @@ export const respondResponses = async (
     let completion: StreamCompletion = 'error';
     try {
       completion = await writeSSEFrames(stream, responsesSseFrames(frames, state, ctx), {
-        keepAlive: { frame: sseCommentFrame('keepalive') },
+        // Codex resets its SSE idle timeout only after parsing an event;
+        // comment frames keep the connection alive but never reach that pump.
+        keepAlive: { frame: sseFrame('{}', 'ping') },
         ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
         writeInitialKeepAlive: isPrefillKeepAliveDeferred(result),
       });

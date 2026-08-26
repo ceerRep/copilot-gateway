@@ -169,6 +169,32 @@ test('writeSSEFrames emits Messages ping keepalive frames while idle', async () 
   }
 });
 
+test('writeSSEFrames emits Responses ping keepalive frames while idle', async () => {
+  const time = new FakeTime();
+  const idle = createIdleSSEEvents();
+
+  try {
+    const response = await requestSSE(idle.events, {
+      keepAlive: {
+        intervalMs: 1_000,
+        frame: sseFrame('{}', 'ping'),
+      },
+    });
+    const reader = response.body!.getReader();
+
+    await waitForIteratorStart(idle);
+    const read = reader.read();
+    await time.tickAsync(1_000);
+
+    const chunk = await read;
+    assertEquals(decodeChunk(chunk.value), 'event: ping\ndata: {}\n\n');
+
+    await reader.cancel();
+  } finally {
+    time.restore();
+  }
+});
+
 test('writeSSEFrames does not emit keepalive before ready events', async () => {
   const response = await requestSSE(
     (async function* () {

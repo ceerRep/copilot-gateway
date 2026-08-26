@@ -405,7 +405,6 @@ const respondResponsesWebSocket = async (input: {
     let pendingNext = pendingWsFrameResult(iterator.next());
     let completed = false;
     let stoppedByDownstream = false;
-    let streamed = false;
     const sequence = createDownstreamSequence();
 
     const stopForDownstream = (): void => {
@@ -472,21 +471,19 @@ const respondResponsesWebSocket = async (input: {
           // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L758
           // https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/lib/responses/ResponseAccumulator.ts#L387-L389
           //
-          // Held back until the turn's first event has gone out. That gate is
-          // parity with the stricter transport, not a demand of this one: both
-          // SDKs' SSE stream helpers refuse anything before `response.created`
-          // — openai-node rejects even its own `keepalive` type there — while
-          // every WebSocket reader we can inspect tolerates an unknown type at
-          // any position, openai-node emitting it under a name nothing listens
-          // on, openai-python constructing it unchecked, and Codex tracing and
-          // discarding it. The window before the first event therefore stays
-          // unprotected, and closing it is a behavior question rather than a
-          // client-compatibility one.
+          // Send this throughout an active turn, including before
+          // `response.created`. Both SDKs' SSE stream helpers refuse anything
+          // before that event — openai-node rejects even its own `keepalive`
+          // type there — but every WebSocket reader we can inspect tolerates an
+          // unknown type at any position: openai-node emits it under a name
+          // nothing listens on, openai-python constructs it unchecked, and
+          // Codex traces and discards it. Protecting the pre-first-event window
+          // matters when queueing or an upstream handshake outlives the usual
+          // first-frame latency.
           // https://github.com/openai/openai-node/blob/d77cf24d9f3885739c6cba76bc009abf0ab97428/src/lib/responses/ResponseAccumulator.ts#L25-L31
           // https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/lib/streaming/responses/_responses.py#L369-L370
           // https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/resources/responses/responses.py#L4493-L4502
           // https://github.com/openai/codex/blob/e6cfd40c3f444aadd6017c9eeab01db70f48961a/codex-rs/codex-api/src/sse/responses.rs#L466-L472
-          if (!streamed) continue;
           if (!sendJson(socket, { type: KEEP_ALIVE_EVENT_TYPE, sequence_number: sequence.take() }, eventId, ctx.dump)) {
             stopForDownstream();
             return;
@@ -531,7 +528,6 @@ const respondResponsesWebSocket = async (input: {
           stopForDownstream();
           return;
         }
-        streamed = true;
       }
     } finally {
       if (!completed) {
@@ -638,9 +634,9 @@ interface DownstreamSequence {
 // https://github.com/openresponses/openresponses/blob/92c12d96d7b61d6d15e2214daa5e9c6000ab6e1c/src/specifications/2026-04-24.mdx#L117
 // https://github.com/openai/openai-python/blob/3844843c277f42b0b18beaa58152cfda61df524a/src/openai/lib/streaming/responses/_responses.py#L59
 //
-// Upstream numbering is left untouched until the first keep-alive, and a
-// keep-alive can only follow an event that already went out, so the slot it
-// takes is always known.
+// Upstream numbering is left untouched until the first keep-alive. Before any
+// upstream event, the next available slot is zero; each keep-alive increments
+// the shift applied when the upstream sequence begins.
 const createDownstreamSequence = (): DownstreamSequence => {
   let shift = 0;
   let next = 0;
