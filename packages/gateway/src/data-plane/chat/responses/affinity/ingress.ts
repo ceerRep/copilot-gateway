@@ -26,6 +26,7 @@ interface ResponsesBlobAnalysis extends ResponsesBlobLocation {
 interface ResponsesItemAnalysis {
   readonly itemIndex: number;
   readonly synthetic: boolean;
+  readonly isReasoning: boolean;
   readonly blobs: readonly ResponsesBlobAnalysis[];
   readonly inheritedRequiredTarget?: AffinityTarget;
 }
@@ -121,6 +122,7 @@ const analyzeResponsesRequest = (
     itemAnalyses.push({
       itemIndex,
       synthetic: blobs.some(blob => blob.decoded.kind === 'owned' && blob.decoded.syntheticItem === true),
+      isReasoning: item.type === 'reasoning',
       blobs,
       ...(inheritedRequiredTarget !== undefined ? { inheritedRequiredTarget } : {}),
     });
@@ -193,7 +195,9 @@ const evaluateResponsesCandidate = (
       if (!item.synthetic && projection.kind === 'remove') degrades ||= projection.degrades;
       projections.push({ location: blob, projection });
     }
-    if (item.synthetic) {
+    const dropsReasoning = item.isReasoning
+      && projections.some(({ projection }) => projection.kind === 'remove' && projection.degrades);
+    if (item.synthetic || dropsReasoning) {
       projectionsByItem.set(item.itemIndex, null);
       continue;
     }
