@@ -148,12 +148,10 @@ const buildMessagesInput = async (messages: ChatCompletionsMessage[], loadRemote
     case 'system':
     case 'developer': {
       // Inline path for non-leading system / developer (the leading prefix
-      // was hoisted earlier). Anthropic upstreams diverge on inline
-      // role:'system' here (Bedrock accepts it under placement rules;
-      // Vertex rejects it outright), so the gateway's
-      // `rewrite-mid-conv-system-to-user` interceptor flag is the safety
-      // net for any inline system that would otherwise reach an upstream
-      // that does not accept it.
+      // was hoisted earlier). Preserve chronology here; the final Messages
+      // role-compatibility pass keeps positions the selected target can
+      // express and lowers the rest, or lowers all of them when its
+      // `rewrite-mid-conv-system-to-user` flag is enabled.
       const blocks = convertSystemContent(message.content);
       result.push({
         role: 'system',

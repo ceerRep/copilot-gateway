@@ -36,10 +36,10 @@ import { withMessagesWebSearchRequestPrepared, withMessagesWebSearchShim } from 
 //   - withEmptyToolsToolChoiceNormalized: gated by
 //     `empty-tools-tool-choice-none`. Makes an explicitly empty tool list use
 //     Messages' native `{ type: 'none' }` choice.
-//   - withRoleCompatibilityApplied: Anthropic's top-level `payload.system` is
-//     the only first-position system slot, so the mid-conversation-system flag
-//     rewrites every inline system message to user after Messages is selected
-//     as the final target.
+//   - withRoleCompatibilityApplied: after Messages is selected as the final
+//     target, preserves inline system turns only where Anthropic's state machine
+//     can express them. The mid-conversation-system flag forces every inline
+//     system message to user for targets that do not support the role at all.
 //
 // The remaining three entries mutate only the request payload and are shared
 // with count_tokens in the same order. Token counting therefore observes the

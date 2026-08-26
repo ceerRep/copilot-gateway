@@ -631,7 +631,7 @@ const zhHansCN = {
             'rewrite-mid-conv-system-to-user': {
               label: '改写行内 system 角色为 user',
               description:
-                  '部分上游只允许在对话开头使用 `system` 角色，不接受穿插在 `user` 或 `assistant` 消息之间的行内 `system` 消息（如 DeepSeek-R1）。\n开启此开关后，对话开头连续的 `system` 消息会保留，而后续穿插的 `system` 角色会被改写为 `user`。消息内容保持不变。\n对于 Messages API 上游，由于系统提示词只能放在顶层 `system` 字段中，此开关被视为开启。',
+                  '部分上游只允许在对话开头使用 `system` 角色，不接受穿插在 `user` 或 `assistant` 消息之间的行内 `system` 消息（如 DeepSeek-R1）。\n开启此开关后，对话开头连续的 `system` 消息会保留，而后续穿插的 `system` 角色会被改写为 `user`。消息内容保持不变。\n对于 Messages API 目标，开启此选项会改写所有行内 `system` 消息；关闭时，Floway 会保留目标能够表达的位置，只改写无法表达的位置。',
             },
             'rewrite-developer-to-system': {
               label: '改写 developer 角色为 system',

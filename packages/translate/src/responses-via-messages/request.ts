@@ -227,7 +227,8 @@ const translateResponsesInput = async (
       case 'system':
       case 'developer': {
         // The leading prefix was lifted above; keep later instruction messages
-        // inline so chronology reaches the target role-compatibility pass.
+        // inline so chronology and position both reach the final Messages
+        // role-compatibility pass.
         const blocks = responsesSystemBlocks(item);
         messages.push({ role: 'system', content: blocks.length > 0 ? blocks : '' });
         break;

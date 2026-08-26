@@ -661,7 +661,7 @@ const en = {
             'rewrite-mid-conv-system-to-user': {
               label: 'Rewrite Inline system Roles to user',
               description:
-                  'Some upstreams only allow the `system` role at the beginning of a conversation and reject inline `system` messages interleaved between `user` or `assistant` messages (for example, DeepSeek-R1).\nWhen this option is enabled, consecutive `system` messages at the beginning of the conversation are preserved, while later interleaved `system` roles are rewritten to `user`. Message content remains unchanged.\nFor Messages API upstreams, this option is treated as enabled because system prompts can only appear in the top-level `system` field.',
+                  'Some upstreams only allow the `system` role at the beginning of a conversation and reject inline `system` messages interleaved between `user` or `assistant` messages (for example, DeepSeek-R1).\nWhen this option is enabled, consecutive `system` messages at the beginning of the conversation are preserved, while later interleaved `system` roles are rewritten to `user`. Message content remains unchanged.\nFor Messages API targets, enabling this option rewrites every inline `system` message. When it is disabled, Floway preserves supported inline `system` positions and rewrites only positions the target cannot express.',
             },
             'rewrite-developer-to-system': {
               label: 'Rewrite developer Roles to system',
