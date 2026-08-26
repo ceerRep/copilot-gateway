@@ -18,7 +18,7 @@ import type { MessagesUsage, MessagesUsageIteration, MessagesUsageServerToolUse 
  * - https://github.com/QuantumNous/new-api/blob/65b16547329625f619cf797ae1eb9b748525056c/setting/model_setting/claude.go
  * - https://github.com/songquanpeng/one-api/blob/8df4a2670b98266bd287c698243fff327d9748cf/relay/adaptor/anthropic/main.go
  */
-export const MESSAGES_FALLBACK_MAX_TOKENS = 8192;
+export const MESSAGES_FALLBACK_MAX_TOKENS = 32768;
 
 export type MessagesThinkingDisplay = 'omitted' | 'summarized' | 'full';
 
