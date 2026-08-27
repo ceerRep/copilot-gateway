@@ -82,7 +82,6 @@ test('buildTargetRequest projects a plaintext agent message as non-user agent in
 });
 
 test.each([
-  { name: 'additional_tools', input: [{ type: 'additional_tools', role: 'developer', tools: [] as OpenAIResponsesTool[] }] },
   { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
   { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },
   { name: 'multi_agent_call', input: [{ type: 'multi_agent_call', action: 'spawn_agent', arguments: '{}', call_id: 'call_1' }] },
@@ -592,6 +591,58 @@ test('buildTargetRequest projects custom_tool_call history into wrapped tool_use
   });
 });
 
+test('buildTargetRequest lowers Responses Lite namespace custom tools and maps replay history', async () => {
+  const additionalTools: OpenAIResponsesTool[] = [{
+    type: 'namespace',
+    name: 'editor',
+    description: 'Editor tools.',
+    tools: [{
+      type: 'custom',
+      name: 'apply_patch',
+      format: { type: 'grammar', syntax: 'lark', definition: 'start: "patch"' },
+    }],
+  }];
+  const result = await buildTargetRequest({
+    ...minimalPayload,
+    input: [{ type: 'additional_tools', id: 'at_current', role: 'developer', tools: additionalTools }, {
+      type: 'custom_tool_call',
+      call_id: 'call_patch',
+      namespace: 'editor',
+      name: 'apply_patch',
+      input: '*** Begin Patch\n*** End Patch',
+    }],
+    tool_choice: { type: 'custom', name: 'editor.apply_patch' },
+  });
+
+  assertEquals(result.customToolNames, new Set(['editor_apply_patch']));
+  assertEquals(result.namespaceToolNames.targetToSource, new Map([[
+    'editor_apply_patch',
+    { namespace: 'editor', name: 'apply_patch', kind: 'custom' },
+  ]]));
+  assertEquals(result.target.tools, [{
+    name: 'editor_apply_patch',
+    description: undefined,
+    input_schema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['input'],
+      properties: { input: { type: 'string', description: 'Lark grammar: start: "patch"' } },
+    },
+    cache_control: { type: 'ephemeral' },
+  }]);
+  assertEquals(result.target.messages, [{
+    role: 'assistant',
+    content: [{
+      type: 'tool_use',
+      id: 'call_patch',
+      name: 'editor_apply_patch',
+      input: { input: '*** Begin Patch\n*** End Patch' },
+      cache_control: { type: 'ephemeral' },
+    }],
+  }]);
+  assertEquals(result.target.tool_choice, { type: 'tool', name: 'editor_apply_patch' });
+});
+
 test('buildTargetRequest flattens namespace functions collision-safely and maps replay history', async () => {
   const namespaceTool: OpenAIResponsesTool = {
     type: 'namespace',
@@ -618,8 +669,8 @@ test('buildTargetRequest flattens namespace functions collision-safely and maps 
     tool_choice: { type: 'function', name: 'web.run' },
   });
 
-  assertEquals(result.namespaceToolNames.sourceToTarget, new Map([['web.run', 'web_run_2']]));
-  assertEquals(result.namespaceToolNames.targetToSource, new Map([['web_run_2', { namespace: 'web', name: 'run' }]]));
+  assertEquals(result.namespaceToolNames.sourceToTarget, new Map([['web', new Map([['run', 'web_run_2']])]]));
+  assertEquals(result.namespaceToolNames.targetToSource, new Map([['web_run_2', { namespace: 'web', name: 'run', kind: 'function' }]]));
   assertEquals(result.target.tools, [
     {
       name: 'web_run',

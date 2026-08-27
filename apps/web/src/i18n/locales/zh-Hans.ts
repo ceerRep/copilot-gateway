@@ -618,6 +618,11 @@ const zhHansCN = {
               description:
                   'OpenAI Responses API 包含上下文压缩能力，但本上游可能不提供原生上下文压缩。\n开启此开关后，Floway 会将压缩请求改写为普通生成请求，注入 Codex 的上下文交接摘要提示词，来“模拟”原生上下文压缩，并在后续请求中延续压缩前的任务上下文。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
             },
+            'openai-responses-additional-tools-shim': {
+              label: 'OpenAI Responses 附加工具兼容层',
+              description:
+                  'Responses Lite 会把当前工具集放在输入开头的 `additional_tools` 项中，而不是顶层 `tools` 字段。\n开启后，Floway 会为不支持该输入项的原生 OpenAI Responses 上游将工具声明移到顶层 `tools`。翻译到其他协议时，Floway 始终执行此转换。',
+            },
             'disable-reasoning-on-forced-tool-choice': {
               label: '强制工具调用时禁用思考',
               description:
@@ -729,7 +734,7 @@ const zhHansCN = {
           maximum: '最大值',
           codexResponsesLite: 'Codex Responses Lite',
           codexResponsesLiteHint:
-            'Floway 在 Codex 客户端模型目录中声明的 use_responses_lite 值。开启后 Codex CLI 会把工具集放进 additional_tools 输入项、不再发送顶层 tools，只有原生 Responses 上游能处理这种形状。',
+            'Floway 在 Codex 客户端模型目录中声明的 use_responses_lite 值。开启后 Codex CLI 会把工具集放进 additional_tools 输入项、不再发送顶层 tools。Floway 会将可表示的工具翻译到其它协议；原生 Responses 目标默认保留原始形状，开启“附加工具兼容层”后才会降级。',
           codexResponsesLiteInherit: '继承（Codex 目录）',
           codexResponsesLiteOn: '强制开启',
           codexResponsesLiteOff: '强制关闭',

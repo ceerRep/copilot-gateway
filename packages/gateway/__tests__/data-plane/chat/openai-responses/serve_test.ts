@@ -435,6 +435,69 @@ const memoryStore = async (snapshots: readonly StoredOpenAIResponsesSnapshot[], 
   });
 };
 
+test('expandPreviousResponseId keeps the current additional tools first and omits the prior declaration', async () => {
+  const tools = [{ type: 'function' as const, name: 'current', parameters: { type: 'object' } }];
+  const storedItems: StoredOpenAIResponsesItem[] = [{
+    id: 'at_previous',
+    apiKeyId: API_KEY_ID,
+    itemHash: 'previous-tools-hash',
+    payload: { item: { type: 'additional_tools', id: 'at_previous', role: 'developer', tools: [] } },
+    refreshedAt: 1_000,
+  }, {
+    id: 'msg_previous',
+    apiKeyId: API_KEY_ID,
+    itemHash: 'previous-message-hash',
+    payload: { item: { type: 'message', id: 'msg_previous', role: 'assistant', content: 'previous' } },
+    refreshedAt: 1_000,
+  }];
+  const store = await memoryStore([{
+    id: 'resp_previous',
+    apiKeyId: API_KEY_ID,
+    itemIds: storedItems.map(item => item.id),
+    refreshedAt: 1_000,
+  }], storedItems);
+
+  const expanded = await expandPreviousResponseId(makePayload({
+    previous_response_id: 'resp_previous',
+    input: [
+      { type: 'additional_tools', id: 'at_current', role: 'developer', tools },
+      { type: 'message', role: 'user', content: 'continue' },
+    ],
+  }), store);
+
+  assertEquals(expanded.input, [
+    { type: 'additional_tools', id: 'at_current', role: 'developer', tools },
+    { type: 'item_reference', id: 'msg_previous' },
+    { type: 'message', role: 'user', content: 'continue' },
+  ]);
+});
+
+test('expandPreviousResponseId preserves a prior additional tools item when the current request has none', async () => {
+  const storedItem: StoredOpenAIResponsesItem = {
+    id: 'at_previous',
+    apiKeyId: API_KEY_ID,
+    itemHash: 'previous-tools-hash',
+    payload: { item: { type: 'additional_tools', id: 'at_previous', role: 'developer', tools: [] } },
+    refreshedAt: 1_000,
+  };
+  const store = await memoryStore([{
+    id: 'resp_previous_tools',
+    apiKeyId: API_KEY_ID,
+    itemIds: [storedItem.id],
+    refreshedAt: 1_000,
+  }], [storedItem]);
+
+  const expanded = await expandPreviousResponseId(makePayload({
+    previous_response_id: 'resp_previous_tools',
+    input: [{ type: 'message', role: 'user', content: 'continue' }],
+  }), store);
+
+  assertEquals(expanded.input, [
+    { type: 'item_reference', id: 'at_previous' },
+    { type: 'message', role: 'user', content: 'continue' },
+  ]);
+});
+
 test('expandPreviousResponseId resolves snapshots from a non-repo-backed store', async () => {
   installRepo(); // affinity lookups in the wider flow still need a repo, but here the helper only touches the store.
   const id = 'msg_memory';

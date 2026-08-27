@@ -145,6 +145,97 @@ test('generate native success leaves source-edge state ownership to the caller',
   assertEquals(callOpenAIResponses.mock.calls.length, 1);
 });
 
+test.each([
+  { enabled: false, expectedInputType: 'additional_tools', expectedTools: undefined },
+  { enabled: true, expectedInputType: 'message', expectedTools: 'lookup' },
+])('native Responses additional-tools shim enabled=$enabled', async ({ enabled, expectedInputType, expectedTools }) => {
+  installRepo();
+  let observedBody: Omit<CanonicalOpenAIResponsesPayload, 'model'> | undefined;
+  const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
+    observedBody = body;
+    return {
+      action: 'generate',
+      ok: true,
+      events: makeProviderEvents([{ type: 'response.completed', sequence_number: 0, response: makeOpenAIResponsesResult() }]),
+      modelKey: 'test-model-key',
+    };
+  });
+  const flags = enabled ? new Set<FlagId>(['openai-responses-additional-tools-shim']) : new Set<FlagId>();
+
+  const result = await openaiResponsesAttempt.generate({
+    payload: makePayload({
+      input: [
+        { type: 'additional_tools', role: 'developer', tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' } }] },
+        { type: 'message', role: 'user', content: 'hello' },
+      ],
+    }),
+    ctx: makeGatewayCtx(createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), false)),
+    candidate: makeCandidate(callOpenAIResponses, flags),
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  assertEquals(observedBody?.input[0]?.type, expectedInputType);
+  assertEquals(observedBody?.tools?.[0]?.type === 'function' ? observedBody.tools[0].name : undefined, expectedTools);
+});
+
+test('translation lowers additional tools even when the native shim flag is disabled', async () => {
+  installRepo();
+  let observedBody: Omit<OpenAIChatCompletionsPayload, 'model'> | undefined;
+  const callOpenAIChatCompletions = vi.fn(async (_model, body): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+    observedBody = body;
+    return {
+      ok: true,
+      events: (async function* () {
+        yield eventFrame<OpenAIChatCompletionsStreamEvent>({
+          id: 'chatcmpl_tools', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+          choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+        });
+        yield eventFrame<OpenAIChatCompletionsStreamEvent>({
+          id: 'chatcmpl_tools', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+          choices: [{ index: 0, delta: {}, finish_reason: 'stop' }],
+        });
+        yield doneFrame();
+      })(),
+      modelKey: 'test-model-key',
+    };
+  });
+  const upstream = 'up_chat_tools';
+  const endpoints = { openaiChatCompletions: {} };
+  const candidate: ModelCandidate = {
+    provider: {
+      upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
+      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
+      instance: stubProvider({ callOpenAIChatCompletions }),
+    },
+    model: stubInternalModel({
+      endpoints,
+      providerModels: { [upstream]: stubProviderModel({ endpoints, enabledFlags: new Set() }) },
+    }, upstream),
+    fetcher: directFetcher,
+  };
+
+  const result = await openaiResponsesAttempt.generate({
+    payload: makePayload({
+      input: [
+        { type: 'additional_tools', role: 'developer', tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' } }] },
+        { type: 'message', role: 'user', content: 'hello' },
+      ],
+    }),
+    ctx: makeGatewayCtx(createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), false)),
+    candidate,
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  assertEquals(observedBody?.tools?.[0]?.function.name, 'lookup');
+  assertEquals(observedBody?.messages, [{ role: 'user', content: 'hello' }]);
+});
+
 test('generate isolates provider mutations with JSON-safe container cloning', async () => {
   installRepo();
   const metadata = JSON.parse('{"__proto__":{"retained":true},"nested":{"value":"source"}}') as Record<string, unknown>;

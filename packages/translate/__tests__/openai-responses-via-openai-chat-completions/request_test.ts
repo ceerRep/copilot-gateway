@@ -482,6 +482,133 @@ test('buildTargetRequest wraps custom tools as single-string function tools and 
   assertEquals(result.target.tool_choice, { type: 'function', function: { name: 'apply_patch' } });
 });
 
+test('buildTargetRequest flattens namespace functions collision-safely and maps their history and choice', () => {
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    input: [{
+      type: 'function_call',
+      call_id: 'call_web',
+      namespace: 'web',
+      name: 'run',
+      arguments: '{"query":"Floway"}',
+      status: 'completed',
+    }, {
+      type: 'function_call',
+      call_id: 'call_direct',
+      name: 'web.run',
+      arguments: '{}',
+      status: 'completed',
+    }],
+    tools: [
+      { type: 'function', name: 'web_run', parameters: { type: 'object' } },
+      {
+        type: 'namespace',
+        name: 'web',
+        description: 'Web tools.',
+        tools: [{
+          type: 'function',
+          name: 'run',
+          description: 'Search the web.',
+          parameters: { type: 'object', properties: { query: { type: 'string' } } },
+          strict: false,
+        }],
+      },
+    ],
+    tool_choice: { type: 'function', name: 'web.run' },
+  });
+
+  assertEquals(result.namespaceToolNames.sourceToTarget, new Map([['web', new Map([['run', 'web_run_2']])]]));
+  assertEquals(result.namespaceToolNames.targetToSource, new Map([['web_run_2', { namespace: 'web', name: 'run', kind: 'function' }]]));
+  assertEquals(result.target.tools, [
+    {
+      type: 'function',
+      function: { name: 'web_run', parameters: { type: 'object' } },
+    },
+    {
+      type: 'function',
+      function: {
+        name: 'web_run_2',
+        description: 'Search the web.',
+        parameters: { type: 'object', properties: { query: { type: 'string' } } },
+        strict: false,
+      },
+    },
+  ]);
+  assertEquals(result.target.messages, [{
+    role: 'assistant',
+    content: null,
+    tool_calls: [
+      {
+        id: 'call_web',
+        type: 'function',
+        function: { name: 'web_run_2', arguments: '{"query":"Floway"}' },
+      },
+      {
+        id: 'call_direct',
+        type: 'function',
+        function: { name: 'web.run', arguments: '{}' },
+      },
+    ],
+  }]);
+  assertEquals(result.target.tool_choice, { type: 'function', function: { name: 'web_run_2' } });
+});
+
+test('buildTargetRequest lowers Responses Lite namespace custom tools and maps replay history', () => {
+  const additionalTools = [{
+    type: 'namespace' as const,
+    name: 'editor',
+    description: 'Editor tools.',
+    tools: [{
+      type: 'custom' as const,
+      name: 'apply_patch',
+      format: { type: 'grammar', syntax: 'lark', definition: 'start: "patch"' },
+    }],
+  }];
+  const result = buildTargetRequest({
+    model: 'gpt-test',
+    input: [{ type: 'additional_tools', id: 'at_current', role: 'developer', tools: additionalTools }, {
+      type: 'custom_tool_call',
+      call_id: 'call_patch',
+      namespace: 'editor',
+      name: 'apply_patch',
+      input: '*** Begin Patch\n*** End Patch',
+    }],
+    tool_choice: { type: 'custom', name: 'editor.apply_patch' },
+  });
+
+  assertEquals(result.customToolNames, new Set(['editor_apply_patch']));
+  assertEquals(result.namespaceToolNames.targetToSource, new Map([[
+    'editor_apply_patch',
+    { namespace: 'editor', name: 'apply_patch', kind: 'custom' },
+  ]]));
+  assertEquals(result.target.tools, [{
+    type: 'function',
+    function: {
+      name: 'editor_apply_patch',
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['input'],
+        properties: { input: { type: 'string', description: 'Lark grammar: start: "patch"' } },
+      },
+      strict: false,
+    },
+  }]);
+  assertEquals(result.target.messages, [{
+    role: 'assistant',
+    content: null,
+    tool_calls: [{
+      id: 'call_patch',
+      type: 'function',
+      function: {
+        name: 'editor_apply_patch',
+        arguments: JSON.stringify({ input: '*** Begin Patch\n*** End Patch' }),
+      },
+    }],
+  }]);
+  assertEquals(result.target.tool_choice, { type: 'function', function: { name: 'editor_apply_patch' } });
+});
+
 test('buildTargetRequest projects custom_tool_call history into wrapped tool_calls shape', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',
@@ -532,7 +659,6 @@ test('buildTargetRequest projects custom_tool_call history into wrapped tool_cal
 });
 
 test.each([
-  { name: 'additional_tools', input: [{ type: 'additional_tools', role: 'developer', tools: [] as OpenAIResponsesTool[] }] },
   { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
   { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },
   { name: 'multi_agent_call', input: [{ type: 'multi_agent_call', action: 'spawn_agent', arguments: '{}', call_id: 'call_1' }] },

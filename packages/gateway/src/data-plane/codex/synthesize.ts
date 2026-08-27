@@ -181,8 +181,9 @@ export const synthesizeCatalogEntry = (
 
   // Responses Lite is a client request-shaping mode, not a model capability:
   // it makes Codex send its whole tool set as a leading `additional_tools`
-  // developer input item and drop top-level `tools`. Only a native Responses
-  // upstream can serve that. A catalog match binds by slug segment, so a
+  // developer input item and drop top-level `tools`. Floway can lower the
+  // representable tools for translated targets, while native Responses targets
+  // keep the original shape unless their additional-tools shim is enabled. A catalog match binds by slug segment, so a
   // registry model that merely shares a name with a Lite-enabled OpenAI slug
   // inherits `true` from the base — the operator's per-model call is how that
   // gets corrected in either direction.

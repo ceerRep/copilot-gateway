@@ -50,11 +50,22 @@ export const expandPreviousResponseId = async (
   if (snapshot === null) throw new PreviousResponseNotFoundError(previousResponseId);
 
   const { previous_response_id: _previous, ...rest } = payload;
+  const [first, ...remaining] = payload.input;
+  const currentAdditionalTools = first?.type === 'additional_tools' ? first : undefined;
+  const requestInput = currentAdditionalTools === undefined ? payload.input : remaining;
+  // Responses Lite rebuilds its request-level tool declaration every turn.
+  // Keep the current declaration at input[0], but do not replay an older one
+  // from the previous-response snapshot alongside it.
+  const previousItemIds = currentAdditionalTools === undefined
+    ? snapshot.itemIds
+    : snapshot.itemIds.filter(id =>
+        (store.getItemById(id)?.payload.item as { type?: unknown } | undefined)?.type !== 'additional_tools');
   return {
     ...rest,
     input: [
-      ...snapshot.itemIds.map(id => ({ type: 'item_reference' as const, id })),
-      ...payload.input,
+      ...(currentAdditionalTools === undefined ? [] : [currentAdditionalTools]),
+      ...previousItemIds.map(id => ({ type: 'item_reference' as const, id })),
+      ...requestInput,
     ],
   };
 };

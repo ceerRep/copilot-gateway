@@ -1,6 +1,7 @@
 import { withRoleCompatibilityApplied } from './apply-role-compatibility.ts';
 import { withOpenAIResponsesCompactShim } from './compact-shim.ts';
 import { withReasoningDisabledOnForcedToolChoice } from './disable-reasoning-on-forced-tool-choice.ts';
+import { withAdditionalToolsLowered } from './lower-additional-tools.ts';
 import { withEmptyToolsToolChoiceNormalized } from './normalize-empty-tools-tool-choice.ts';
 import { withExclusiveCachedTokensNormalized } from './normalize-exclusive-cached-tokens.ts';
 import { withOpenAIResponsesServerToolShim } from './server-tool-shim.ts';
@@ -25,6 +26,9 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 //     to every downstream interceptor + the provider terminal. Also
 //     responsible for inbound expansion of prior shim-encoded compaction
 //     items so the upstream sees the summarized history.
+//   - withAdditionalToolsLowered: runs before server-tool discovery so tools
+//     carried by Responses Lite participate in the same shim decisions as
+//     top-level tools.
 //   - withOpenAIResponsesServerToolShim: wraps the multi-turn ReAct loop around
 //     the rest of the chain.
 //   - withReasoningDisabledOnForcedToolChoice: gated by
@@ -51,6 +55,7 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 //     body.
 export const openaiResponsesInterceptors: readonly OpenAIResponsesInterceptor[] = [
   withOpenAIResponsesCompactShim,
+  withAdditionalToolsLowered,
   withOpenAIResponsesServerToolShim([
     webSearchServerTool,
     imageGenerationServerTool,

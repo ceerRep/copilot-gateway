@@ -648,6 +648,11 @@ const en = {
               description:
                   "The OpenAI Responses API includes context compaction capabilities, but this upstream may not provide native context compaction.\nWhen this option is enabled, Floway rewrites a compaction request as a normal generation request and injects Codex's context-handoff summarization prompt to “simulate” native context compaction, allowing subsequent requests to continue the task context from before compaction.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.",
             },
+            'openai-responses-additional-tools-shim': {
+              label: 'OpenAI Responses Additional Tools Shim',
+              description:
+                  'Responses Lite sends the current tool set in a leading `additional_tools` input item instead of the top-level `tools` field.\nEnable this option to move that declaration to top-level `tools` for native OpenAI Responses upstreams that do not support the item. Floway always performs this conversion when translating to another protocol.',
+            },
             'disable-reasoning-on-forced-tool-choice': {
               label: 'Disable Reasoning for Forced Tool Calls',
               description:
@@ -760,7 +765,7 @@ const en = {
           maximum: 'Maximum',
           codexResponsesLite: 'Codex Responses Lite',
           codexResponsesLiteHint:
-            'What Floway announces as use_responses_lite in the Codex client catalog. Under Responses Lite the Codex CLI sends its tools as an additional_tools input item instead of top-level tools, which only a native Responses upstream can serve.',
+            'What Floway announces as use_responses_lite in the Codex client catalog. Under Responses Lite the Codex CLI sends its tools as an additional_tools input item instead of top-level tools. Floway translates representable tools to other protocols; native Responses targets keep the original shape unless their Additional Tools Shim is enabled.',
           codexResponsesLiteInherit: 'Inherit (Codex catalog)',
           codexResponsesLiteOn: 'On (force)',
           codexResponsesLiteOff: 'Off (force)',

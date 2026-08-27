@@ -1,5 +1,6 @@
 import { hasReadableSummary, toOpenAIResponsesReasoningItem } from '../shared/openai-chat-completions-and-openai-responses/reasoning.ts';
 import { unwrapCustomToolInput } from '../shared/openai-responses-via/custom-tool-wrap.ts';
+import type { NamespaceToolTarget } from '../shared/openai-responses-via/namespace-tool-wrap.ts';
 import * as openaiResponses from '../shared/openai-responses-via/openai-responses-event-builder.ts';
 import { eventFrame, splitInclusiveInputTokens, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent, OpenAIChatCompletionsResult } from '@floway-dev/protocols/openai-chat-completions';
@@ -71,6 +72,8 @@ interface FunctionCallStreamItem {
   outputIndex: number;
   itemId: string;
   kind: 'function' | 'custom';
+  sourceName: string;
+  namespace?: string;
 }
 
 interface PendingFunctionCallItem {
@@ -114,9 +117,13 @@ interface OpenAIChatCompletionsToOpenAIResponsesStreamState {
   pendingFinishReason?: OpenAIChatCompletionsFinishReason;
   completed: boolean;
   customToolNames: ReadonlySet<string>;
+  namespaceTargetToSource: ReadonlyMap<string, NamespaceToolTarget>;
 }
 
-export const createOpenAIChatCompletionsToOpenAIResponsesStreamState = (customToolNames: ReadonlySet<string> = new Set()): OpenAIChatCompletionsToOpenAIResponsesStreamState => ({
+export const createOpenAIChatCompletionsToOpenAIResponsesStreamState = (
+  customToolNames: ReadonlySet<string> = new Set(),
+  namespaceTargetToSource: ReadonlyMap<string, NamespaceToolTarget> = new Map(),
+): OpenAIChatCompletionsToOpenAIResponsesStreamState => ({
   responseCreated: false,
   outputIndex: 0,
   sequenceNumber: 0,
@@ -129,6 +136,7 @@ export const createOpenAIChatCompletionsToOpenAIResponsesStreamState = (customTo
   reasoningItemsSeen: false,
   completed: false,
   customToolNames,
+  namespaceTargetToSource,
 });
 
 const buildResult = (state: OpenAIChatCompletionsToOpenAIResponsesStreamState, status: OpenAIResponsesResult['status']): OpenAIResponsesResult =>
@@ -217,18 +225,18 @@ const closeFunctionCalls = (state: OpenAIChatCompletionsToOpenAIResponsesStreamS
   for (const functionCall of [...state.openFunctionCalls.values()]
     .filter((item): item is StartedFunctionCallItem => item.streamItem !== undefined && Boolean(item.callId) && Boolean(item.name))
     .sort((a, b) => a.streamItem.outputIndex - b.streamItem.outputIndex)) {
-    const { outputIndex, itemId, kind } = functionCall.streamItem;
+    const { outputIndex, itemId, kind, sourceName, namespace } = functionCall.streamItem;
 
     if (kind === 'custom') {
       const input = unwrapCustomToolInput(functionCall.arguments);
-      const item = openaiResponses.customToolCallItem(itemId, functionCall.callId, functionCall.name, input);
+      const item = openaiResponses.customToolCallItem(itemId, functionCall.callId, sourceName, input, namespace);
 
       state.completedItems[outputIndex] = item;
       events.push(...openaiResponses.customToolCallDone(state, outputIndex, itemId, input, item));
       continue;
     }
 
-    const item = openaiResponses.functionCallItem(itemId, functionCall.callId, functionCall.name, functionCall.arguments, 'completed');
+    const item = openaiResponses.functionCallItem(itemId, functionCall.callId, sourceName, functionCall.arguments, 'completed', namespace);
 
     state.completedItems[outputIndex] = item;
     events.push(...openaiResponses.functionCallDone(state, outputIndex, itemId, functionCall.arguments, item));
@@ -276,22 +284,25 @@ const startFunctionCall = (current: PendingFunctionCallItem, state: OpenAIChatCo
     return [];
   }
 
-  const isCustom = state.customToolNames.has(current.name);
+  const sourceTool = state.namespaceTargetToSource.get(current.name);
+  const isCustom = sourceTool?.kind === 'custom' || state.customToolNames.has(current.name);
   const outputIndex = state.outputIndex++;
   const streamItem: FunctionCallStreamItem = {
     outputIndex,
     itemId: createRandomOpenAIResponsesItemId(isCustom ? 'custom_tool_call' : 'function_call'),
     kind: isCustom ? 'custom' : 'function',
+    sourceName: sourceTool?.name ?? current.name,
+    ...(sourceTool !== undefined ? { namespace: sourceTool.namespace } : {}),
   };
   current.streamItem = streamItem;
 
   if (isCustom) {
     // Wrapped custom tool calls buffer arguments fully; we cannot emit input
     // deltas until we can parse the JSON wrap and extract the freeform value.
-    return openaiResponses.itemAdded(state, outputIndex, openaiResponses.customToolCallItem(streamItem.itemId, current.callId, current.name, ''));
+    return openaiResponses.itemAdded(state, outputIndex, openaiResponses.customToolCallItem(streamItem.itemId, current.callId, streamItem.sourceName, '', streamItem.namespace));
   }
 
-  const events = openaiResponses.itemAdded(state, outputIndex, openaiResponses.functionCallItem(streamItem.itemId, current.callId, current.name, '', 'in_progress'));
+  const events = openaiResponses.itemAdded(state, outputIndex, openaiResponses.functionCallItem(streamItem.itemId, current.callId, streamItem.sourceName, '', 'in_progress', streamItem.namespace));
 
   if (current.arguments) {
     events.push(...openaiResponses.argumentsDelta(state, outputIndex, streamItem.itemId, current.arguments));
@@ -488,8 +499,9 @@ export const flushOpenAIChatCompletionsToOpenAIResponsesEvents = (state: OpenAIC
 export const translateToSourceEvents = async function* (
   frames: AsyncIterable<ProtocolFrame<OpenAIChatCompletionsStreamEvent>>,
   customToolNames: ReadonlySet<string> = new Set(),
+  namespaceTargetToSource: ReadonlyMap<string, NamespaceToolTarget> = new Map(),
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
-  const state = createOpenAIChatCompletionsToOpenAIResponsesStreamState(customToolNames);
+  const state = createOpenAIChatCompletionsToOpenAIResponsesStreamState(customToolNames, namespaceTargetToSource);
 
   for await (const chunk of upstreamChatCompletionEventsUntilDone(frames)) {
     for (const event of translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk, state)) {

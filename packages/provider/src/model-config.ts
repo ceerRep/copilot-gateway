@@ -37,9 +37,10 @@ export interface UpstreamModelConfig {
   // into a leading `additional_tools` developer input item, omits top-level
   // `tools`, empties `instructions`, forces `parallel_tool_calls: false`,
   // asks for `reasoning.context: all_turns`, strips image `detail`, and adds
-  // an `x-openai-internal-codex-responses-lite` header. Only a native
-  // Responses upstream can serve that shape: translated Chat Completions and
-  // Messages targets reject `additional_tools` outright.
+  // an `x-openai-internal-codex-responses-lite` header. Floway lowers the
+  // representable function/custom declarations when translating to Chat
+  // Completions or Messages; native Responses targets receive the Lite shape
+  // unless `openai-responses-additional-tools-shim` is enabled.
   // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/protocol/src/openai_models.rs#L419
   // https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/core/src/client.rs#L847-L864
   codexResponsesLite?: boolean;

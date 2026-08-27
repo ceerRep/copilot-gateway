@@ -1,4 +1,5 @@
 import { unwrapCustomToolInput } from '../shared/openai-responses-via/custom-tool-wrap.ts';
+import type { NamespaceToolTarget } from '../shared/openai-responses-via/namespace-tool-wrap.ts';
 import * as openaiResponses from '../shared/openai-responses-via/openai-responses-event-builder.ts';
 import { anthropicMessagesRefusalOpenAIResponsesError } from '../shared/via-anthropic-messages/refusal.ts';
 import { openAIServiceTierFromAnthropicMessagesUsage } from '../shared/via-anthropic-messages/service-tier.ts';
@@ -73,6 +74,7 @@ type OutputBlockInfo =
     itemId: string;
     toolCallId: string;
     toolName: string;
+    toolNamespace?: string;
     wrappedArguments: string;
   };
 
@@ -88,7 +90,7 @@ interface AnthropicMessagesToOpenAIResponsesStreamState {
   stopReason?: AnthropicMessagesMessageDeltaEvent['delta']['stop_reason'];
   stopDetails?: AnthropicMessagesRefusalStopDetails | null;
   customToolNames: ReadonlySet<string>;
-  namespaceTargetToSource: ReadonlyMap<string, { namespace: string; name: string }>;
+  namespaceTargetToSource: ReadonlyMap<string, NamespaceToolTarget>;
 }
 
 const buildResult = (state: AnthropicMessagesToOpenAIResponsesStreamState, status: OpenAIResponsesResult['status']): OpenAIResponsesResult => {
@@ -189,22 +191,23 @@ const handleContentBlockStart = (event: AnthropicMessagesContentBlockStartEvent,
   }
   case 'tool_use': {
     const outputIndex = state.outputIndex++;
-    if (state.customToolNames.has(event.content_block.name)) {
+    const sourceTool = state.namespaceTargetToSource.get(event.content_block.name);
+    if (sourceTool?.kind === 'custom' || state.customToolNames.has(event.content_block.name)) {
       const itemId = createRandomOpenAIResponsesItemId('custom_tool_call');
       state.blockMap.set(event.index, {
         type: 'custom_tool_use',
         outputIndex,
         itemId,
         toolCallId: event.content_block.id,
-        toolName: event.content_block.name,
+        toolName: sourceTool?.name ?? event.content_block.name,
+        ...(sourceTool !== undefined ? { toolNamespace: sourceTool.namespace } : {}),
         wrappedArguments: '',
       });
 
-      return openaiResponses.itemAdded(state, outputIndex, openaiResponses.customToolCallItem(itemId, event.content_block.id, event.content_block.name, ''));
+      return openaiResponses.itemAdded(state, outputIndex, openaiResponses.customToolCallItem(itemId, event.content_block.id, sourceTool?.name ?? event.content_block.name, '', sourceTool?.namespace));
     }
 
     const itemId = createRandomOpenAIResponsesItemId('function_call');
-    const sourceTool = state.namespaceTargetToSource.get(event.content_block.name);
     const info: OutputBlockInfo = {
       type: 'tool_use',
       outputIndex,
@@ -351,7 +354,7 @@ const handleContentBlockStop = (event: AnthropicMessagesContentBlockStopEvent, s
 
   if (info.type === 'custom_tool_use') {
     const input = unwrapCustomToolInput(info.wrappedArguments);
-    const item = openaiResponses.customToolCallItem(info.itemId, info.toolCallId, info.toolName, input);
+    const item = openaiResponses.customToolCallItem(info.itemId, info.toolCallId, info.toolName, input, info.toolNamespace);
 
     state.completedItems.push(item);
 
@@ -369,7 +372,7 @@ export const createAnthropicMessagesToOpenAIResponsesStreamState = (
   responseId: string,
   model: string,
   customToolNames: ReadonlySet<string> = new Set(),
-  namespaceTargetToSource: ReadonlyMap<string, { namespace: string; name: string }> = new Map(),
+  namespaceTargetToSource: ReadonlyMap<string, NamespaceToolTarget> = new Map(),
 ): AnthropicMessagesToOpenAIResponsesStreamState => ({
   responseId,
   model,
@@ -441,7 +444,7 @@ export const translateToSourceEvents = async function* (
   responseId: string,
   model: string,
   customToolNames: ReadonlySet<string> = new Set(),
-  namespaceTargetToSource: ReadonlyMap<string, { namespace: string; name: string }> = new Map(),
+  namespaceTargetToSource: ReadonlyMap<string, NamespaceToolTarget> = new Map(),
 ): AsyncGenerator<ProtocolFrame<OpenAIResponsesStreamEvent>> {
   const state = createAnthropicMessagesToOpenAIResponsesStreamState(responseId, model, customToolNames, namespaceTargetToSource);
 

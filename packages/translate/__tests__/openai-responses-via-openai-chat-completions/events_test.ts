@@ -342,6 +342,65 @@ test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents unwraps wrapped
   assertEquals(itemDone.item.call_id, 'call_ctc');
 });
 
+test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents restores a namespace function tool call', () => {
+  const state = createOpenAIChatCompletionsToOpenAIResponsesStreamState(
+    new Set(),
+    new Map([['web_run_2', { namespace: 'web', name: 'run', kind: 'function' }]]),
+  );
+  const events = [
+    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({
+      tool_calls: [{
+        index: 0,
+        id: 'call_web',
+        type: 'function',
+        function: { name: 'web_run_2', arguments: '{"query":"Floway"}' },
+      }],
+    }), state),
+    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({}, 'tool_calls'), state),
+    ...flushOpenAIChatCompletionsToOpenAIResponsesEvents(state),
+  ];
+  const completed = events.find(event => event.type === 'response.completed') as OpenAIResponsesCompletedEvent | undefined;
+
+  assertEquals(completed?.response.output, [{
+    type: 'function_call',
+    id: expect.stringMatching(/^fc_[0-9a-f]{32}$/),
+    call_id: 'call_web',
+    namespace: 'web',
+    name: 'run',
+    arguments: '{"query":"Floway"}',
+    status: 'completed',
+  }]);
+});
+
+test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents restores a namespace custom tool call', () => {
+  const state = createOpenAIChatCompletionsToOpenAIResponsesStreamState(
+    new Set(['editor_apply_patch']),
+    new Map([['editor_apply_patch', { namespace: 'editor', name: 'apply_patch', kind: 'custom' }]]),
+  );
+  const events = [
+    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({
+      tool_calls: [{
+        index: 0,
+        id: 'call_patch',
+        type: 'function',
+        function: { name: 'editor_apply_patch', arguments: '{"input":"patch"}' },
+      }],
+    }), state),
+    ...translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents(chunk({}, 'tool_calls'), state),
+    ...flushOpenAIChatCompletionsToOpenAIResponsesEvents(state),
+  ];
+  const completed = events.find(event => event.type === 'response.completed') as OpenAIResponsesCompletedEvent | undefined;
+
+  assertEquals(completed?.response.output, [{
+    type: 'custom_tool_call',
+    id: expect.stringMatching(/^ctc_[0-9a-f]{32}$/),
+    call_id: 'call_patch',
+    namespace: 'editor',
+    name: 'apply_patch',
+    input: 'patch',
+  }]);
+});
+
 test('translateOpenAIChatCompletionsChunkToOpenAIResponsesEvents keeps late opaque with prior scalar reasoning text', () => {
   const state = createOpenAIChatCompletionsToOpenAIResponsesStreamState();
   const events = [

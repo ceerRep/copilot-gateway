@@ -410,6 +410,45 @@ test('unwraps wrapped custom tool calls into custom_tool_call shape', () => {
   assertEquals(itemDone.item.call_id, 'call_ctc');
 });
 
+test('restores a flattened namespace custom tool call', () => {
+  const state = createAnthropicMessagesToOpenAIResponsesStreamState(
+    'resp_ctc_namespace',
+    'claude-test',
+    new Set(['editor_apply_patch']),
+    new Map([['editor_apply_patch', { namespace: 'editor', name: 'apply_patch', kind: 'custom' }]]),
+  );
+
+  translateAnthropicMessagesEventToOpenAIResponsesEvents(
+    {
+      type: 'content_block_start',
+      index: 0,
+      content_block: { type: 'tool_use', id: 'call_patch', name: 'editor_apply_patch', input: {} },
+    } as AnthropicMessagesStreamEvent,
+    state,
+  );
+  translateAnthropicMessagesEventToOpenAIResponsesEvents(
+    {
+      type: 'content_block_delta',
+      index: 0,
+      delta: { type: 'input_json_delta', partial_json: '{"input":"patch"}' },
+    } as AnthropicMessagesStreamEvent,
+    state,
+  );
+  translateAnthropicMessagesEventToOpenAIResponsesEvents(
+    { type: 'content_block_stop', index: 0 } as AnthropicMessagesStreamEvent,
+    state,
+  );
+
+  assertEquals(state.completedItems, [{
+    type: 'custom_tool_call',
+    id: expect.stringMatching(/^ctc_[0-9a-f]{32}$/),
+    call_id: 'call_patch',
+    namespace: 'editor',
+    name: 'apply_patch',
+    input: 'patch',
+  }]);
+});
+
 // ── citation_delta → response.output_text.annotation.added ──
 
 type AnnotationAddedEvent = Extract<OpenAIResponsesStreamEvent, { type: 'response.output_text.annotation.added' }>;
@@ -834,7 +873,7 @@ test('flattened namespace tool calls recover their source OpenAI Responses name'
     'resp_test',
     'claude-test',
     new Set(),
-    new Map([['web_run', { namespace: 'web', name: 'run' }]]),
+    new Map([['web_run', { namespace: 'web', name: 'run', kind: 'function' }]]),
   );
 
   translateAnthropicMessagesEventToOpenAIResponsesEvents(
