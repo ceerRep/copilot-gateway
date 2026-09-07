@@ -246,7 +246,7 @@ test('Anthropic Messages methods serialize typed anthropic-beta metadata only on
       const [model] = await instance.instance.getProvidedModels(testFetcher);
       const opts = noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: ['context-1m', 'advanced-tool-use'] });
       await instance.instance.callAnthropicMessages(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
-      await instance.instance.callAnthropicMessagesCountTokens(model, { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
+      await instance.instance.callAnthropicMessagesCountTokens(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
     },
   );
 

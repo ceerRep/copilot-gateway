@@ -590,7 +590,7 @@ test('Copilot provider forces stream=true for streaming endpoints and leaves cou
       await provider.callOpenAIChatCompletions(byId.get('gpt-chat')!, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
       await provider.callOpenAIResponses(byId.get('gpt-resp')!, { input: [] }, 'generate', undefined, opts);
       await provider.callAnthropicMessages(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
-      await provider.callAnthropicMessagesCountTokens(byId.get('claude-msg')!, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
+      await provider.callAnthropicMessagesCountTokens(byId.get('claude-msg')!, { messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
       await provider.callOpenAIEmbeddings(byId.get('emb-mini')!, { input: 'hi' }, undefined, opts);
     },
   );
@@ -1072,7 +1072,7 @@ test('Copilot count_tokens consumes and serializes the same Anthropic Messages b
       const [providerModel] = await provider.getProvidedModels(directFetcher);
       const result = await provider.callAnthropicMessagesCountTokens(
         providerModel,
-        { max_tokens: 16, messages: [{ role: 'user', content: 'hi' }] },
+        { messages: [{ role: 'user', content: 'hi' }] },
         undefined,
         noopAnthropicMessagesUpstreamCallOptions({ anthropicBeta: betaIntent }),
       );

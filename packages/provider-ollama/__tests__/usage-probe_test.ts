@@ -167,7 +167,7 @@ test('token counting leaves the account windows untouched and arms no probe', as
     async () => {
       await provider.instance.callAnthropicMessagesCountTokens(
         stubProviderModel({ providerData: 'gpt-oss:120b' }),
-        { messages: [], max_tokens: 16 },
+        { messages: [] },
         undefined,
         { ...noopUpstreamCallOptions({ waitUntil: promise => { pending.push(promise); } }), anthropicBeta: [] },
       );

@@ -1,7 +1,7 @@
 import { memoizedBase64Compressor } from '../image-compression.ts';
 import type { AnthropicMessagesBoundaryCtx } from './types.ts';
 import { type ImageSizeCalculator, type SizeCaps, fitWithin } from '@floway-dev/platform';
-import type { AnthropicMessagesImageBlock, AnthropicMessagesMessage, AnthropicMessagesToolResultBlock, AnthropicMessagesToolResultContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesCountTokensPayload, AnthropicMessagesImageBlock, AnthropicMessagesMessage, AnthropicMessagesPayload, AnthropicMessagesToolResultBlock, AnthropicMessagesToolResultContentBlock, AnthropicMessagesUserContentBlock } from '@floway-dev/protocols/anthropic-messages';
 
 // Per-model image caps for the Claude (Anthropic Messages) egress, measured from the real
 // /v1/messages generation path (count_tokens misreports the downscale here).
@@ -48,7 +48,7 @@ const collectImageBlocks = (messages: AnthropicMessagesMessage[]): AnthropicMess
   return blocks;
 };
 
-const compressInlineImages = async (ctx: AnthropicMessagesBoundaryCtx): Promise<void> => {
+const compressInlineImages = async <TPayload extends AnthropicMessagesPayload | AnthropicMessagesCountTokensPayload>(ctx: AnthropicMessagesBoundaryCtx<TPayload>): Promise<void> => {
   const blocks = collectImageBlocks(ctx.payload.messages);
   if (blocks.length === 0) return;
 
@@ -103,8 +103,8 @@ const compressInlineImages = async (ctx: AnthropicMessagesBoundaryCtx): Promise<
 // same definition serves both the streaming Anthropic Messages boundary chain and the
 // count_tokens boundary chain, so count_tokens sizes the same recompressed
 // payload the chat path sends.
-export const withInlineImagesCompressed = async <TResult>(
-  ctx: AnthropicMessagesBoundaryCtx,
+export const withInlineImagesCompressed = async <TPayload extends AnthropicMessagesPayload | AnthropicMessagesCountTokensPayload, TResult>(
+  ctx: AnthropicMessagesBoundaryCtx<TPayload>,
   _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {

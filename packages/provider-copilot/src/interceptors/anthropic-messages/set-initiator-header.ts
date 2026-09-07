@@ -1,4 +1,5 @@
 import type { AnthropicMessagesBoundaryCtx } from './types.ts';
+import type { AnthropicMessagesCountTokensPayload, AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 /**
  * Copilot's `x-initiator` header distinguishes turns that the human user just
@@ -21,8 +22,8 @@ import type { AnthropicMessagesBoundaryCtx } from './types.ts';
  * References:
  * - https://github.com/caozhiyuan/copilot-api/blob/master/src/services/copilot/create-chat-completions.ts
  */
-export const withInitiatorHeaderSet = async <TResult>(
-  ctx: AnthropicMessagesBoundaryCtx,
+export const withInitiatorHeaderSet = async <TPayload extends AnthropicMessagesPayload | AnthropicMessagesCountTokensPayload, TResult>(
+  ctx: AnthropicMessagesBoundaryCtx<TPayload>,
   _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {

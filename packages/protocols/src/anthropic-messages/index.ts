@@ -61,6 +61,12 @@ export interface AnthropicMessagesPayload {
   speed?: 'standard' | 'fast' | (string & {});
 }
 
+// `/v1/messages/count_tokens` accepts the same input-bearing fields as a
+// Messages request, but it neither generates output nor streams a response.
+// Consequently Anthropic does not require `max_tokens` and does not accept a
+// `stream` control for this endpoint.
+export type AnthropicMessagesCountTokensPayload = Omit<AnthropicMessagesPayload, 'max_tokens' | 'stream'>;
+
 export interface AnthropicMessagesSearchResultLocationCitation {
   type: 'search_result_location';
   url: string;

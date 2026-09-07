@@ -1,5 +1,5 @@
 import type { AnthropicMessagesBoundaryCtx } from './types.ts';
-import type { AnthropicMessagesAssistantMessage, AnthropicMessagesUserMessage } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesAssistantMessage, AnthropicMessagesCountTokensPayload, AnthropicMessagesPayload, AnthropicMessagesUserMessage } from '@floway-dev/protocols/anthropic-messages';
 
 /**
  * Copilot rejects Anthropic `image` blocks as plain text unless the private
@@ -28,8 +28,8 @@ const contentHasImage = (content: AnthropicMessagesUserMessage['content'] | Anth
   });
 };
 
-export const withVisionHeaderSet = async <TResult>(
-  ctx: AnthropicMessagesBoundaryCtx,
+export const withVisionHeaderSet = async <TPayload extends AnthropicMessagesPayload | AnthropicMessagesCountTokensPayload, TResult>(
+  ctx: AnthropicMessagesBoundaryCtx<TPayload>,
   _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {

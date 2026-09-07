@@ -356,7 +356,7 @@ test('Custom provider forces stream=true for streaming endpoints and leaves coun
       await provider.callOpenAIChatCompletions(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, opts);
       await provider.callOpenAIResponses(model, { input: [] }, 'generate', undefined, opts);
       await provider.callAnthropicMessages(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
-      await provider.callAnthropicMessagesCountTokens(model, { max_tokens: 10, messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
+      await provider.callAnthropicMessagesCountTokens(model, { messages: [{ role: 'user', content: 'hi' }] }, undefined, anthropicMessagesOpts);
       await provider.callOpenAIEmbeddings(model, { input: 'hi' }, undefined, opts);
     },
   );

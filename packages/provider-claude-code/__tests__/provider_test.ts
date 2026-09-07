@@ -257,3 +257,34 @@ describe('createClaudeCodeProvider — callAnthropicMessages routes through chai
     expect(body.system).toHaveLength(3);
   });
 });
+
+describe('createClaudeCodeProvider — callAnthropicMessagesCountTokens', () => {
+  test('routes a Claude Agent SDK count request to Anthropic without generation-only fields', async () => {
+    const instance = createClaudeCodeProvider(currentRecord);
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('{"input_tokens":7}', { status: 200, headers: { 'content-type': 'application/json' } }),
+    );
+
+    const result = await instance.instance.callAnthropicMessagesCountTokens(
+      sonnetProviderModel,
+      {
+        messages: [{ role: 'user', content: '<total_tokens>15000000 tokens left</total_tokens>' }],
+        tools: [],
+      },
+      undefined,
+      {
+        ...cliClientCallOpts(),
+        anthropicBeta: ['token-counting-2024-11-01', 'oauth-2025-04-20'],
+      },
+    );
+
+    expect(fetchSpy.mock.calls[0]![0]).toBe('https://api.anthropic.com/v1/messages/count_tokens');
+    const body = await readJsonRequest(fetchSpy.mock.calls[0]![1] as RequestInit);
+    expect(body).toEqual({
+      model: 'claude-sonnet-4-5-20250929',
+      messages: [{ role: 'user', content: '<total_tokens>15000000 tokens left</total_tokens>' }],
+      tools: [],
+    });
+    expect(await result.response.json()).toEqual({ input_tokens: 7 });
+  });
+});

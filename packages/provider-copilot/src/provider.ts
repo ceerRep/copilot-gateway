@@ -18,7 +18,7 @@ import { pricingForCopilotPublicModelId } from './pricing.ts';
 import { readCopilotUpstreamState, type CopilotUpstreamState } from './state.ts';
 import type { CopilotRawModel } from './types.ts';
 import { runInterceptors } from '@floway-dev/interceptor';
-import { parseAnthropicMessagesStream, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import { parseAnthropicMessagesStream, type AnthropicMessagesCountTokensPayload, type AnthropicMessagesPayload, type AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import { type ModelEndpointKey, type ModelEndpoints, type ProtocolFrame, kindForEndpoints } from '@floway-dev/protocols/common';
 import { parseOpenAIChatCompletionsStream, type OpenAIChatCompletionsPayload, type OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import { parseOpenAIResponsesStream, type CanonicalOpenAIResponsesPayload, type OpenAIResponsesResult } from '@floway-dev/protocols/openai-responses';
@@ -110,18 +110,18 @@ const copilotModelEndpoints = (rawModels: readonly CopilotRawModel[]): ModelEndp
 
 const chatReasoningEffort = (body: Omit<OpenAIChatCompletionsPayload, 'model'>): string | undefined => (body.reasoning_effort && body.reasoning_effort !== 'none' ? body.reasoning_effort : undefined);
 
-const anthropicMessagesReasoningEffort = (body: Omit<AnthropicMessagesPayload, 'model'>): string | undefined => body.output_config?.effort;
+const anthropicMessagesReasoningEffort = (body: Pick<AnthropicMessagesPayload, 'output_config'>): string | undefined => body.output_config?.effort;
 
 const openaiResponsesReasoningEffort = (body: Omit<CanonicalOpenAIResponsesPayload, 'model'>): string | undefined => (body.reasoning?.effort && body.reasoning.effort !== 'none' ? body.reasoning.effort : undefined);
 
-const anthropicMessagesBoundaryContext = (
-  body: Omit<AnthropicMessagesPayload, 'model'>,
+const anthropicMessagesBoundaryContext = <TPayload extends AnthropicMessagesPayload | AnthropicMessagesCountTokensPayload>(
+  body: Omit<TPayload, 'model'>,
   model: ProviderModel,
   headers: Headers,
   anthropicBeta: readonly string[],
-): AnthropicMessagesBoundaryCtx => {
+): AnthropicMessagesBoundaryCtx<TPayload> => {
   return {
-    payload: { ...body, model: model.id },
+    payload: { ...body, model: model.id } as TPayload,
     headers: new Headers(headers),
     anthropicBeta: [...anthropicBeta],
     model,
@@ -448,7 +448,7 @@ export const createCopilotProvider = (record: UpstreamRecord): Provider => {
         context1m: ctx.anthropicBeta.includes(CONTEXT_1M_BETA),
         reasoningEffort: anthropicMessagesReasoningEffort(body),
       });
-      const response = await runInterceptors<AnthropicMessagesBoundaryCtx, object, Response>(
+      const response = await runInterceptors<AnthropicMessagesBoundaryCtx<AnthropicMessagesCountTokensPayload>, object, Response>(
         ctx, {}, COPILOT_ANTHROPIC_MESSAGES_COUNT_TOKENS_BOUNDARY, async () => {
           const { model: _ignored, ...wireBody } = ctx.payload;
           const { response } = await call(copilotFetchAnthropicMessagesCountTokens, wireBody, signal, rawModel, headersForAnthropicMessagesCall([...ctx.headers], ctx.anthropicBeta), opts);

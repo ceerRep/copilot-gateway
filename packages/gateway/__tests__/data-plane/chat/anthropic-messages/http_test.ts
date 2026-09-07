@@ -223,16 +223,28 @@ test('POST /v1/messages rejects body anthropic_beta with a 400 before routing', 
 
 test('POST /v1/messages/count_tokens proxies the upstream measurement body', async () => {
   installRepo();
-  const callAnthropicMessagesCountTokens = vi.fn(async (): Promise<ProviderCallResult> => ({
-    response: new Response(JSON.stringify({ input_tokens: 99 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
-    modelKey: 'k',
-  }));
+  const callAnthropicMessagesCountTokens = vi.fn(async (_model, body): Promise<ProviderCallResult> => {
+    assertEquals(body, {
+      messages: [{ role: 'user', content: '<total_tokens>15000000 tokens left</total_tokens>' }],
+      tools: [],
+    });
+    return {
+      response: new Response(JSON.stringify({ input_tokens: 99 }), { status: 200, headers: new Headers({ 'content-type': 'application/json' }) }),
+      modelKey: 'k',
+    };
+  });
   queueCandidates([makeCandidate({ callAnthropicMessagesCountTokens })]);
 
+  const requestBody = JSON.stringify({
+    model: 'claude-sonnet-5',
+    messages: [{ role: 'user', content: '<total_tokens>15000000 tokens left</total_tokens>' }],
+    tools: [],
+  });
+  assertEquals(new TextEncoder().encode(requestBody).byteLength, 129);
   const response = await makeApp().request('/v1/messages/count_tokens', {
     method: 'POST',
     headers: new Headers({ 'content-type': 'application/json' }),
-    body: JSON.stringify({ model: 'test-model', max_tokens: 32, messages: [{ role: 'user', content: 'hello' }] }),
+    body: requestBody,
   });
 
   assertEquals(response.status, 200);

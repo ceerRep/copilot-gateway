@@ -2,7 +2,7 @@ import { ensureClaudeCodeAccessToken } from './access-token.ts';
 import { assertClaudeCodeUpstreamRecord } from './config.ts';
 import { CLAUDE_CODE_DEFAULT_FLAGS } from './defaults.ts';
 import { isClaudeCodeShapedRequest } from './detection.ts';
-import { callClaudeCodeAnthropicMessages } from './fetch.ts';
+import { callClaudeCodeAnthropicMessages, callClaudeCodeAnthropicMessagesCountTokens } from './fetch.ts';
 import { CLAUDE_CODE_ANTHROPIC_MESSAGES_BOUNDARY, type AnthropicMessagesBoundaryCtx } from './interceptors/anthropic-messages/index.ts';
 import { buildClaudeCodeCatalog, fetchClaudeCodeModelsList } from './models.ts';
 import { assertClaudeCodeUpstreamState } from './state.ts';
@@ -105,9 +105,14 @@ export const createClaudeCodeProvider = (record: UpstreamRecord): Provider => {
       );
     },
 
-    // Only /v1/messages is supported; reject any other endpoint loudly so a
-    // dispatcher routing bug surfaces instead of a silent shape mismatch.
-    callAnthropicMessagesCountTokens: rejectUnsupported('callAnthropicMessagesCountTokens'),
+    callAnthropicMessagesCountTokens: async (model, body, signal, opts) =>
+      await callClaudeCodeAnthropicMessagesCountTokens({
+        upstreamId: record.id,
+        model,
+        body,
+        signal,
+        call: opts,
+      }),
     callOpenAICompletions: rejectUnsupported('callOpenAICompletions'),
     callOpenAIChatCompletions: rejectUnsupported('callOpenAIChatCompletions'),
     callOpenAIResponses: rejectUnsupported('callOpenAIResponses'),

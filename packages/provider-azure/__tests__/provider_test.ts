@@ -301,7 +301,7 @@ test('createAzureProvider supports native Azure Anthropic Messages models', asyn
     },
     async () => {
       const messages = await instance.instance.callAnthropicMessages(providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] }, undefined, { ...noopUpstreamCallOptions(), anthropicBeta: ['context-1m'] });
-      const count = await instance.instance.callAnthropicMessagesCountTokens(providerModel, { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }] }, undefined, { ...noopUpstreamCallOptions(), anthropicBeta: ['context-1m', 'advanced-tool-use'] });
+      const count = await instance.instance.callAnthropicMessagesCountTokens(providerModel, { messages: [{ role: 'user', content: 'hello' }] }, undefined, { ...noopUpstreamCallOptions(), anthropicBeta: ['context-1m', 'advanced-tool-use'] });
       assertEquals(messages.modelKey, 'claude-prod');
       assertEquals(count.modelKey, 'claude-prod');
     },
@@ -317,7 +317,7 @@ test('createAzureProvider supports native Azure Anthropic Messages models', asyn
     {
       url: 'https://example.services.ai.azure.com/anthropic/v1/messages/count_tokens',
       xApiKey: 'az-key',
-      body: { max_tokens: 16, messages: [{ role: 'user', content: 'hello' }], model: 'claude-prod' },
+      body: { messages: [{ role: 'user', content: 'hello' }], model: 'claude-prod' },
       beta: 'context-1m,advanced-tool-use',
     },
   ]);

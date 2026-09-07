@@ -1,4 +1,5 @@
 import type { AnthropicMessagesBoundaryCtx } from './types.ts';
+import type { AnthropicMessagesCountTokensPayload, AnthropicMessagesPayload } from '@floway-dev/protocols/anthropic-messages';
 
 const ALLOWED_ANTHROPIC_BETAS = new Set([
   'interleaved-thinking-2025-05-14',
@@ -14,8 +15,8 @@ const CONTEXT_MANAGEMENT_BETA = 'context-management-2025-06-27';
 // with its required token.
 // https://github.com/microsoft/vscode/blob/a234109a108ad2ca78b7d0883688b0a84e3fab42/extensions/copilot/src/platform/endpoint/node/chatEndpoint.ts#L262-L282
 // https://github.com/microsoft/vscode/blob/a234109a108ad2ca78b7d0883688b0a84e3fab42/extensions/copilot/src/extension/chatSessions/claude/node/claudeLanguageModelServer.ts#L413-L427
-export const withAnthropicBetaNormalized = async <TResult>(
-  ctx: AnthropicMessagesBoundaryCtx,
+export const withAnthropicBetaNormalized = async <TPayload extends AnthropicMessagesPayload | AnthropicMessagesCountTokensPayload, TResult>(
+  ctx: AnthropicMessagesBoundaryCtx<TPayload>,
   _env: object,
   run: () => Promise<TResult>,
 ): Promise<TResult> => {

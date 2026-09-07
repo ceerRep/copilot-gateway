@@ -1,5 +1,5 @@
 import type { Interceptor } from '@floway-dev/interceptor';
-import type { AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
+import type { AnthropicMessagesCountTokensPayload, AnthropicMessagesPayload, AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthropic-messages';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { ExecuteResult, ProviderModel } from '@floway-dev/provider';
 
@@ -16,8 +16,8 @@ import type { ExecuteResult, ProviderModel } from '@floway-dev/provider';
 // contract and are copied into `anthropicBeta` so variant selection and
 // interceptors share one token list. The terminal serializes the normalized
 // list back onto a fresh wire-header bag.
-export interface AnthropicMessagesBoundaryCtx {
-  payload: AnthropicMessagesPayload;
+export interface AnthropicMessagesBoundaryCtx<TPayload extends AnthropicMessagesPayload | AnthropicMessagesCountTokensPayload = AnthropicMessagesPayload> {
+  payload: TPayload;
   headers: Headers;
   anthropicBeta: string[];
   readonly model: ProviderModel;
@@ -33,7 +33,7 @@ export type CopilotAnthropicMessagesBoundaryInterceptor = Interceptor<
 // returns the raw upstream `Response` directly. Pure header/payload mutators
 // only — post-`run()` event-stream inspection is not portable to this result.
 export type CopilotAnthropicMessagesCountTokensBoundaryInterceptor = Interceptor<
-  AnthropicMessagesBoundaryCtx,
+  AnthropicMessagesBoundaryCtx<AnthropicMessagesCountTokensPayload>,
   object,
   Response
 >;
