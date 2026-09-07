@@ -23,8 +23,23 @@ import {
 } from '@floway-dev/provider';
 
 const ANTHROPIC_ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages?beta=true';
+// The runtime-fetch path can decode a wider set, but proxy and direct-connect
+// fallbacks share the package HTTP/1.1 decoder, whose streaming response
+// support is gzip/deflate/identity. Pin one truthful offer before dispatch so
+// a shaped Claude Code request cannot negotiate br/zstd and then fail only
+// after the fallback selects a socket transport.
+// https://github.com/Menci/Floway/pull/400
+// https://github.com/Menci/Floway/pull/485
+const CLAUDE_CODE_ACCEPT_ENCODING = 'gzip, deflate, identity';
 const STREAM_DIAGNOSTIC_FRAME_LIMIT = 3;
 const STREAM_DIAGNOSTIC_FRAME_DATA_CHARS = 256;
+
+const constrainAcceptEncoding = (headers: Record<string, string>): void => {
+  for (const name of Object.keys(headers)) {
+    if (name.toLowerCase() === 'accept-encoding') delete headers[name];
+  }
+  headers['Accept-Encoding'] = CLAUDE_CODE_ACCEPT_ENCODING;
+};
 
 export interface CallClaudeCodeAnthropicMessagesOptions {
   upstreamId: string;
@@ -445,6 +460,7 @@ const performUpstreamCall = async (
   } else {
     headers = { ...pickClaudeCodeHeaders(upstreamModelId), authorization: `Bearer ${accessToken.entry.token}` };
   }
+  constrainAcceptEncoding(headers);
 
   // Force stream:true regardless of caller intent. The streaming envelope is
   // what the gateway boundary expects; non-streaming Anthropic Messages is routed

@@ -9,14 +9,14 @@ import { describe, expect, it } from 'vitest';
 import { collectBody, collectBodyBytes, makeFakeDuplex, respondAndEnd } from './test-utils.ts';
 import { parseHttpResponse, toWebResponse } from '../src/parser.ts';
 
-const gzip = async (text: string): Promise<Uint8Array> =>
+const compress = async (encoding: 'gzip' | 'deflate', text: string): Promise<Uint8Array> =>
   new Uint8Array(await new Response(
     new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(new TextEncoder().encode(text));
         controller.close();
       },
-    }).pipeThrough(new CompressionStream('gzip') as never),
+    }).pipeThrough(new CompressionStream(encoding) as never),
   ).arrayBuffer());
 
 describe('parseHttpResponse — status-line grammar', () => {
@@ -880,7 +880,7 @@ describe('toWebResponse', () => {
   });
 
   it('decodes a gzip body and removes stale content-coding framing headers', async () => {
-    const compressed = await gzip('event: message_stop\ndata: {"type":"message_stop"}\n\n');
+    const compressed = await compress('gzip', 'event: message_stop\ndata: {"type":"message_stop"}\n\n');
     const head = new TextEncoder().encode(
       `HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: ${compressed.byteLength}\r\n\r\n`,
     );
@@ -897,6 +897,36 @@ describe('toWebResponse', () => {
     expect(await response.text()).toBe('event: message_stop\ndata: {"type":"message_stop"}\n\n');
     expect(response.headers.get('content-encoding')).toBeNull();
     expect(response.headers.get('content-length')).toBeNull();
+  });
+
+  it('decodes a deflate body and removes stale content-coding framing headers', async () => {
+    const compressed = await compress('deflate', 'event: message_stop\ndata: {"type":"message_stop"}\n\n');
+    const head = new TextEncoder().encode(
+      `HTTP/1.1 200 OK\r\nContent-Encoding: deflate\r\nContent-Length: ${compressed.byteLength}\r\n\r\n`,
+    );
+    const bytes = new Uint8Array(head.byteLength + compressed.byteLength);
+    bytes.set(head);
+    bytes.set(compressed, head.byteLength);
+    const response = toWebResponse(await parseHttpResponse(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    })));
+
+    expect(await response.text()).toBe('event: message_stop\ndata: {"type":"message_stop"}\n\n');
+    expect(response.headers.get('content-encoding')).toBeNull();
+    expect(response.headers.get('content-length')).toBeNull();
+  });
+
+  it('leaves an identity body and its valid framing untouched', async () => {
+    const response = toWebResponse(await parseHttpResponse(respondAndEnd(
+      'HTTP/1.1 200 OK\r\nContent-Encoding: identity\r\nContent-Length: 5\r\n\r\nhello',
+    )));
+
+    expect(await response.text()).toBe('hello');
+    expect(response.headers.get('content-encoding')).toBe('identity');
+    expect(response.headers.get('content-length')).toBe('5');
   });
 
   it('rejects a content coding the socket transport cannot decode', async () => {

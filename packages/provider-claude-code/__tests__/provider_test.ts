@@ -96,6 +96,7 @@ const cliClientCallOpts = (overrides: Partial<AnthropicMessagesUpstreamCallOptio
     'user-agent': 'claude-cli/2.1.181 (external, cli)',
     'x-app': 'cli',
     'anthropic-version': '2023-06-01',
+    'accept-encoding': 'gzip, deflate, br, zstd',
   }),
   anthropicBeta: ['oauth-2025-04-20'],
   ...overrides,
@@ -234,6 +235,7 @@ describe('createClaudeCodeProvider — callAnthropicMessages routes through chai
     expect(wireHeaders.get('x-app')).toBe('cli');
     expect(wireHeaders.get('anthropic-beta')).toBe('oauth-2025-04-20');
     expect(wireHeaders.get('anthropic-version')).toBe('2023-06-01');
+    expect(wireHeaders.get('accept-encoding')).toBe('gzip, deflate, identity');
     // Authorization is replaced by the cached OAuth token.
     expect(wireHeaders.get('authorization')).toBe('Bearer at_cached');
   });
