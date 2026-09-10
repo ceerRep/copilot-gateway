@@ -426,7 +426,7 @@ const translateToolChoice = (
 };
 
 export const buildTargetRequest = async (source: OpenAIResponsesRequestPayload, options: BuildTargetRequestOptions = {}): Promise<TargetRequestResult> => {
-  const payload = lowerOpenAIResponsesAdditionalTools(canonicalizeOpenAIResponsesPayload(source));
+  const payload = lowerOpenAIResponsesAdditionalTools(canonicalizeOpenAIResponsesPayload(source), 'first');
   rejectProgrammaticOpenAIResponsesPayload(payload, 'Anthropic Messages');
   const customToolNames = new Set<string>();
   const { tools, namespaceToolNames } = translateTools(payload.tools, customToolNames);

@@ -146,9 +146,9 @@ test('generate native success leaves source-edge state ownership to the caller',
 });
 
 test.each([
-  { enabled: false, expectedInputType: 'additional_tools', expectedTools: undefined },
-  { enabled: true, expectedInputType: 'message', expectedTools: 'lookup' },
-])('native Responses additional-tools shim enabled=$enabled', async ({ enabled, expectedInputType, expectedTools }) => {
+  { enabled: false, expectedInputTypes: ['additional_tools', 'message', 'additional_tools'], expectedTools: undefined },
+  { enabled: true, expectedInputTypes: ['message'], expectedTools: ['lookup', 'later'] },
+])('native Responses additional-tools shim enabled=$enabled', async ({ enabled, expectedInputTypes, expectedTools }) => {
   installRepo();
   let observedBody: Omit<CanonicalOpenAIResponsesPayload, 'model'> | undefined;
   const callOpenAIResponses = vi.fn(async (_model, body): Promise<ProviderOpenAIResponsesResult> => {
@@ -167,6 +167,7 @@ test.each([
       input: [
         { type: 'additional_tools', role: 'developer', tools: [{ type: 'function', name: 'lookup', parameters: { type: 'object' } }] },
         { type: 'message', role: 'user', content: 'hello' },
+        { type: 'additional_tools', role: 'developer', tools: [{ type: 'function', name: 'later', parameters: { type: 'object' } }] },
       ],
     }),
     ctx: makeGatewayCtx(createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), false)),
@@ -177,8 +178,8 @@ test.each([
   assertEquals(result.type, 'events');
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
-  assertEquals(observedBody?.input[0]?.type, expectedInputType);
-  assertEquals(observedBody?.tools?.[0]?.type === 'function' ? observedBody.tools[0].name : undefined, expectedTools);
+  assertEquals(observedBody?.input.map(item => item.type), expectedInputTypes);
+  assertEquals(observedBody?.tools?.flatMap(tool => tool.type === 'function' ? [tool.name] : []), expectedTools);
 });
 
 test('translation lowers additional tools even when the native shim flag is disabled', async () => {
@@ -233,6 +234,64 @@ test('translation lowers additional tools even when the native shim flag is disa
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(observedBody?.tools?.[0]?.function.name, 'lookup');
+  assertEquals(observedBody?.messages, [{ role: 'user', content: 'hello' }]);
+});
+
+test('translation merges every additional-tools item when the shim flag is enabled', async () => {
+  installRepo();
+  let observedBody: Omit<OpenAIChatCompletionsPayload, 'model'> | undefined;
+  const callOpenAIChatCompletions = vi.fn(async (_model, body): Promise<ProviderStreamResult<OpenAIChatCompletionsStreamEvent>> => {
+    observedBody = body;
+    return {
+      ok: true,
+      events: (async function* () {
+        yield eventFrame<OpenAIChatCompletionsStreamEvent>({
+          id: 'chatcmpl_all_tools', object: 'chat.completion.chunk', created: 0, model: 'test-model',
+          choices: [{ index: 0, delta: { role: 'assistant' }, finish_reason: null }],
+        });
+        yield doneFrame();
+      })(),
+      modelKey: 'test-model-key',
+    };
+  });
+  const upstream = 'up_chat_all_tools';
+  const endpoints = { openaiChatCompletions: {} };
+  const candidate: ModelCandidate = {
+    provider: {
+      upstreamId: upstream, kind: 'custom', name: upstream, inboundHeaderAllowlist: [],
+      disabledPublicModelIds: [], modelPrefix: null, modelsCache: null,
+      instance: stubProvider({ callOpenAIChatCompletions }),
+    },
+    model: stubInternalModel({
+      endpoints,
+      providerModels: {
+        [upstream]: stubProviderModel({
+          endpoints,
+          enabledFlags: new Set(['openai-responses-additional-tools-shim']),
+        }),
+      },
+    }, upstream),
+    fetcher: directFetcher,
+  };
+
+  const result = await openaiResponsesAttempt.generate({
+    payload: makePayload({
+      tools: [{ type: 'function', name: 'existing', parameters: { type: 'object' } }],
+      input: [
+        { type: 'additional_tools', role: 'developer', tools: [{ type: 'function', name: 'first', parameters: { type: 'object' } }] },
+        { type: 'message', role: 'user', content: 'hello' },
+        { type: 'additional_tools', role: 'developer', tools: [{ type: 'function', name: 'second', parameters: { type: 'object' } }] },
+      ],
+    }),
+    ctx: makeGatewayCtx(createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), false)),
+    candidate,
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  assertEquals(observedBody?.tools?.map(tool => tool.function.name), ['existing', 'first', 'second']);
   assertEquals(observedBody?.messages, [{ role: 'user', content: 'hello' }]);
 });
 

@@ -182,10 +182,6 @@ export class LayeredOpenAIResponsesStatefulStore implements OpenAIResponsesState
 
   private async stageInputItem(item: OpenAIResponsesInputItem): Promise<void> {
     if (item.type === 'compaction_trigger') return;
-    if (item.type === 'additional_tools') {
-      this.previousSnapshotItemIds = this.previousSnapshotItemIds.filter(itemId =>
-        (this.loadedItems.get(itemId)?.payload.item as { type?: unknown } | undefined)?.type !== 'additional_tools');
-    }
     if (item.type === 'item_reference') {
       const row = this.loadedItems.get(item.id);
       if (row === undefined) throw new Error(`Cannot stage unresolved OpenAI Responses item_reference id=${item.id}`);

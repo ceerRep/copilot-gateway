@@ -649,9 +649,9 @@ const en = {
                   "The OpenAI Responses API includes context compaction capabilities, but this upstream may not provide native context compaction.\nWhen this option is enabled, Floway rewrites a compaction request as a normal generation request and injects Codex's context-handoff summarization prompt to “simulate” native context compaction, allowing subsequent requests to continue the task context from before compaction.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.",
             },
             'openai-responses-additional-tools-shim': {
-              label: 'OpenAI Responses Additional Tools Shim',
+              label: 'Merge OpenAI Responses Additional Tools',
               description:
-                  'Responses Lite sends the current tool set in a leading `additional_tools` input item instead of the top-level `tools` field.\nEnable this option to move that declaration to top-level `tools` for native OpenAI Responses upstreams that do not support the item. Floway always performs this conversion when translating to another protocol.',
+                  'OpenAI Responses can introduce tools at specific conversation positions with `additional_tools` input items. Native Responses targets preserve those items by default; translations to another protocol can promote one declaration and reject a second.\nEnable this option to remove every `additional_tools` item and merge all of their tools, in input order, after any existing top-level `tools`. This loses the original position-scoped availability semantics.',
             },
             'disable-reasoning-on-forced-tool-choice': {
               label: 'Disable Reasoning for Forced Tool Calls',
@@ -765,7 +765,7 @@ const en = {
           maximum: 'Maximum',
           codexResponsesLite: 'Codex Responses Lite',
           codexResponsesLiteHint:
-            'What Floway announces as use_responses_lite in the Codex client catalog. Under Responses Lite the Codex CLI sends its tools as an additional_tools input item instead of top-level tools. Floway translates representable tools to other protocols; native Responses targets keep the original shape unless their Additional Tools Shim is enabled.',
+            'What Floway announces as use_responses_lite in the Codex client catalog. Under Responses Lite the Codex CLI sends its tools as an additional_tools input item instead of top-level tools. Native Responses targets preserve that shape. Translations can promote one declaration by default; enabling “Merge OpenAI Responses Additional Tools” merges every declaration into top-level tools.',
           codexResponsesLiteInherit: 'Inherit (Codex catalog)',
           codexResponsesLiteOn: 'On (force)',
           codexResponsesLiteOff: 'Off (force)',

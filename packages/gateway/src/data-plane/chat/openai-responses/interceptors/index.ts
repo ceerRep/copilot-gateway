@@ -26,9 +26,11 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 //     to every downstream interceptor + the provider terminal. Also
 //     responsible for inbound expansion of prior shim-encoded compaction
 //     items so the upstream sees the summarized history.
-//   - withAdditionalToolsLowered: runs before server-tool discovery so tools
-//     carried by Responses Lite participate in the same shim decisions as
-//     top-level tools.
+//   - withAdditionalToolsLowered: runs before server-tool discovery. Native
+//     Responses preserves position-scoped declarations by default; translated
+//     targets promote one declaration, while the opt-in merge shim promotes
+//     all of them. Promoted tools then participate in the same shim decisions
+//     as request-level tools.
 //   - withOpenAIResponsesServerToolShim: wraps the multi-turn ReAct loop around
 //     the rest of the chain.
 //   - withReasoningDisabledOnForcedToolChoice: gated by

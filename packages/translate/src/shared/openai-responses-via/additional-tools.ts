@@ -1,30 +1,31 @@
 import { TranslatorInputError } from '../../translator-input-error.ts';
 import type { CanonicalOpenAIResponsesPayload } from '@floway-dev/protocols/openai-responses';
 
-// Responses Lite rebuilds this prompt-only declaration at input[0] on every
-// request. Targets without the item shape consume the same tools at their
-// native top-level slot; Codex does not carry old declarations in its history.
-// https://github.com/openai/codex/blob/44918ea10c0f99151c6710411b4322c2f5c96bea/codex-rs/core/src/client.rs#L847-L864
+// A translated target can represent the tools but not the declaration's
+// position-scoped availability. `first` is the conservative compatibility
+// floor: promote one declaration and reject a second. `all` is an explicit
+// lossy mode that merges every declaration into the request-level tool set.
+// https://developers.openai.com/api/docs/guides/tools-tool-search#add-tools-at-a-specific-point-in-the-input
 export const lowerOpenAIResponsesAdditionalTools = (
   payload: CanonicalOpenAIResponsesPayload,
+  mode: 'first' | 'all' = 'first',
 ): CanonicalOpenAIResponsesPayload => {
-  const indices = payload.input.flatMap((item, index) => item.type === 'additional_tools' ? [index] : []);
-  if (indices.length === 0) return payload;
-  if (indices.length !== 1 || indices[0] !== 0) {
-    throw new TranslatorInputError('OpenAI Responses additional_tools must be the sole declaration at input[0].');
+  const declarations = payload.input.filter(item => item.type === 'additional_tools');
+  if (declarations.length === 0) return payload;
+  if (mode === 'first' && declarations.length > 1) {
+    throw new TranslatorInputError('Cannot translate more than one OpenAI Responses additional_tools item without the additional-tools merge shim.');
+  }
+  for (const declaration of declarations) {
+    if (declaration.role !== 'developer') {
+      throw new TranslatorInputError('OpenAI Responses additional_tools must use the developer role.');
+    }
   }
 
-  const [additionalTools, ...input] = payload.input;
-  if (additionalTools.type !== 'additional_tools' || additionalTools.role !== 'developer') {
-    throw new TranslatorInputError('OpenAI Responses additional_tools must use the developer role.');
-  }
-  if (Array.isArray(payload.tools) && payload.tools.length > 0) {
-    throw new TranslatorInputError('OpenAI Responses additional_tools cannot be combined with non-empty top-level tools.');
-  }
-
+  const lowered = mode === 'all' ? declarations : declarations.slice(0, 1);
+  const loweredItems = new Set<CanonicalOpenAIResponsesPayload['input'][number]>(lowered);
   return {
     ...payload,
-    input,
-    tools: additionalTools.tools,
+    input: payload.input.filter(item => !loweredItems.has(item)),
+    tools: [...(payload.tools ?? []), ...lowered.flatMap(item => item.tools)],
   };
 };

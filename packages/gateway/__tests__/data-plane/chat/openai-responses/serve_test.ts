@@ -435,7 +435,7 @@ const memoryStore = async (snapshots: readonly StoredOpenAIResponsesSnapshot[], 
   });
 };
 
-test('expandPreviousResponseId keeps the current additional tools first and omits the prior declaration', async () => {
+test('expandPreviousResponseId preserves prior and current additional tools in conversation order', async () => {
   const tools = [{ type: 'function' as const, name: 'current', parameters: { type: 'object' } }];
   const storedItems: StoredOpenAIResponsesItem[] = [{
     id: 'at_previous',
@@ -466,8 +466,9 @@ test('expandPreviousResponseId keeps the current additional tools first and omit
   }), store);
 
   assertEquals(expanded.input, [
-    { type: 'additional_tools', id: 'at_current', role: 'developer', tools },
+    { type: 'item_reference', id: 'at_previous' },
     { type: 'item_reference', id: 'msg_previous' },
+    { type: 'additional_tools', id: 'at_current', role: 'developer', tools },
     { type: 'message', role: 'user', content: 'continue' },
   ]);
 });

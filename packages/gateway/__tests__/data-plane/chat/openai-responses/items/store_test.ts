@@ -109,7 +109,7 @@ describe('OpenAIResponsesStatefulStore', () => {
     expect(contentReads).toBe(2);
   });
 
-  test('a current additional-tools declaration replaces the prior snapshot declaration', async () => {
+  test('a current additional-tools declaration appends after the prior snapshot declaration', async () => {
     const repo = installRepo();
     const first = createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(), Date.now(), true);
     const previous = {
@@ -132,7 +132,7 @@ describe('OpenAIResponsesStatefulStore', () => {
     await next.stageInputItems([current]);
     await next.commitSnapshot('resp_current', 'append', []);
 
-    expect((await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_current', 0))?.itemIds).toEqual(['at_current']);
+    expect((await repo.openaiResponsesSnapshots.lookup('key-a', 'resp_current', 0))?.itemIds).toEqual(['at_previous', 'at_current']);
   });
 
   test('replace snapshots persist only their output state', async () => {

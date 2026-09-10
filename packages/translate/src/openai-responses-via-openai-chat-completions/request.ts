@@ -238,7 +238,7 @@ export interface TargetRequestResult {
 }
 
 export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): TargetRequestResult => {
-  const payload = lowerOpenAIResponsesAdditionalTools(canonicalizeOpenAIResponsesPayload(source));
+  const payload = lowerOpenAIResponsesAdditionalTools(canonicalizeOpenAIResponsesPayload(source), 'first');
   rejectProgrammaticOpenAIResponsesPayload(payload, 'OpenAI Chat Completions');
   const customToolNames = new Set<string>();
   const { tools, namespaceToolNames } = translateOpenAIResponsesTools(payload.tools, customToolNames);
