@@ -19,6 +19,7 @@ const flagGroupById = {
   'openai-responses-web-search-shim': 'shims',
   'openai-responses-image-generation-shim': 'shims',
   'openai-responses-compact-shim': 'shims',
+  'openai-responses-state-same-upstream': 'apiCompatibility',
   'openai-responses-additional-tools-shim': 'shims',
   'disable-reasoning-on-forced-tool-choice': 'apiCompatibility',
   'empty-tools-tool-choice-none': 'apiCompatibility',
@@ -33,12 +34,14 @@ const flagGroupById = {
 
 export function FeatureFlagsEditor({
   defaults,
+  hideUpstreamOnly = false,
   inherited,
   onChange,
   readOnly = false,
   value,
 }: {
   defaults: FlagDefaults;
+  hideUpstreamOnly?: boolean;
   inherited?: FlagOverrides;
   onChange: (value: FlagOverrides) => void;
   readOnly?: boolean;
@@ -53,7 +56,7 @@ export function FeatureFlagsEditor({
   const inheritedValue = (id: string) => inherited?.[id as keyof FlagOverrides] ?? defaults[id as keyof FlagDefaults] ?? false;
   const groupedFlags = flagGroupOrder.map(id => ({
     id,
-    flags: OPTIONAL_FLAG_IDS.filter(flagId => flagGroupById[flagId] === id),
+    flags: OPTIONAL_FLAG_IDS.filter(flagId => flagGroupById[flagId] === id && (!hideUpstreamOnly || flagId !== 'openai-responses-state-same-upstream')),
   }));
 
   // Deliberately not `SettingsCard`: a flag row carries a multi-paragraph

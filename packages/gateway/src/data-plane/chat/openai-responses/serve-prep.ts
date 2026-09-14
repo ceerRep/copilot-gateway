@@ -1,8 +1,11 @@
 import { analyzeOpenAIResponsesAffinity } from './affinity/ingress.ts';
 import { openaiResponsesTarget } from './attempt.ts';
 import { renderOpenAIResponsesFailure, type OpenAIResponsesServeFailure } from './errors.ts';
+import { expandFlowayShimCompactionItems } from './interceptors/compact-shim.ts';
 import { hydrateOpenAIResponsesPayload } from './items/hydrate.ts';
 import type { OpenAIResponsesStatefulStore } from './items/store.ts';
+import { getRepo } from '../../../repo/index.ts';
+import { flagDefaultsForKind } from '../../providers/registry.ts';
 import { enumerateModelCandidates } from '../../providers/resolution.ts';
 import type { AffinityCandidateSelection } from '../shared/affinity/index.ts';
 import { selectAffinityCandidates } from '../shared/affinity/index.ts';
@@ -10,7 +13,7 @@ import { noViableCandidateFailure, tryCatchChatServeFailure } from '../shared/er
 import type { ChatGatewayCtx } from '../shared/gateway-ctx.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import type { ModelCandidate, ExecuteResult } from '@floway-dev/provider';
+import { resolveEffectiveFlags, type ModelCandidate, type ExecuteResult } from '@floway-dev/provider';
 
 // Thrown when a request names a `previous_response_id` that the store cannot
 // resolve. The HTTP/WS entry layer catches this and renders the OpenAI-shaped
@@ -100,7 +103,23 @@ export const prepareOpenAIResponsesServePlan = async (args: {
     if (failure === null) throw error;
     return { kind: 'failure', result: renderOpenAIResponsesFailure(failure) };
   }
-  const affinity = await analyzeOpenAIResponsesAffinity(hydrated.payload, ctx.affinity.codec);
+  const portable = await expandFlowayShimCompactionItems(hydrated.payload, ctx.affinity.codec);
+  const policyByUpstream = new Map<string, Promise<boolean>>();
+  const allowsSameUpstreamState = (upstreamId: string): Promise<boolean> => {
+    let allowed = policyByUpstream.get(upstreamId);
+    if (allowed === undefined) {
+      allowed = getRepo().upstreams.getById(upstreamId).then(upstream => {
+        if (upstream === null) return false;
+        return resolveEffectiveFlags([
+          flagDefaultsForKind(upstream.kind),
+          upstream.flagOverrides,
+        ]).has('openai-responses-state-same-upstream');
+      });
+      policyByUpstream.set(upstreamId, allowed);
+    }
+    return allowed;
+  };
+  const affinity = await analyzeOpenAIResponsesAffinity(portable, ctx.affinity.codec, { allowsSameUpstreamState });
   const selection = selectAffinityCandidates(viable, affinity);
   if ('kind' in selection) return { kind: 'failure', result: renderOpenAIResponsesFailure(selection) };
   // Stage the user-supplied input from the original payload — not the

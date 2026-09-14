@@ -618,6 +618,11 @@ const zhHansCN = {
               description:
                   'OpenAI Responses API 包含上下文压缩能力，但本上游可能不提供原生上下文压缩。\n开启此开关后，Floway 会将压缩请求改写为普通生成请求，注入 Codex 的上下文交接摘要提示词，来“模拟”原生上下文压缩，并在后续请求中延续压缩前的任务上下文。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
             },
+            'openai-responses-state-same-upstream': {
+              label: '允许 OpenAI Responses 状态跨模型续接',
+              description:
+                  'OpenAI Responses 项目可能携带由此上游拥有的不透明状态。\n开启后，Floway 可以把该状态交给同一上游的另一模型继续处理；Floway 不会把它发送到不同上游。仅当上游保证其模型之间兼容这类状态时才应开启。',
+            },
             'openai-responses-additional-tools-shim': {
               label: '合并 OpenAI Responses 附加工具',
               description:

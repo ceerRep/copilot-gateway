@@ -215,8 +215,31 @@ const evaluateOpenAIResponsesCandidate = (
 export const analyzeOpenAIResponsesAffinity = async (
   payload: CanonicalOpenAIResponsesPayload,
   codec: AffinityCodec,
+  options: {
+    readonly allowsSameUpstreamState: (upstreamId: string) => Promise<boolean>;
+  } = { allowsSameUpstreamState: async () => false },
 ): Promise<AffinityRequestAnalysis<CanonicalOpenAIResponsesPayload>> => {
-  const locations = await opaqueBlobLocations(payload.input, codec);
+  const rawLocations = await opaqueBlobLocations(payload.input, codec);
+  const statePolicy = new Map<string, Promise<boolean>>();
+  const allowsSameUpstreamState = (upstreamId: string): Promise<boolean> => {
+    let allowed = statePolicy.get(upstreamId);
+    if (allowed === undefined) {
+      allowed = options.allowsSameUpstreamState(upstreamId);
+      statePolicy.set(upstreamId, allowed);
+    }
+    return allowed;
+  };
+  const locations = await Promise.all(rawLocations.map(async location => {
+    if (location.decoded.kind === 'foreign') return location;
+    if (!await allowsSameUpstreamState(location.decoded.affinity.upstreamId)) return location;
+    return {
+      ...location,
+      decoded: {
+        ...location.decoded,
+        affinity: { ...location.decoded.affinity, sameUpstream: true as const },
+      },
+    };
+  }));
   const analysis = analyzeOpenAIResponsesRequest(payload.input, locations);
   return defineAffinityRequest(
     analysis.requiredTargets,

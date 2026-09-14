@@ -1,7 +1,8 @@
 import { test } from 'vitest';
 
-import { SUMMARY_PREFIX, expandShimCompactionItems, withOpenAIResponsesCompactShim } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
+import { SUMMARY_PREFIX, expandFlowayShimCompactionItems, expandShimCompactionItems, withOpenAIResponsesCompactShim } from '../../../../../src/data-plane/chat/openai-responses/interceptors/compact-shim.ts';
 import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
+import { AffinityCodec } from '../../../../../src/data-plane/chat/shared/affinity/index.ts';
 import { encodeBase64UrlJson } from '../../../../../src/shared/base64url-json.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols/common';
@@ -81,6 +82,29 @@ test('inbound: foreign compaction blob (non-base64url-JSON) round-trips untouche
   // No items expanded — the foreign blob fails decode and the item passes
   // through as-is.
   assertEquals(expanded, original);
+});
+
+test('native source expansion restores only Floway-authenticated shim compactions before route selection', async () => {
+  const item = { type: 'message' as const, role: 'user' as const, content: 'portable summary' };
+  const codec = new AffinityCodec('31'.repeat(32));
+  const wrapped = await codec.wrap(
+    encodeBase64UrlJson({ floway_compaction: 1, items: [item] }),
+    { upstreamId: 'up_original', modelId: 'original-model' },
+    'openai-responses.compaction.encrypted_content',
+  );
+  const payload: CanonicalOpenAIResponsesPayload = {
+    model: 'new-model',
+    input: [{ type: 'compaction', id: 'cmp_1', encrypted_content: wrapped } as unknown as OpenAIResponsesInputItem],
+  };
+
+  assertEquals(await expandFlowayShimCompactionItems(payload, codec), { model: 'new-model', input: [item] });
+  assertEquals(await expandFlowayShimCompactionItems({
+    model: 'new-model',
+    input: [{ type: 'compaction', id: 'cmp_foreign', encrypted_content: encodeBase64UrlJson([item]) } as unknown as OpenAIResponsesInputItem],
+  }, codec), {
+    model: 'new-model',
+    input: [{ type: 'compaction', id: 'cmp_foreign', encrypted_content: encodeBase64UrlJson([item]) } as unknown as OpenAIResponsesInputItem],
+  });
 });
 
 test('inbound: foreign compaction blob (valid base64url but wrong shape) round-trips untouched', () => {
@@ -222,12 +246,13 @@ test('compact + flag on: synthesized encrypted_content decodes to a user message
         c => c.charCodeAt(0),
       ),
     ),
-  );
-  assertEquals(decoded.length, 1);
-  assertEquals(decoded[0].type, 'message');
-  assertEquals(decoded[0].role, 'user');
-  assertEquals(decoded[0].content[0].type, 'input_text');
-  assertEquals(decoded[0].content[0].text, `${SUMMARY_PREFIX}\nTHE SUMMARY`);
+  ) as { floway_compaction: number; items: Array<{ type: string; role: string; content: Array<{ type: string; text: string }> }> };
+  assertEquals(decoded.floway_compaction, 1);
+  assertEquals(decoded.items.length, 1);
+  assertEquals(decoded.items[0]?.type, 'message');
+  assertEquals(decoded.items[0]?.role, 'user');
+  assertEquals(decoded.items[0]?.content[0]?.type, 'input_text');
+  assertEquals(decoded.items[0]?.content[0]?.text, `${SUMMARY_PREFIX}\nTHE SUMMARY`);
 });
 
 test('compact + flag on: upstream `output_text` SDK alias is dropped from the synthesized envelope', async () => {
@@ -606,6 +631,7 @@ test('compact + flag on: the summary is the item the turn closed, not the output
   assertEquals(compaction.type, 'compaction');
   const decoded = JSON.parse(new TextDecoder().decode(
     Uint8Array.from(atob(compaction.encrypted_content.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)),
-  )) as Array<{ content: Array<{ text: string }> }>;
-  assertEquals(decoded[0]?.content[0]?.text, `${SUMMARY_PREFIX}\nCONDENSED SUMMARY`);
+  )) as { floway_compaction: number; items: Array<{ content: Array<{ text: string }> }> };
+  assertEquals(decoded.floway_compaction, 1);
+  assertEquals(decoded.items[0]?.content[0]?.text, `${SUMMARY_PREFIX}\nCONDENSED SUMMARY`);
 });

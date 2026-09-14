@@ -124,6 +124,7 @@ export function ModelDetail({
 
       {section === 'flags' ? <FeatureFlagsEditor
         defaults={record.flag_defaults}
+        hideUpstreamOnly
         inherited={upstreamFlags}
         readOnly={fieldsReadOnly}
         value={row.config.flagOverrides ?? {}}

@@ -11,7 +11,7 @@ import type { AnthropicMessagesStreamEvent } from '@floway-dev/protocols/anthrop
 import { type AliasRules, doneFrame, eventFrame, type ModelEndpoints, type ProtocolFrame } from '@floway-dev/protocols/common';
 import type { OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayload, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
-import { type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions } from '@floway-dev/provider';
+import { type ModelCandidate, directFetcher, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type UpstreamRecord } from '@floway-dev/provider';
 import { assert, assertEquals, stubProvider, stubInternalModel } from '@floway-dev/test-utils';
 
 // Mock the resolver seam so each test hands the serve exactly the provider
@@ -76,6 +76,30 @@ const makeGatewayCtx = (store?: ChatGatewayCtx['store']) =>
     wantsStream: true,
     store: store ?? createOpenAIResponsesHttpStore(testOpenAIResponsesStatePolicy(API_KEY_ID), Date.now(), true),
   });
+
+const saveStatePolicyUpstream = async (
+  repo: InMemoryRepo,
+  id: string,
+  allowsSameUpstreamState: boolean,
+): Promise<void> => {
+  await repo.upstreams.save({
+    id,
+    kind: 'custom',
+    name: id,
+    enabled: true,
+    sortOrder: 0,
+    createdAt: '2026-01-01T00:00:00.000Z',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+    config: {},
+    state: null,
+    modelsCache: null,
+    flagOverrides: allowsSameUpstreamState ? { 'openai-responses-state-same-upstream': true } : {},
+    disabledPublicModelIds: [],
+    proxyFallbackList: [],
+    modelPrefix: null,
+    hue: 0,
+  } satisfies UpstreamRecord);
+};
 
 const makePayload = (overrides: Partial<CanonicalOpenAIResponsesPayload> = {}): CanonicalOpenAIResponsesPayload => ({
   model: 'test-model',
@@ -182,6 +206,85 @@ test('generate routes a native OpenAI Responses candidate end to end', async () 
   const events = await collectEvents(result.events);
   assert(events.length >= 1);
   assertEquals(callOpenAIResponses.mock.calls.length, 1);
+});
+
+test('generate continues opaque state on a sibling model when its source upstream allows it', async () => {
+  const repo = installRepo();
+  await saveStatePolicyUpstream(repo, 'up_a', true);
+  const receivedBodies: CanonicalOpenAIResponsesPayload[] = [];
+  const callOpenAIResponses = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderOpenAIResponsesResult> => {
+    receivedBodies.push(body as CanonicalOpenAIResponsesPayload);
+    return {
+      action: 'generate',
+      ok: true,
+      events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: makeOpenAIResponsesResult() }]),
+      modelKey: 'model-b',
+      headers: new Headers(),
+    };
+  });
+  const source = makeCandidate({ upstream: 'up_a', modelId: 'model-a' });
+  const sibling = makeCandidate({ upstream: 'up_a', modelId: 'model-b', callOpenAIResponses });
+  queueResolution([sibling]);
+  const ctx = makeGatewayCtx();
+  const encrypted = await ctx.affinity.codec.wrap(
+    'opaque state',
+    { upstreamId: source.provider.upstreamId, modelId: source.model.id },
+    'openai-responses.compaction.encrypted_content',
+  );
+
+  const result = await openaiResponsesServe.generate({
+    payload: makePayload({
+      model: 'model-b',
+      input: [{ type: 'compaction', id: 'cmp_1', encrypted_content: encrypted } as CanonicalOpenAIResponsesPayload['input'][number]],
+    }),
+    ctx,
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  assertEquals(callOpenAIResponses.mock.calls.length, 1);
+  assertEquals(receivedBodies[0]?.input, [{ type: 'compaction', id: 'cmp_1', encrypted_content: 'opaque state' }]);
+});
+
+test('generate expands Floway compact state before routing to another upstream', async () => {
+  installRepo();
+  const receivedBodies: CanonicalOpenAIResponsesPayload[] = [];
+  const callOpenAIResponses = vi.fn(async (_model: unknown, body: unknown): Promise<ProviderOpenAIResponsesResult> => {
+    receivedBodies.push(body as CanonicalOpenAIResponsesPayload);
+    return {
+      action: 'generate',
+      ok: true,
+      events: makeProtocolFrames([{ type: 'response.completed', sequence_number: 0, response: makeOpenAIResponsesResult() }]),
+      modelKey: 'model-b',
+      headers: new Headers(),
+    };
+  });
+  const target = makeCandidate({ upstream: 'up_b', modelId: 'model-b', callOpenAIResponses });
+  queueResolution([target]);
+  const ctx = makeGatewayCtx();
+  const summary = { type: 'message' as const, role: 'user' as const, content: 'portable handoff' };
+  const encrypted = await ctx.affinity.codec.wrap(
+    btoa(JSON.stringify({ floway_compaction: 1, items: [summary] })),
+    { upstreamId: 'up_a', modelId: 'model-a' },
+    'openai-responses.compaction.encrypted_content',
+  );
+
+  const result = await openaiResponsesServe.generate({
+    payload: makePayload({
+      model: 'model-b',
+      input: [{ type: 'compaction', id: 'cmp_1', encrypted_content: encrypted } as CanonicalOpenAIResponsesPayload['input'][number]],
+    }),
+    ctx,
+    headers: new Headers(),
+  });
+
+  assertEquals(result.type, 'events');
+  if (result.type !== 'events') throw new Error('unreachable');
+  await collectEvents(result.events);
+  assertEquals(callOpenAIResponses.mock.calls.length, 1);
+  assertEquals(receivedBodies[0]?.input, [summary]);
 });
 
 test('compact returns a result envelope from the wrapped attempt', async () => {

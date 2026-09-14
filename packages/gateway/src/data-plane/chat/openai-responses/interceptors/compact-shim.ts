@@ -55,6 +55,7 @@
 import type { OpenAIResponsesInterceptor, OpenAIResponsesInvocation } from './types.ts';
 import { decodeBase64UrlJson, encodeBase64UrlJson } from '../../../../shared/base64url-json.ts';
 import { isJsonObject } from '../../../../shared/json-helpers.ts';
+import type { AffinityCodec } from '../../shared/affinity/index.ts';
 import type { ChatGatewayCtx } from '../../shared/gateway-ctx.ts';
 import { syntheticEventsFromResult } from '../items/output.ts';
 import type { ProtocolFrame } from '@floway-dev/protocols/common';
@@ -147,12 +148,22 @@ export { SUMMARY_PREFIX };
 
 // ── Inbound expansion ─────────────────────────────────────────────────────────
 
-// Structural validator: a shim payload is an array of input-item objects each
-// carrying a `type` field. Strict enough that a foreign opaque blob can't
-// accidentally decode + parse + validate.
+interface FlowayShimCompactionPayload {
+  readonly floway_compaction: 1;
+  readonly items: OpenAIResponsesInputItem[];
+}
+
+// Legacy shim payloads are bare arrays. Keep recognizing them inside the
+// candidate interceptor for persisted compatibility, but source preparation
+// requires the explicit marker before it expands a blob across upstreams.
 const isShimCompactionPayload = (value: unknown): value is OpenAIResponsesInputItem[] =>
   Array.isArray(value) && value.every(item =>
     isJsonObject(item) && typeof (item as { type?: unknown }).type === 'string');
+
+const isFlowayShimCompactionPayload = (value: unknown): value is FlowayShimCompactionPayload =>
+  isJsonObject(value)
+  && value.floway_compaction === 1
+  && isShimCompactionPayload(value.items);
 
 export const expandShimCompactionItems = (payload: CanonicalOpenAIResponsesPayload): CanonicalOpenAIResponsesPayload => {
   const rewritten: OpenAIResponsesInputItem[] = [];
@@ -168,13 +179,55 @@ export const expandShimCompactionItems = (payload: CanonicalOpenAIResponsesPaylo
       continue;
     }
     const decoded = decodeBase64UrlJson(encryptedContent);
-    if (!isShimCompactionPayload(decoded)) {
+    const items = isFlowayShimCompactionPayload(decoded)
+      ? decoded.items
+      : isShimCompactionPayload(decoded)
+        ? decoded
+        : null;
+    if (items === null) {
       // Foreign blob — leave untouched so a native-compaction upstream still
       // sees its own encrypted_content verbatim.
       rewritten.push(item);
       continue;
     }
-    rewritten.push(...decoded);
+    rewritten.push(...items);
+    changed = true;
+  }
+  return changed ? { ...payload, input: rewritten } : payload;
+};
+
+// Native OpenAI Responses preparation chooses a candidate before that
+// candidate's interceptor chain runs. A shim-produced compaction is Floway's
+// own portable summary, not upstream-owned opaque state, so restore it here
+// before affinity routing. Requiring our authenticated trailer prevents a
+// foreign upstream's coincidentally JSON-shaped blob from being reclassified.
+export const expandFlowayShimCompactionItems = async (
+  payload: CanonicalOpenAIResponsesPayload,
+  codec: Pick<AffinityCodec, 'unwrap'>,
+): Promise<CanonicalOpenAIResponsesPayload> => {
+  const rewritten: OpenAIResponsesInputItem[] = [];
+  let changed = false;
+  for (const item of payload.input) {
+    if (item.type !== 'compaction') {
+      rewritten.push(item);
+      continue;
+    }
+    const encryptedContent = (item as { encrypted_content?: unknown }).encrypted_content;
+    if (typeof encryptedContent !== 'string') {
+      rewritten.push(item);
+      continue;
+    }
+    const affinity = await codec.unwrap(encryptedContent, 'openai-responses.compaction.encrypted_content');
+    if (affinity.kind !== 'owned' || affinity.value === undefined) {
+      rewritten.push(item);
+      continue;
+    }
+    const decoded = decodeBase64UrlJson(affinity.value);
+    if (!isFlowayShimCompactionPayload(decoded)) {
+      rewritten.push(item);
+      continue;
+    }
+    rewritten.push(...decoded.items);
     changed = true;
   }
   return changed ? { ...payload, input: rewritten } : payload;
@@ -214,7 +267,7 @@ const buildCompactionEnvelope = (cmpId: string, summaryText: string, upstream: O
     role: 'user',
     content: [{ type: 'input_text', text: `${SUMMARY_PREFIX}\n${summaryText}` }],
   };
-  const encryptedContent = encodeBase64UrlJson([summaryItem]);
+  const encryptedContent = encodeBase64UrlJson({ floway_compaction: 1, items: [summaryItem] });
 
   // Drop the SDK-only `output_text` alias that some upstreams emit — its
   // value is the upstream's summary plaintext, which has no place on a

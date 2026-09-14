@@ -41,7 +41,8 @@ const candidateMatchesExactTarget = (candidate: ModelCandidate, affinity: Affini
   && isEqual(candidate.rules ?? {}, affinity.rules ?? {});
 
 export const candidateSatisfiesAffinityTarget = (candidate: ModelCandidate, target: AffinityTarget): boolean =>
-  candidate.provider.upstreamId === target.upstreamId && candidate.model.id === target.modelId;
+  candidate.provider.upstreamId === target.upstreamId
+  && (target.sameUpstream === true || candidate.model.id === target.modelId);
 
 export const projectOptionalAffinityBlob = (
   decoded: DecodedAffinityBlob,
@@ -105,13 +106,6 @@ export const selectAffinityCandidates = <T>(
   candidates: readonly ModelCandidate[],
   affinity: AffinityRequestAnalysis<T>,
 ): AffinityCandidateSelection<T> | AffinitySelectionFailure => {
-  if (affinity.requiredTargets.length > 1) {
-    return {
-      kind: 'routing-unavailable',
-      message: `Client-carried state requires multiple incompatible targets: ${affinity.requiredTargets.map(target => `'${target.upstreamId}/${target.modelId}'`).join(', ')}.`,
-    };
-  }
-
   const accepted: Array<{
     readonly candidate: ModelCandidate;
     readonly evaluation: Extract<CandidateAffinityEvaluation<T>, { kind: 'accepted' }>;
@@ -120,7 +114,13 @@ export const selectAffinityCandidates = <T>(
     const evaluation = affinity.evaluateCandidate(candidate);
     if (evaluation.kind === 'accepted') accepted.push({ candidate, evaluation });
   }
-  if (affinity.requiredTargets.length === 1 && accepted.length === 0) {
+  if (affinity.requiredTargets.length > 0 && accepted.length === 0) {
+    if (affinity.requiredTargets.length > 1) {
+      return {
+        kind: 'routing-unavailable',
+        message: `Client-carried state requires multiple incompatible targets: ${affinity.requiredTargets.map(target => `'${target.upstreamId}/${target.modelId}'`).join(', ')}.`,
+      };
+    }
     const [required] = affinity.requiredTargets;
     return {
       kind: 'routing-unavailable',

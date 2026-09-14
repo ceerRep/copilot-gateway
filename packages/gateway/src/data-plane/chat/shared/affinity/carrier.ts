@@ -5,6 +5,9 @@ export interface AffinityTarget {
   upstreamId: string;
   modelId: string;
   rules?: AliasRules;
+  // Resolved per request from the source upstream's operator policy. This
+  // property is deliberately absent from the encrypted carrier's wire shape.
+  sameUpstream?: true;
 }
 
 interface AffinityData {

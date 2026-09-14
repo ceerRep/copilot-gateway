@@ -17,6 +17,7 @@ export const COPILOT_DEFAULT_FLAGS: FlagDefaults = {
   // lands on a Copilot Anthropic Messages or OpenAI Chat Completions target, neither of which
   // has a compaction wire.
   'openai-responses-compact-shim': false,
+  'openai-responses-state-same-upstream': false,
   'openai-responses-additional-tools-shim': false,
   'disable-reasoning-on-forced-tool-choice': false,
   'empty-tools-tool-choice-none': false,

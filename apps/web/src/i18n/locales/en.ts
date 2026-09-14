@@ -648,6 +648,11 @@ const en = {
               description:
                   "The OpenAI Responses API includes context compaction capabilities, but this upstream may not provide native context compaction.\nWhen this option is enabled, Floway rewrites a compaction request as a normal generation request and injects Codex's context-handoff summarization prompt to “simulate” native context compaction, allowing subsequent requests to continue the task context from before compaction.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.",
             },
+            'openai-responses-state-same-upstream': {
+              label: 'Allow OpenAI Responses State Across Models',
+              description:
+                  'OpenAI Responses items can carry opaque state owned by this upstream.\nWhen enabled, Floway may continue that state on another model from this same upstream. Floway never sends it to a different upstream. Enable this only when the upstream guarantees that its state is compatible across its models.',
+            },
             'openai-responses-additional-tools-shim': {
               label: 'Merge OpenAI Responses Additional Tools',
               description:

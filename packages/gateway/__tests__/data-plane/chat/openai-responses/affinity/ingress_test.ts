@@ -27,6 +27,7 @@ const targetFor = (value: ModelCandidate): AffinityTarget => ({
 
 const candidateA = candidate('upstream-a');
 const candidateB = candidate('upstream-b');
+const candidateASibling = { ...candidateA, model: { ...candidateA.model, id: 'model-sibling' } };
 
 const select = (
   candidates: readonly ModelCandidate[],
@@ -74,6 +75,28 @@ test('copies only paths carrying an affinity projection', async () => {
   expect(materialized.input).not.toBe(payload.input);
   expect(materialized.input[0]).not.toBe(payload.input[0]);
   expect(materialized.input[1]).toBe(unchanged);
+});
+
+test('allows required upstream state on a sibling model only when its source upstream opts in', async () => {
+  const required = await codec.wrap(
+    'opaque state',
+    targetFor(candidateA),
+    carrierDomain('compaction', 'encrypted_content'),
+  );
+  const payload: CanonicalOpenAIResponsesPayload = {
+    model: 'model-sibling',
+    input: [{ type: 'compaction', id: 'cmp_client', encrypted_content: required } as CanonicalOpenAIResponsesPayload['input'][number]],
+  };
+
+  const strict = await analyzeOpenAIResponsesAffinity(payload, codec);
+  expect(strict.evaluateCandidate(candidateASibling)).toMatchObject({ kind: 'rejected' });
+
+  const loose = await analyzeOpenAIResponsesAffinity(payload, codec, {
+    allowsSameUpstreamState: async upstreamId => upstreamId === candidateA.provider.upstreamId,
+  });
+  expect(loose.evaluateCandidate(candidateASibling)).toMatchObject({ kind: 'accepted' });
+  expect(loose.evaluateCandidate(candidateB)).toMatchObject({ kind: 'rejected' });
+  expect(select([candidateB, candidateASibling], loose).candidates).toEqual([candidateASibling]);
 });
 
 test('drops reasoning whose opaque affinity belongs to another target', async () => {
