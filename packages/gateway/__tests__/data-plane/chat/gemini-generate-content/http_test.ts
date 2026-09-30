@@ -176,6 +176,8 @@ test('POST /v1beta/models/:model:streamGenerateContent streams a Gemini generate
 
   assertEquals(response.status, 200);
   assertEquals(response.headers.get('content-type')?.split(';')[0], 'text/event-stream');
+  assertEquals(response.headers.get('x-accel-buffering'), 'no');
+  assertEquals(response.headers.get('cache-control'), 'no-cache, no-transform');
   const text = await response.text();
   assert(text.length > 0);
   assertEquals(callOpenAIChatCompletions.mock.calls.length, 1);

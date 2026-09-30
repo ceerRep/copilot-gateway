@@ -409,7 +409,7 @@ test('OpenAI Responses WebSocket reports a failed turn when an output item canno
   }
 });
 
-test('OpenAI Responses WebSocket keep-alive waits for the first event and takes a slot in the stream sequence', async () => {
+test('OpenAI Responses WebSocket keep-alive starts before the first event and takes slots in the stream sequence', async () => {
   const { apiKey } = await setupAppTest();
   // Captured before the clock is faked: the turn's frames cross real event-loop
   // turns (upstream body reads, item persistence), which a faked `setTimeout`
@@ -506,8 +506,16 @@ test('OpenAI Responses WebSocket keep-alive waits for the first event and takes 
 
         await upstreamReadStarted;
 
-        await tickKeepAliveIntervals(4);
-        assertEquals(messages, [], 'expected no keep-alive before the turn sent its first event');
+        await tickKeepAliveIntervals(1);
+        assert(
+          await drainFramesUntil(() => messages.length >= 1),
+          `expected a keep-alive before the turn opened, got ${JSON.stringify(messages)}`,
+        );
+        assertEquals(
+          messages.map(message => [message.type, message.sequence_number]),
+          [[KEEP_ALIVE_EVENT_TYPE, 0]],
+          'expected the pre-first-event keep-alive to open the sequence',
+        );
 
         const response = {
           id: 'resp_ws_keepalive',
@@ -520,13 +528,13 @@ test('OpenAI Responses WebSocket keep-alive waits for the first event and takes 
         const inProgress = { ...response, status: 'in_progress', output: [], output_text: '' };
         enqueueSseEvent('response.created', { type: 'response.created', response: inProgress, sequence_number: 0 });
         assert(
-          await drainFramesUntil(() => messages.length >= 1),
+          await drainFramesUntil(() => messages.length >= 2),
           `expected the turn to open, got ${JSON.stringify(messages)}`,
         );
         assertEquals(
           messages.map(message => message.type),
-          ['response.created'],
-          'expected the turn to open before any keep-alive',
+          [KEEP_ALIVE_EVENT_TYPE, 'response.created'],
+          'expected response.created after the pre-first-event keep-alive',
         );
 
         await tickKeepAliveIntervals(1);
@@ -543,10 +551,11 @@ test('OpenAI Responses WebSocket keep-alive waits for the first event and takes 
         assertEquals(
           messages.map(message => [message.type, message.sequence_number]),
           [
-            ['response.created', 0],
-            [KEEP_ALIVE_EVENT_TYPE, 1],
-            ['response.output_item.done', 2],
-            ['response.completed', 3],
+            [KEEP_ALIVE_EVENT_TYPE, 0],
+            ['response.created', 1],
+            [KEEP_ALIVE_EVENT_TYPE, 2],
+            ['response.output_item.done', 3],
+            ['response.completed', 4],
           ],
           'expected the keep-alive to take a slot and shift every later event past it',
         );
