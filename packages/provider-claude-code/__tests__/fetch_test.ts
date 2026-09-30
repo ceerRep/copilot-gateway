@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-import { callClaudeCodeAnthropicMessages } from '../src/fetch.ts';
+import { callClaudeCodeAnthropicMessages, callClaudeCodeAnthropicMessagesCountTokens } from '../src/fetch.ts';
 import { CLAUDE_CODE_HEADERS_HAIKU, CLAUDE_CODE_HEADERS_SONNET_OPUS } from '../src/headers.ts';
 import type {
   ClaudeCodeAccessTokenEntry,
@@ -301,6 +301,71 @@ describe('callClaudeCodeAnthropicMessages — wire body', () => {
       upstreamId, model: sonnetModel, body: minimalBody, shaped: false, call: noopUpstreamCallOptions(),
     });
     expect(fetchSpy.mock.calls[0]![0]).toBe('https://api.anthropic.com/v1/messages?beta=true');
+  });
+});
+
+describe('callClaudeCodeAnthropicMessagesCountTokens', () => {
+  const countTokensBody = {
+    max_tokens: 64,
+    messages: [{ role: 'user' as const, content: '<total_tokens>15000000 tokens left</total_tokens>' }],
+    tools: [],
+  };
+
+  test('sends a count-only payload with OAuth headers', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('{"input_tokens":17}', { status: 200, headers: { 'content-type': 'application/json' } }),
+    );
+
+    const result = await callClaudeCodeAnthropicMessagesCountTokens({
+      upstreamId,
+      model: sonnetModel,
+      body: { ...countTokensBody, stream: true },
+      call: {
+        ...noopUpstreamCallOptions(),
+        headers: new Headers({
+          'user-agent': 'claude-cli/2.1.280 (external, cli)',
+          'anthropic-version': '2023-06-01',
+          'accept-encoding': 'gzip, deflate, br, zstd',
+        }),
+        anthropicBeta: ['token-counting-2024-11-01'],
+      },
+    });
+
+    expect(fetchSpy.mock.calls[0]![0]).toBe('https://api.anthropic.com/v1/messages/count_tokens');
+    const init = fetchSpy.mock.calls[0]![1] as RequestInit;
+    const headers = new Headers(init.headers);
+    expect(headers.get('authorization')).toBe('Bearer at_cached');
+    expect(headers.get('anthropic-beta')).toBe('token-counting-2024-11-01,oauth-2025-04-20');
+    expect(headers.get('accept-encoding')).toBe('gzip, deflate, identity');
+    expect(await readJsonRequest(init)).toEqual({
+      model: 'claude-sonnet-4-5-20250929',
+      messages: countTokensBody.messages,
+      tools: countTokensBody.tools,
+    });
+    expect(result.modelKey).toBe('claude-sonnet-4-5-20250929');
+    expect(await result.response.json()).toEqual({ input_tokens: 17 });
+  });
+
+  test('retries count_tokens once after a cached-token 401', async () => {
+    seedAccount({ accessToken: freshAccessTokenEntry });
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(errorJson(401, { error: { type: 'authentication_error', message: 'expired' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'at_new', refresh_token: 'rt_v2', token_type: 'Bearer', expires_in: 600, scope: '' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response('{"input_tokens":23}', { status: 200, headers: { 'content-type': 'application/json' } }));
+
+    const result = await callClaudeCodeAnthropicMessagesCountTokens({
+      upstreamId,
+      model: sonnetModel,
+      body: countTokensBody,
+      call: noopUpstreamCallOptions(),
+    });
+
+    expect(fetchSpy).toHaveBeenCalledTimes(3);
+    expect(fetchSpy.mock.calls[0]![0]).toBe('https://api.anthropic.com/v1/messages/count_tokens');
+    expect(fetchSpy.mock.calls[2]![0]).toBe('https://api.anthropic.com/v1/messages/count_tokens');
+    expect(new Headers((fetchSpy.mock.calls[2]![1] as RequestInit).headers).get('authorization')).toBe('Bearer at_new');
+    expect(await result.response.json()).toEqual({ input_tokens: 23 });
   });
 });
 

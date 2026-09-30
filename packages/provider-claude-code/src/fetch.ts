@@ -18,11 +18,14 @@ import {
   jsonRequestBody,
   streamingProviderCall,
   type AnthropicMessagesUpstreamCallOptions,
+  type ProviderCallResult,
   type ProviderModel,
   type ProviderStreamResult,
 } from '@floway-dev/provider';
 
 const ANTHROPIC_ANTHROPIC_MESSAGES_ENDPOINT = 'https://api.anthropic.com/v1/messages?beta=true';
+const ANTHROPIC_MESSAGES_COUNT_TOKENS_ENDPOINT = 'https://api.anthropic.com/v1/messages/count_tokens';
+const CLAUDE_CODE_OAUTH_BETA = 'oauth-2025-04-20';
 // Runtime fetch may decode a wider set, but direct-connect and proxy
 // fallbacks share the package HTTP/1.1 decoder, whose streaming response
 // support is gzip/deflate/identity. Negotiate only what every route can read.
@@ -53,6 +56,19 @@ export interface CallClaudeCodeAnthropicMessagesOptions {
   signal?: AbortSignal;
   call: AnthropicMessagesUpstreamCallOptions;
 }
+
+export interface CallClaudeCodeAnthropicMessagesCountTokensOptions {
+  upstreamId: string;
+  model: ProviderModel;
+  body: Omit<AnthropicMessagesPayload, 'model'>;
+  signal?: AbortSignal;
+  call: AnthropicMessagesUpstreamCallOptions;
+}
+
+type ClaudeCodeCallOptions = Pick<
+  CallClaudeCodeAnthropicMessagesOptions,
+  'upstreamId' | 'model' | 'signal' | 'call'
+>;
 
 const synthetic503 = (message: string): Response =>
   new Response(
@@ -362,13 +378,14 @@ const syntheticReturn = (
   response,
 });
 
+const syntheticCallReturn = (modelKey: string, response: Response): ProviderCallResult => ({ modelKey, response });
+
 // Either ensures a usable access token or returns a 503 wrap for terminal
 // refresh failures; other errors propagate. Used at both the cold-start
 // call site and the 401-retry branch so the catch shape lives in one place.
 const ensureOrSession503 = async (
-  opts: CallClaudeCodeAnthropicMessagesOptions,
-  upstreamModelId: string,
-): Promise<EnsuredAccessToken | ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
+  opts: ClaudeCodeCallOptions,
+): Promise<EnsuredAccessToken | Response> => {
   try {
     return await ensureClaudeCodeAccessToken({
       upstreamId: opts.upstreamId,
@@ -378,48 +395,53 @@ const ensureOrSession503 = async (
   } catch (err) {
     if (err instanceof ClaudeCodeOAuthSessionTerminatedError) {
       // ensureClaudeCodeAccessToken already persisted the terminal state.
-      return syntheticReturn(upstreamModelId, synthetic503(`Claude Code refresh failed: ${err.upstreamMessage}`));
+      return synthetic503(`Claude Code refresh failed: ${err.upstreamMessage}`);
     }
     throw err;
   }
 };
 
+const prepareClaudeCodeCall = async (
+  opts: ClaudeCodeCallOptions,
+): Promise<{ upstreamModelId: string; accessToken: EnsuredAccessToken } | ProviderCallResult> => {
+  const upstreamModelId = (opts.model.providerData as ClaudeCodeProviderData).upstreamModelId;
+  const fresh = await getProviderRepo().upstreams.getById(opts.upstreamId);
+  if (!fresh) throw new Error(`Claude Code upstream ${opts.upstreamId} disappeared mid-request`);
+  const account = readClaudeCodeUpstreamState(fresh.state).accounts[0];
+
+  if (account.state !== 'active') {
+    return syntheticCallReturn(upstreamModelId, synthetic503(`Claude Code account is ${account.state}: ${account.stateMessage}`));
+  }
+
+  const quotaData = account.quotaSnapshot === null ? null : account.quotaSnapshot.data;
+  if (isRateLimitedNow(quotaData, new Date())) {
+    const resetIso = quotaData.reset;
+    return syntheticCallReturn(upstreamModelId, synthetic429(
+      resetIso ? `Claude Code upstream rate-limited until ${resetIso}` : 'Claude Code upstream rate-limited',
+      resetIso,
+      new Date(),
+    ));
+  }
+
+  const accessToken = await ensureOrSession503(opts);
+  if (accessToken instanceof Response) return syntheticCallReturn(upstreamModelId, accessToken);
+  return { upstreamModelId, accessToken };
+};
+
+const observeClaudeCodeResponse = (opts: ClaudeCodeCallOptions, response: Response): Response => {
+  if (response.ok || response.status === 429) {
+    persistQuotaFromHeadersFireAndForget(opts.upstreamId, response.headers, opts.call.waitUntil);
+  }
+  maybePersistTerminalFromBodyFireAndForget(opts.upstreamId, response, opts.call.waitUntil);
+  return response;
+};
+
 export const callClaudeCodeAnthropicMessages = async (
   opts: CallClaudeCodeAnthropicMessagesOptions,
 ): Promise<ProviderStreamResult<AnthropicMessagesStreamEvent>> => {
-  // `opts.model.id` is the public alias on the catalog; the dated upstream id
-  // Anthropic expects on the wire — and that the pricing table keys by — rides
-  // on `opts.model.providerData.upstreamModelId`. Resolve once so synthetic
-  // gates, the wire body, and the streaming-call modelKey all surface the
-  // same dated id.
-  const upstreamModelId = (opts.model.providerData as ClaudeCodeProviderData).upstreamModelId;
-
-  const fresh = await getProviderRepo().upstreams.getById(opts.upstreamId);
-  if (!fresh) throw new Error(`Claude Code upstream ${opts.upstreamId} disappeared mid-request`);
-  const state = readClaudeCodeUpstreamState(fresh.state);
-  const account = state.accounts[0];
-
-  if (account.state !== 'active') {
-    return syntheticReturn(upstreamModelId, synthetic503(
-      `Claude Code account is ${account.state}: ${account.stateMessage}`,
-    ));
-  }
-
-  const now = new Date();
-  const quotaData = account.quotaSnapshot === null ? null : account.quotaSnapshot.data;
-  if (isRateLimitedNow(quotaData, now)) {
-    const resetIso = quotaData.reset;
-    return syntheticReturn(upstreamModelId, synthetic429(
-      resetIso ? `Claude Code upstream rate-limited until ${resetIso}` : 'Claude Code upstream rate-limited',
-      resetIso,
-      now,
-    ));
-  }
-
-  const ensured = await ensureOrSession503(opts, upstreamModelId);
-  if ('modelKey' in ensured) return ensured;
-
-  return await performUpstreamCall(opts, upstreamModelId, ensured, false);
+  const prepared = await prepareClaudeCodeCall(opts);
+  if ('response' in prepared) return syntheticReturn(prepared.modelKey, prepared.response);
+  return await performUpstreamCall(opts, prepared.upstreamModelId, prepared.accessToken, false);
 };
 
 const performUpstreamCall = async (
@@ -472,23 +494,7 @@ const performUpstreamCall = async (
     signal: opts.signal,
   })).then(response => {
     responseHeaders = response.headers;
-    // `opts.call.waitUntil` is set by the gateway on Workers so the
-    // runtime keeps the worker alive past the response (without it, the
-    // persist promise gets cancelled the moment the response returns).
-    // Undefined under hosts that don't supply it (Node target / tests).
-    const { waitUntil } = opts.call;
-    // Every Anthropic response (2xx or 429) ships an
-    // `anthropic-ratelimit-unified-*` snapshot; capture both so the rate-
-    // limited gate above stays accurate as the window evolves. Other
-    // statuses (4xx/5xx outside 429) carry no quota signal so we skip them.
-    if (response.ok || response.status === 429) {
-      persistQuotaFromHeadersFireAndForget(opts.upstreamId, response.headers, waitUntil);
-    }
-    // 400 / 403 may carry the credential-class terminal sentinels — the
-    // detector is body-shape-defensive and only flips on a real match, so
-    // unrelated 400s (`max_tokens` validation, etc.) pass straight through.
-    maybePersistTerminalFromBodyFireAndForget(opts.upstreamId, response, waitUntil);
-    return response;
+    return observeClaudeCodeResponse(opts, response);
   });
 
   const result = await streamingProviderCall(
@@ -508,8 +514,8 @@ const performUpstreamCall = async (
       upstreamId: opts.upstreamId,
       repo: getProviderRepo().upstreams,
     });
-    const ensured = await ensureOrSession503(opts, upstreamModelId);
-    if ('modelKey' in ensured) return ensured;
+    const ensured = await ensureOrSession503(opts);
+    if (ensured instanceof Response) return syntheticReturn(upstreamModelId, ensured);
     return await performUpstreamCall(opts, upstreamModelId, ensured, true);
   }
 
@@ -525,4 +531,45 @@ const performUpstreamCall = async (
       rawFrameCount: () => rawSseFrameCount,
     }),
   };
+};
+
+export const callClaudeCodeAnthropicMessagesCountTokens = async (
+  opts: CallClaudeCodeAnthropicMessagesCountTokensOptions,
+): Promise<ProviderCallResult> => {
+  const prepared = await prepareClaudeCodeCall(opts);
+  if ('response' in prepared) return prepared;
+  return await performCountTokensUpstreamCall(opts, prepared.upstreamModelId, prepared.accessToken, false);
+};
+
+const performCountTokensUpstreamCall = async (
+  opts: CallClaudeCodeAnthropicMessagesCountTokensOptions,
+  upstreamModelId: string,
+  accessToken: EnsuredAccessToken,
+  alreadyRetried: boolean,
+): Promise<ProviderCallResult> => {
+  const anthropicBeta = opts.call.anthropicBeta.includes(CLAUDE_CODE_OAUTH_BETA)
+    ? opts.call.anthropicBeta
+    : [...opts.call.anthropicBeta, CLAUDE_CODE_OAUTH_BETA];
+  const headers = Object.fromEntries(headersForAnthropicMessagesCall([...opts.call.headers], anthropicBeta));
+  if (!('content-type' in headers)) headers['content-type'] = 'application/json';
+  if (!('anthropic-version' in headers)) headers['anthropic-version'] = '2023-06-01';
+  headers.authorization = `Bearer ${accessToken.entry.token}`;
+  constrainAcceptEncoding(headers);
+
+  const wireBody: Record<string, unknown> = { ...opts.body, model: upstreamModelId };
+  delete wireBody.max_tokens;
+  delete wireBody.stream;
+  const response = await opts.call.wrapUpstreamCall(() => opts.call.fetcher(
+    ANTHROPIC_MESSAGES_COUNT_TOKENS_ENDPOINT,
+    { method: 'POST', headers, body: jsonRequestBody(wireBody), signal: opts.signal },
+  )).then(result => observeClaudeCodeResponse(opts, result));
+
+  if (response.status === 401 && !accessToken.freshlyMinted && !alreadyRetried) {
+    await invalidateClaudeCodeAccessToken({ upstreamId: opts.upstreamId, repo: getProviderRepo().upstreams });
+    const ensured = await ensureOrSession503(opts);
+    if (ensured instanceof Response) return syntheticCallReturn(upstreamModelId, ensured);
+    return await performCountTokensUpstreamCall(opts, upstreamModelId, ensured, true);
+  }
+
+  return { response, modelKey: upstreamModelId };
 };
