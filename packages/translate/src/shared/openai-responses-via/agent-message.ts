@@ -5,6 +5,7 @@ interface AgentContentFields {
   type: string;
   text?: unknown;
   refusal?: unknown;
+  encrypted_content?: unknown;
   image_url?: unknown;
   file_id?: unknown;
   detail?: unknown;
@@ -86,6 +87,12 @@ export const agentMessageContent = (
       break;
     case 'refusal':
       pushTypedTextPart(content, part.type, requiredString((part as AgentContentFields).refusal, `${path}.refusal`));
+      break;
+    case 'encrypted_content':
+      // Agent-task payloads use this beta slot as readable task context, not
+      // as an upstream-bound reasoning carrier. Preserve it explicitly when
+      // projecting an agent notification through another protocol.
+      pushTypedTextPart(content, part.type, requiredString((part as AgentContentFields).encrypted_content, `${path}.encrypted_content`));
       break;
     case 'input_image':
       content.push({
