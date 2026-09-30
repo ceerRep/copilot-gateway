@@ -9,7 +9,7 @@ import type { AnthropicMessagesPayload, AnthropicMessagesTextBlock } from '@flow
 // `IDENTITY_BLOCK` is the byte-exact identity banner real CC sends as
 // `system[1]`; `DEFAULT_TEMPLATE_BLOCK` carries the cache-anchored
 // `system[2]` boilerplate and is intentionally a strict subset of the
-// v2.1.181 wire shape — see the comment on that constant for why.
+// v2.1.280 wire shape — see the comment on that constant for why.
 //
 // `cch=00000` is a literal placeholder, not a client-computed hash.
 // Anthropic's CC 2.x native binary emits `x-anthropic-billing-header:
@@ -33,7 +33,7 @@ export const IDENTITY_BLOCK: AnthropicMessagesTextBlock = {
 // re-mimicry path, with the upstream's per-prefix cache breakpoint sitting
 // on this block.
 //
-// The shape is intentionally a strict subset of the full v2.1.181
+// The shape is intentionally a strict subset of the full v2.1.280
 // system-prompt body, aligned to sub2api's `claudeCodeSystemPromptExpansion`
 // (`backend/internal/service/gateway_service.go` lines 60–70):
 // https://github.com/Wei-Shaw/sub2api/blob/4a5665da5b2c6b83c4597844ea6e573746c821b1/backend/internal/service/gateway_service.go#L60-L70
@@ -50,7 +50,7 @@ export const IDENTITY_BLOCK: AnthropicMessagesTextBlock = {
 // identity, not on the trimmed sections.
 //
 // The opener line, both `IMPORTANT:` lines, and the `# Tone and style`
-// bullets are byte-exact extracts from @anthropic-ai/claude-code@2.1.181's
+// bullets are byte-exact extracts from @anthropic-ai/claude-code@2.1.280's
 // compiled prompt builder, captured 2026-06-19 by pointing the Bun-compiled
 // binary at a local capture sink (`ANTHROPIC_BASE_URL` → 401 echo) and
 // reading back the wire-shape `system` array. When CC bumps and changes
@@ -69,7 +69,7 @@ IMPORTANT: You must NEVER generate or guess URLs for the user unless you are con
  - When referencing GitHub issues or pull requests, use the owner/repo#123 format (e.g. anthropics/claude-code#100) so they render as clickable links.
  - Do not use a colon before tool calls. Your tool calls may not be shown directly in the output, so text like "Let me read the file:" followed by a read tool call should just be "Let me read the file." with a period.`,
   // The explicit `ttl: '5m'` matches sub2api's `gateway_service.go:4350-4357`.
-  // Real CC at v2.1.181 ships `'1h'` to amortize the cache across the user's
+  // Real CC at v2.1.280 ships `'1h'` to amortize the cache across the user's
   // session; sub2api deliberately picks `'5m'` to keep the cached prefix
   // active across in-flight conversation turns without burning the 1h
   // quota window — same trade-off we want for a multi-tenant gateway.

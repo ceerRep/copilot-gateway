@@ -27,7 +27,7 @@ const LEGACY_USER_ID_PATTERN = /^user_([a-fA-F0-9]{64})_account_([a-fA-F0-9-]*)_
 
 const DICE_THRESHOLD = 0.5;
 
-// Pre- and post-v2.1.181 CC shapes — that release renamed "interactive CLI tool" → "interactive agent".
+// Pre- and post-v2.1.280 CC shapes — that release renamed "interactive CLI tool" → "interactive agent".
 const IDENTITY_TEMPLATES = [
   "You are Claude Code, Anthropic's official CLI for Claude.",
   "You are a Claude agent, built on Anthropic's Claude Agent SDK.",

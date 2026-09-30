@@ -1,6 +1,6 @@
 // Pinned mimicry header surface for the Anthropic /v1/messages?beta=true call
 // on a Claude Code subscription OAuth bearer. Lifted byte-for-byte from real
-// Claude Code traffic at v2.1.181 on 2026-06-19; bump together with the
+// Claude Code traffic at v2.1.280 on 2026-06-19; bump together with the
 // CLI version whenever we refresh the mimicry constants.
 //
 // Anthropic's "third-party" detector keys on the full surface (UA, X-App,
@@ -15,9 +15,9 @@
 // and the `X-Stainless-*` family. Both Cloudflare Workers and
 // @hono/node-server preserve the casing we set on a `Headers` instance.
 
-export const CLAUDE_CLI_VERSION = '2.1.181';
+export const CLAUDE_CLI_VERSION = '2.1.280';
 
-// `@anthropic-ai/sdk` version bundled inside Claude Code v2.1.181; surfaces
+// `@anthropic-ai/sdk` version bundled inside Claude Code v2.1.280; surfaces
 // on the wire as `X-Stainless-Package-Version`.
 const STAINLESS_PACKAGE_VERSION = '0.94.0';
 
@@ -55,7 +55,7 @@ const BASE_HEADERS = {
 } as const;
 
 // `anthropic-beta` flag set carried by Sonnet/Opus Claude Code requests at
-// v2.1.181, byte-for-byte aligned with a fresh capture of the live CLI on
+// v2.1.280, byte-for-byte aligned with a fresh capture of the live CLI on
 // 2026-06-19. Sub2api's curated set
 // (`backend/internal/service/constants.go` `FullClaudeCodeMimicryBetas`)
 // snapshotted v2.1.161 and predates `mid-conversation-system-2026-04-07`;
@@ -69,7 +69,7 @@ const BASE_HEADERS = {
 // could trip a 400 on a model that doesn't support it, so blanket-
 // sending it to every Sonnet/Opus call is safe and matches the CLI.
 //
-// Two tokens from v2.1.181's beta set are intentionally NOT shipped:
+// Two tokens from v2.1.280's beta set are intentionally NOT shipped:
 //   * `redact-thinking-2026-02-12` — instructs the upstream to strip
 //     thinking content from the response, which fights the gateway's
 //     pass-through goal. Sub2api omits with the same rationale at

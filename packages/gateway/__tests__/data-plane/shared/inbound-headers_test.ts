@@ -91,7 +91,7 @@ describe('provider inbound header policies', () => {
   test('buildUpstreamCallOptions filters independently for each failover candidate', () => {
     const source = new Headers({
       authorization: 'Bearer secret',
-      'user-agent': 'claude-cli/2.1.181',
+      'user-agent': 'claude-cli/2.1.280',
       'x-client-request-id': 'request-1',
     });
     const ctx = mockGatewayCtx();
@@ -106,7 +106,7 @@ describe('provider inbound header policies', () => {
 
     expect([...first.headers]).toEqual([['x-client-request-id', 'candidate-mutation']]);
     expect(headerRecord(second.headers)).toEqual({
-      'user-agent': 'claude-cli/2.1.181',
+      'user-agent': 'claude-cli/2.1.280',
       'x-client-request-id': 'request-1',
     });
     expect(source.get('x-client-request-id')).toBe('request-1');
