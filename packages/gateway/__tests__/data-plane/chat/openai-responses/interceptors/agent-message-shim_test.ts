@@ -6,8 +6,7 @@ import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
 import type { OpenAIResponsesInputAgentMessageItem, CanonicalOpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import { eventResult, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, assertRejects, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
-import { TranslatorInputError } from '@floway-dev/translate';
+import { assert, assertEquals, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 
 const gatewayCtx = mockChatGatewayCtx();
 const okEvents = () => Promise.resolve(eventResult((async function* () { yield doneFrame(); })(), testTelemetryModelIdentity));
@@ -123,15 +122,17 @@ test('leaves a payload without agent_message as the same object', async () => {
   }
 });
 
-test('rejects an agent_message whose content cannot be lowered', async () => {
-  await assertRejects(
-    () => lower([{
-      type: 'agent_message',
-      author: '/root',
-      recipient: '/root/worker',
-      content: [{ type: 'encrypted_content', encrypted_content: 'opaque' }],
-    }], { enabledFlags: FLAG }),
-    TranslatorInputError,
-    "Invalid value: 'encrypted_content' for 'agent_message.content[0].type'.",
-  );
+test('preserves readable encrypted agent task content with an explicit type marker', async () => {
+  const { seen } = await lower([{
+    type: 'agent_message',
+    author: '/root',
+    recipient: '/root/worker',
+    content: [{ type: 'encrypted_content', encrypted_content: 'opaque' }],
+  }], { enabledFlags: FLAG });
+
+  const message = seen.input[0];
+  assert(message?.type === 'message' && Array.isArray(message.content));
+  const text = message.content[0];
+  assert(text?.type === 'input_text');
+  assert(text.text.includes('<content type="encrypted_content">opaque</content>'));
 });
