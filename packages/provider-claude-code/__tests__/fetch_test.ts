@@ -193,6 +193,7 @@ describe('callClaudeCodeAnthropicMessages — header surface', () => {
           'x-stainless-package-version': '0.112.1',
           'x-claude-code-session-id': 'sess-abc',
           'x-client-request-id': 'req-xyz',
+          'accept-encoding': 'gzip, deflate, br, zstd',
         }),
         anthropicBeta: ['oauth-2025-04-20', 'claude-code-20250219'],
       },
@@ -207,6 +208,7 @@ describe('callClaudeCodeAnthropicMessages — header surface', () => {
     expect(wireHeaders.get('x-stainless-package-version')).toBe('0.112.1');
     expect(wireHeaders.get('x-claude-code-session-id')).toBe('sess-abc');
     expect(wireHeaders.get('x-client-request-id')).toBe('req-xyz');
+    expect(wireHeaders.get('accept-encoding')).toBe('gzip, deflate, identity');
   });
 
   test('shaped:true defaults Content-Type to application/json when the inbound omits it', async () => {
@@ -265,6 +267,7 @@ describe('callClaudeCodeAnthropicMessages — header surface', () => {
     expect(wireHeaders.get('authorization')).toBe('Bearer at_cached');
     expect(wireHeaders.get('user-agent')).toBe(CLAUDE_CODE_HEADERS_SONNET_OPUS['User-Agent']);
     expect(wireHeaders.get('anthropic-beta')).toBe(CLAUDE_CODE_HEADERS_SONNET_OPUS['anthropic-beta']);
+    expect(wireHeaders.get('accept-encoding')).toBe('gzip, deflate, identity');
   });
 
   test('shaped:false on haiku uses the leaner haiku header set', async () => {
