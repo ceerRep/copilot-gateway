@@ -10,7 +10,7 @@ import { tokenUsageFromBillableUsage } from '../../shared/telemetry/usage.ts';
 import { forwardUpstreamHeaders, mergeForwardedUpstreamHeaders } from '../../shared/upstream-response.ts';
 import { isPrefillKeepAliveDeferred } from '../shared/prefill-keepalive.ts';
 import { SourceStreamState, eventResultMetadata, plainResultToResponse } from '../shared/respond.ts';
-import { doneFrame, eventFrame, type ProtocolFrame, sseCommentFrame, sseFrame } from '@floway-dev/protocols/common';
+import { doneFrame, eventFrame, type ProtocolFrame, sseFrame } from '@floway-dev/protocols/common';
 import { openaiResponsesProtocolFrameToSSEFrame, OPENAI_RESPONSES_MISSING_TERMINAL_MESSAGE, collectOpenAIResponsesProtocolEventsToResult } from '@floway-dev/protocols/openai-responses';
 import { isOpenAIResponsesTerminalEvent, type CanonicalOpenAIResponsesPayload, type ClientResponseResource, type ClientOpenAIResponsesStreamEvent, type OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { type ExecuteResult, type PlainResult, type InternalDebugError, toInternalDebugError } from '@floway-dev/provider';
@@ -77,7 +77,10 @@ export const respondOpenAIResponses = async (
     let completion: StreamCompletion = 'error';
     try {
       completion = await writeSSEFrames(stream, openaiResponsesSseFrames(frames, state, ctx), {
-        keepAlive: { frame: sseCommentFrame('keepalive') },
+        // Codex resets its Responses idle timeout only after parsing an SSE
+        // event; comment frames keep intermediaries alive but never reach that
+        // event pump.
+        keepAlive: { frame: sseFrame('{}', 'ping') },
         ...(ctx.downstreamAbortController !== undefined ? { downstreamAbortController: ctx.downstreamAbortController } : {}),
         writeInitialKeepAlive: isPrefillKeepAliveDeferred(result),
       });
