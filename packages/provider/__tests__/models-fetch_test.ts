@@ -1,6 +1,6 @@
-import { expect, test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
-import { ProviderModelsUnavailableError } from '../src/models-fetch.ts';
+import { fetchUpstreamModels, ProviderModelsUnavailableError } from '../src/models-fetch.ts';
 
 test('model-list failure parses JSON for display without changing the captured upstream response', () => {
   const body = '{"error":{"message":"token expired"}}';
@@ -24,4 +24,55 @@ test('model-list failure shortens a long body only in its display projection', (
 
   expect(failure.displayResponse?.body).toBe(`${body.slice(0, 12_288)}…`);
   expect(failure.httpResponse?.body).toBe(body);
+});
+
+test('model listing total timeout wins even when the fetcher ignores cancellation', async () => {
+  vi.useFakeTimers();
+  try {
+    const stalled = fetchUpstreamModels(
+      () => new Promise<Response>(() => {}),
+      value => value,
+      { totalTimeoutMs: 40 },
+    );
+    const assertion = expect(stalled).rejects.toMatchObject({
+      name: 'ProviderModelsUnavailableError',
+      cause: expect.objectContaining({ name: 'TimeoutError' }),
+    });
+    await vi.advanceTimersByTimeAsync(40);
+    await assertion;
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test('model listing aborts a stalled response body after its idle timeout', async () => {
+  vi.useFakeTimers();
+  try {
+    let cancelReason: unknown;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"data":'));
+      },
+      pull() {
+        return new Promise<void>(() => {});
+      },
+      cancel(reason) {
+        cancelReason = reason;
+      },
+    });
+    const stalled = fetchUpstreamModels(
+      () => Promise.resolve(new Response(body)),
+      value => value,
+      { idleTimeoutMs: 25, totalTimeoutMs: 1_000 },
+    );
+    const assertion = expect(stalled).rejects.toMatchObject({
+      name: 'ProviderModelsUnavailableError',
+      cause: expect.objectContaining({ name: 'TimeoutError' }),
+    });
+    await vi.advanceTimersByTimeAsync(25);
+    await assertion;
+    expect(cancelReason).toMatchObject({ name: 'TimeoutError' });
+  } finally {
+    vi.useRealTimers();
+  }
 });

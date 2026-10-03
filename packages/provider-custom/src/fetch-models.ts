@@ -12,7 +12,7 @@
 import type { CustomUpstreamConfig } from './config.ts';
 import { customFetchModels } from './fetch.ts';
 import { BILLING_METRICS, canonicalizePricingSelector, type BillingMetric, type ModelKind, type ModelPricing, type OpaqueBlobCompatibilityScope, parseNonNegativeDecimalString, type PriceVector, type PricingSelector, validateModelPricing } from '@floway-dev/protocols/common';
-import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, opaqueBlobCompatibilityScopeField } from '@floway-dev/provider';
+import { chatField, fetchUpstreamModels, type Fetcher, type UpstreamChatModelConfig, identityWrapUpstreamCall, opaqueBlobCompatibilityScopeField, PROVIDER_MODELS_IDLE_TIMEOUT_MS, PROVIDER_MODELS_TOTAL_TIMEOUT_MS } from '@floway-dev/provider';
 
 export interface CustomRawModel {
   id: string;
@@ -140,8 +140,16 @@ const parseCustomModelsResponse = (value: unknown): CustomModelsResponse | null 
   return { data };
 };
 
-export const fetchCustomModels = (config: CustomUpstreamConfig, fetcher: Fetcher): Promise<CustomModelsResponse> =>
+export const fetchCustomModels = (
+  config: CustomUpstreamConfig,
+  fetcher: Fetcher,
+  options: { idleTimeoutMs?: number; totalTimeoutMs?: number } = {},
+): Promise<CustomModelsResponse> =>
   fetchUpstreamModels(
-    () => customFetchModels(config, { method: 'GET' }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
+    signal => customFetchModels(config, { method: 'GET', signal }, { fetcher, wrapUpstreamCall: identityWrapUpstreamCall }),
     parseCustomModelsResponse,
+    {
+      idleTimeoutMs: options.idleTimeoutMs ?? PROVIDER_MODELS_IDLE_TIMEOUT_MS,
+      totalTimeoutMs: options.totalTimeoutMs ?? PROVIDER_MODELS_TOTAL_TIMEOUT_MS,
+    },
   );
