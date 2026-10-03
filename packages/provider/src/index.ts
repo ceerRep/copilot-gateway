@@ -70,6 +70,8 @@ export type { ProviderRepo, UpstreamsRepoSlim } from './repo.ts';
 export { getProviderRepo, initProviderRepo, UpstreamGoneError } from './repo.ts';
 
 export {
+  PROVIDER_MODELS_IDLE_TIMEOUT_MS,
+  PROVIDER_MODELS_TOTAL_TIMEOUT_MS,
   ProviderModelsUnavailableError,
   fetchUpstreamModels,
   httpResponseToResponse,

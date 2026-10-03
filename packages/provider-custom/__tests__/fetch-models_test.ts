@@ -1,4 +1,4 @@
-import { test } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import { assertCustomUpstreamRecord, fetchCustomModels } from '../src/index.ts';
 import { ProviderModelsUnavailableError, directFetcher, type Fetcher } from '@floway-dev/provider';
@@ -37,6 +37,30 @@ test('fetchCustomModels returns the parsed response on 2xx', async () => {
       assertEquals(result.data[0].id, 'm-1');
     },
   );
+});
+
+test('fetchCustomModels forwards the catalog deadline to a stalled upstream', async () => {
+  vi.useFakeTimers();
+  try {
+    const { config } = assertCustomUpstreamRecord(upstreamRecord());
+    let upstreamReason: unknown;
+    const fetcher: Fetcher = (_url, init) => new Promise<Response>((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => {
+        upstreamReason = init.signal?.reason;
+        reject(init.signal?.reason);
+      }, { once: true });
+    });
+    const stalled = fetchCustomModels(config, fetcher, { totalTimeoutMs: 40 });
+    const assertion = expect(stalled).rejects.toMatchObject({
+      name: 'ProviderModelsUnavailableError',
+      cause: expect.objectContaining({ name: 'TimeoutError' }),
+    });
+    await vi.advanceTimersByTimeAsync(40);
+    await assertion;
+    expect(upstreamReason).toMatchObject({ name: 'TimeoutError' });
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test('fetchCustomModels accepts an Anthropic-shape response with no top-level `object`', async () => {
