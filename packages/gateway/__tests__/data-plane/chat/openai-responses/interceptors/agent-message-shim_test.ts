@@ -4,7 +4,7 @@ import { withOpenAIResponsesAgentMessageShim } from '../../../../../src/data-pla
 import type { OpenAIResponsesInvocation } from '../../../../../src/data-plane/chat/openai-responses/interceptors/types.ts';
 import { mockChatGatewayCtx } from '../../../../test-utils/gateway-ctx.ts';
 import { doneFrame } from '@floway-dev/protocols/common';
-import type { OpenAIResponsesInputAgentMessageItem, OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
+import type { OpenAIResponsesFunctionCallOutputItem, OpenAIResponsesInputAgentMessageItem, OpenAIResponsesInputItem } from '@floway-dev/protocols/openai-responses';
 import { eventResult, type FlagId } from '@floway-dev/provider';
 import { assert, assertEquals, assertRejects, stubModelCandidate, testTelemetryModelIdentity } from '@floway-dev/test-utils';
 import { TranslatorInputError } from '@floway-dev/translate';
@@ -134,4 +134,88 @@ test('rejects an agent_message whose content cannot be lowered', async () => {
     TranslatorInputError,
     "Invalid value: 'future_agent_content' for 'agent_message.content[0].type'.",
   );
+});
+
+test.each([undefined, null, ''])('lowers named standalone function output with call_id %s before either translation', async call_id => {
+  const notification: OpenAIResponsesFunctionCallOutputItem = {
+    type: 'function_call_output',
+    id: 'fco_notification',
+    call_id,
+    name: 'send_message_to_thread',
+    namespace: 'codex_tui',
+    output: '<codex_delegation>result</codex_delegation>',
+  };
+  const paired: OpenAIResponsesInputItem = { type: 'function_call_output', call_id: 'call_1', output: 'paired result' };
+  for (const targetApi of ['openaiChatCompletions', 'anthropicMessages'] as const) {
+    const { before, seen } = await lower([paired, notification, paired], { targetApi });
+    assertEquals(before.input, [paired, notification, paired]);
+    assert(seen.input[0] === paired);
+    assert(seen.input[2] === paired);
+    const item = seen.input[1];
+    assert(item.type === 'message' && item.role === 'user' && Array.isArray(item.content));
+    const text = item.content.map(part => part.type === 'input_text' ? part.text : '').join('');
+    assert(text.includes('not user input'));
+    assert(text.includes('name="send_message_to_thread" namespace="codex_tui"'));
+    assert(text.includes('&lt;codex_delegation&gt;result&lt;/codex_delegation&gt;'));
+    assert(!Object.hasOwn(item, 'call_id'));
+  }
+});
+
+test('only lowers standalone notifications on native Responses when the flag is enabled', async () => {
+  const notification: OpenAIResponsesFunctionCallOutputItem = {
+    type: 'function_call_output', name: 'notify', output: 'external result',
+  };
+  const native = await lower([notification]);
+  assert(native.seen === native.before);
+  assert(native.seen.input[0] === notification);
+  const shimmed = await lower([notification], { enabledFlags: FLAG });
+  assertEquals(shimmed.seen.input[0].type, 'message');
+});
+
+test('never downgrades paired function or custom outputs with the notification flag', async () => {
+  const input: OpenAIResponsesInputItem[] = [
+    { type: 'function_call_output', call_id: 'call_function', name: 'notify', output: 'result' },
+    { type: 'custom_tool_call_output', call_id: 'call_custom', output: 'result' },
+  ];
+  const { before, seen } = await lower(input, { enabledFlags: FLAG });
+  assert(seen === before);
+});
+
+test('rejects an uncorrelated function output without a name instead of inventing a call id', async () => {
+  const error = await assertRejects(
+    () => lower([{ type: 'function_call_output', output: 'result' }], { targetApi: 'openaiChatCompletions' }),
+    TranslatorInputError,
+  );
+  assertEquals((error as TranslatorInputError).param, 'input[0].name');
+});
+
+test('defers standalone notifications until parallel tool results are contiguous', async () => {
+  const first: OpenAIResponsesInputItem = { type: 'function_call_output', call_id: 'call_1', output: 'first result' };
+  const second: OpenAIResponsesInputItem = { type: 'custom_tool_call_output', call_id: 'call_2', output: 'second result' };
+  const notices: OpenAIResponsesInputItem[] = [
+    { type: 'function_call_output', name: 'notify', output: 'first notice' },
+    { type: 'function_call_output', name: 'notify', output: 'second notice' },
+  ];
+  const input: OpenAIResponsesInputItem[] = [
+    { type: 'function_call', call_id: 'call_1', name: 'shell', arguments: '{}', status: 'completed' },
+    { type: 'custom_tool_call', call_id: 'call_2', name: 'exec', input: 'code' },
+    first, ...notices, second,
+  ];
+  const { before, seen } = await lower(input, { targetApi: 'openaiChatCompletions' });
+  assertEquals(before.input, input);
+  assert(seen.input[2] === first);
+  assert(seen.input[3] === second);
+  assertEquals(seen.input.slice(4).map(item => item.type), ['message', 'message']);
+  const noticeTexts = seen.input.slice(4).map(item => item.type === 'message' && Array.isArray(item.content)
+    ? item.content.map(part => part.type === 'input_text' ? part.text : '').join('') : '');
+  assert(noticeTexts[0].includes('first notice'));
+  assert(noticeTexts[1].includes('second notice'));
+});
+
+test('does not discard a queued notification when a tool output never arrives', async () => {
+  const { seen } = await lower([
+    { type: 'function_call', call_id: 'call_1', name: 'shell', arguments: '{}', status: 'completed' },
+    { type: 'function_call_output', name: 'notify', output: 'notice' },
+  ], { targetApi: 'anthropicMessages' });
+  assertEquals(seen.input.map(item => item.type), ['function_call', 'message']);
 });

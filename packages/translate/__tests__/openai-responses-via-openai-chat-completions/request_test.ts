@@ -31,6 +31,17 @@ test('buildTargetRequest rejects an agent_message that no interceptor lowered', 
   );
 });
 
+test.each([undefined, null, ''])('buildTargetRequest rejects unlowered standalone output with call_id %s', call_id => {
+  assertThrows(
+    () => buildTargetRequest({
+      model: 'gpt-test',
+      input: [{ type: 'function_call_output', call_id, name: 'notify', output: 'notice' }],
+    }),
+    Error,
+    'must be lowered before OpenAI Chat Completions translation',
+  );
+});
+
 test('buildTargetRequest merges adjacent assistant reasoning text and tool calls', () => {
   const result = buildTargetRequest({
     model: 'gpt-test',

@@ -68,6 +68,17 @@ test('buildTargetRequest rejects an agent_message that no interceptor lowered', 
   );
 });
 
+test.each([undefined, null, ''])('buildTargetRequest rejects unlowered standalone output with call_id %s', async call_id => {
+  await assertRejects(
+    () => buildTargetRequest({
+      ...minimalPayload,
+      input: [{ type: 'function_call_output', call_id, name: 'notify', output: 'notice' }],
+    }),
+    Error,
+    'must be lowered before Anthropic Messages translation',
+  );
+});
+
 test.each([
   { name: 'program', input: [{ type: 'program', id: 'prog_1', call_id: 'call_prog_1', code: 'return 1', fingerprint: 'opaque' }] },
   { name: 'program_output', input: [{ type: 'program_output', id: 'prog_out_1', call_id: 'call_prog_1', result: '1', status: 'completed' }] },

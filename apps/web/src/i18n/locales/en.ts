@@ -659,7 +659,7 @@ const en = {
             },
             'openai-responses-agent-message-shim': {
               label: 'OpenAI Responses Agent Message Shim',
-              description: 'Codex sends sub-agent tasks and inter-agent messages as `agent_message` input items, which some OpenAI Responses-compatible upstreams drop or reject.\nEnable this option to rewrite them into ordinary user messages that are explicitly framed as coming from another agent before forwarding to the upstream.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.',
+              description: 'Codex sends sub-agent tasks and inter-agent messages as `agent_message` input items or named standalone `function_call_output` notifications without a `call_id`, which some OpenAI Responses-compatible upstreams drop or reject.\nEnable this option to rewrite them into ordinary user messages that retain the source identity and explicitly carry no user authority before forwarding to the upstream.\nThis option is treated as enabled when the upstream does not provide the OpenAI Responses API.',
             },
             'openai-responses-compact-shim': {
               label: 'OpenAI Responses Context Compaction Shim',

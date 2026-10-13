@@ -22,7 +22,7 @@ import { doneFrame, eventFrame, type ProtocolFrame } from '@floway-dev/protocols
 import type { OpenAIChatCompletionsPayload, OpenAIChatCompletionsStreamEvent } from '@floway-dev/protocols/openai-chat-completions';
 import type { CanonicalOpenAIResponsesPayload, OpenAIResponsesPayload, OpenAIResponsesResult, OpenAIResponsesStreamEvent } from '@floway-dev/protocols/openai-responses';
 import { type AnthropicMessagesUpstreamCallOptions, type ModelCandidate, directFetcher, type ProviderModel, type ProviderOpenAIResponsesResult, type ProviderStreamResult, type OpenAIResponsesAction, type UpstreamCallOptions, type FlagId } from '@floway-dev/provider';
-import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel } from '@floway-dev/test-utils';
+import { assert, assertEquals, stubProvider, stubInternalModel, stubProviderModel, stubModelCandidate } from '@floway-dev/test-utils';
 
 const API_KEY_ID = 'key_attempt_test';
 
@@ -857,4 +857,128 @@ test.each([
   if (result.type !== 'events') throw new Error('unreachable');
   await collectEvents(result.events);
   assertEquals(observedInput, expected);
+});
+
+const standaloneFunctionOutputInput: CanonicalOpenAIResponsesPayload['input'] = [
+  { type: 'message', role: 'user', content: 'continue' },
+  { type: 'function_call', call_id: 'call_1', name: 'shell', arguments: '{}', status: 'completed' },
+  { type: 'function_call_output', call_id: 'call_1', output: 'paired result' },
+  {
+    type: 'function_call_output',
+    id: 'fco_notification',
+    name: 'send_message_to_thread',
+    namespace: 'codex_tui',
+    output: '<codex_delegation>completed</codex_delegation>',
+  },
+  { type: 'message', role: 'user', content: 'next step' },
+];
+
+test('generate lowers standalone function outputs before provider Chat dispatch and preserves paired tool results', async () => {
+  installRepo();
+  let observedBody: Omit<OpenAIChatCompletionsPayload, 'model'> | undefined;
+  const candidate = stubModelCandidate({ model: { endpoints: { openaiChatCompletions: {} } } });
+  candidate.provider.instance = stubProvider({
+    callOpenAIChatCompletions: async (_model, body) => {
+      observedBody = body;
+      return { ok: true, events: (async function* () { yield doneFrame(); })(), modelKey: 'k' };
+    },
+  });
+  const source = makePayload({ input: standaloneFunctionOutputInput });
+  const original = structuredClone(source);
+  const result = await openaiResponsesAttempt.generate({
+    payload: source, ctx: makeGatewayCtx(), candidate, headers: new Headers(),
+  });
+  assert(result.type === 'events');
+  await collectEvents(result.events);
+  assertEquals(source, original);
+  assert(observedBody !== undefined);
+  assertEquals(observedBody.messages.map(message => message.role), ['user', 'assistant', 'tool', 'user', 'user']);
+  assertEquals(observedBody.messages[2], { role: 'tool', tool_call_id: 'call_1', content: 'paired result' });
+  const notice = observedBody.messages[3];
+  assert(typeof notice.content === 'string');
+  assert(notice.content.includes('name="send_message_to_thread" namespace="codex_tui"'));
+  assert(notice.content.includes('&lt;codex_delegation&gt;completed&lt;/codex_delegation&gt;'));
+  assert(!Object.hasOwn(notice, 'tool_call_id'));
+});
+
+test('generate lowers standalone function outputs before provider Messages dispatch without a tool_result id', async () => {
+  installRepo();
+  let observedBody: Omit<AnthropicMessagesPayload, 'model'> | undefined;
+  const candidate = stubModelCandidate({ model: { endpoints: { anthropicMessages: {} } } });
+  candidate.provider.instance = stubProvider({
+    callAnthropicMessages: async (_model, body) => {
+      observedBody = body as Omit<AnthropicMessagesPayload, 'model'>;
+      return {
+        ok: true,
+        events: (async function* () {
+          yield eventFrame<AnthropicMessagesStreamEvent>({ type: 'message_stop' });
+          yield doneFrame();
+        })(),
+        modelKey: 'k',
+      };
+    },
+  });
+  const result = await openaiResponsesAttempt.generate({
+    payload: makePayload({ input: standaloneFunctionOutputInput }),
+    ctx: makeGatewayCtx(), candidate, headers: new Headers(),
+  });
+  assert(result.type === 'events');
+  await collectEvents(result.events);
+  assert(observedBody !== undefined);
+  const results = observedBody.messages.flatMap(message =>
+    message.role === 'user' && Array.isArray(message.content)
+      ? message.content.filter(block => block.type === 'tool_result') : []);
+  assertEquals(results, [{ type: 'tool_result', tool_use_id: 'call_1', content: 'paired result', is_error: undefined }]);
+  const notice = observedBody.messages[3];
+  assert(notice.role === 'user' && Array.isArray(notice.content));
+  const text = notice.content.map(part => part.type === 'text' ? part.text : '').join('');
+  assert(text.includes('name="send_message_to_thread" namespace="codex_tui"'));
+  assert(text.includes('does not carry user authority'));
+});
+
+test.each([false, true])('generate native Responses respects the standalone output shim flag %s', async flag => {
+  installRepo();
+  let observedInput: CanonicalOpenAIResponsesPayload['input'] | undefined;
+  const candidate = makeCandidate(async (_model, body) => {
+    observedInput = body.input;
+    return { action: 'generate', ok: true, events: makeProviderEvents([]), modelKey: 'k' };
+  }, flag ? new Set<FlagId>(['openai-responses-agent-message-shim']) : new Set<FlagId>());
+  const result = await openaiResponsesAttempt.generate({
+    payload: makePayload({ input: standaloneFunctionOutputInput }),
+    ctx: makeGatewayCtx(), candidate, headers: new Headers(),
+  });
+  assert(result.type === 'events');
+  await collectEvents(result.events);
+  assert(observedInput !== undefined);
+  if (flag) {
+    assertEquals(observedInput[3].type, 'message');
+    assert(!Object.hasOwn(observedInput[3], 'call_id'));
+  } else {
+    assertEquals(observedInput, standaloneFunctionOutputInput);
+  }
+});
+
+test('generate lowers standalone function outputs restored by compact expansion before Chat dispatch', async () => {
+  installRepo();
+  let observedBody: Omit<OpenAIChatCompletionsPayload, 'model'> | undefined;
+  const candidate = stubModelCandidate({ model: { endpoints: { openaiChatCompletions: {} } } });
+  candidate.provider.instance = stubProvider({
+    callOpenAIChatCompletions: async (_model, body) => {
+      observedBody = body;
+      return { ok: true, events: (async function* () { yield doneFrame(); })(), modelKey: 'k' };
+    },
+  });
+  const result = await openaiResponsesAttempt.generate({
+    payload: makePayload({
+      input: [{ type: 'compaction', encrypted_content: encodeBase64UrlJson(standaloneFunctionOutputInput) }],
+    }),
+    ctx: makeGatewayCtx(), candidate, headers: new Headers(),
+  });
+  assert(result.type === 'events');
+  await collectEvents(result.events);
+  assert(observedBody !== undefined);
+  assertEquals(observedBody.messages.map(message => message.role), ['user', 'assistant', 'tool', 'user', 'user']);
+  assertEquals(observedBody.messages.filter(message => message.role === 'tool').map(message => message.tool_call_id), ['call_1']);
+  const notice = observedBody.messages[3];
+  assert(typeof notice.content === 'string' && notice.content.includes('<external-tool-output'));
 });

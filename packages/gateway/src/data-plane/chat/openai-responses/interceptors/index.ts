@@ -25,16 +25,16 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 // Order matters: earlier entries wrap later ones.
 //   - answerWebSocketWarmup: runs outermost so a WebSocket `generate: false` prewarm is
 //     answered before any shim or upstream call can turn it into a generation.
-//   - withOpenAIResponsesAgentMessageShim: lowers `agent_message` input items
-//     to framed user messages when the target is not OpenAI Responses (the
-//     translators do not know the item) or `openai-responses-agent-message-shim`
-//     is enabled. Runs before every other entry so none of them, nor the
-//     translation performed by the terminal dispatch, sees the item.
 //   - withOpenAIResponsesCompactShim: wraps the remaining shims so the action pivot
 //     ('compact' → 'generate' for the inner summarization turn) is visible
 //     to every downstream interceptor + the provider terminal. Also
 //     responsible for inbound expansion of prior shim-encoded compaction
 //     items so the upstream sees the summarized history.
+//   - withOpenAIResponsesAgentMessageShim: lowers `agent_message` input items
+//     and named standalone function outputs without a call_id to framed user
+//     messages when the target is not OpenAI Responses or the shim flag is on.
+//     Runs after compact expansion so restored notifications are lowered too,
+//     before the server-tool loop and terminal translation see them.
 //   - withOpenAIResponsesCollaborationShim: keeps one plaintext namespace around
 //     the complete server-tool loop and restores client identities on egress.
 //   - withOpenAIResponsesServerToolShim: wraps the multi-turn ReAct loop around
@@ -63,8 +63,8 @@ import { withVendorQwenOpenAIResponsesNormalize } from './vendor-qwen-normalize.
 //     body.
 export const openaiResponsesInterceptors: readonly OpenAIResponsesInterceptor[] = [
   answerWebSocketWarmup,
-  withOpenAIResponsesAgentMessageShim,
   withOpenAIResponsesCompactShim,
+  withOpenAIResponsesAgentMessageShim,
   withOpenAIResponsesCollaborationShim,
   withOpenAIResponsesServerToolShim([
     webSearchServerTool,

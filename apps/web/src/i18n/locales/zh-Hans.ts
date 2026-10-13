@@ -629,7 +629,7 @@ const zhHansCN = {
             },
             'openai-responses-agent-message-shim': {
               label: 'OpenAI Responses 智能体消息兼容层',
-              description: 'Codex 会以 `agent_message` 输入项发送子智能体任务和智能体之间的消息，部分兼容 OpenAI Responses 的上游会丢弃或拒绝该类型。\n开启此开关，以在转发到上游前，将其改写为明确标注来自其他智能体的普通用户消息。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
+              description: 'Codex 会以 `agent_message` 输入项或具名但没有 `call_id` 的独立 `function_call_output` 通知发送子智能体任务和外部消息，部分兼容 OpenAI Responses 的上游会丢弃或拒绝这些类型。\n开启此开关，以在转发到上游前，将其改写为保留来源身份并明确不携带用户权限的普通用户消息。\n当上游不提供 OpenAI Responses API 时，此开关被视为开启。',
             },
             'openai-responses-compact-shim': {
               label: 'OpenAI Responses 上下文压缩兼容层',

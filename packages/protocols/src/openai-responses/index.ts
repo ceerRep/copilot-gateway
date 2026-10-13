@@ -243,7 +243,12 @@ export interface OpenAIResponsesFunctionToolCallItem {
 export interface OpenAIResponsesFunctionCallOutputItem {
   type: 'function_call_output';
   id?: string;
-  call_id: string;
+  // Codex uses named standalone outputs for external notifications. They have
+  // no matching model-issued call, so call_id is absent rather than fabricated.
+  // https://github.com/openai/codex/blob/2c4a95736bea64256a50f7b8506bd33c181cc85a/codex-rs/protocol/src/models.rs#L1077-L1095
+  call_id?: string | null;
+  name?: string;
+  namespace?: string;
   // Multimodal tool outputs carry an array of content parts (e.g. a screenshot
   // tool returning `input_image` parts) in addition to the plain-string form.
   output: string | OpenAIResponsesToolOutputContent[];

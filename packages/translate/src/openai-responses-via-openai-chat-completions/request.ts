@@ -210,6 +210,9 @@ export const buildTargetRequest = (source: OpenAIResponsesRequestPayload): Targe
     }
 
     if (item.type === 'function_call_output' || item.type === 'custom_tool_call_output') {
+      if (typeof item.call_id !== 'string' || item.call_id.length === 0) {
+        throw new TranslatorInputError('Tool outputs without a call_id must be lowered before OpenAI Chat Completions translation.', { param: 'input' });
+      }
       flushAssistant();
       const projected = projectToolCallOutput(item);
       messages.push({
