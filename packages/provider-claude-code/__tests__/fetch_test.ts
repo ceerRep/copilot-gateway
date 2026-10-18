@@ -188,7 +188,7 @@ describe('callClaudeCodeAnthropicMessages — header surface', () => {
           'user-agent': 'claude-cli/2.1.280 (external, cli)',
           'x-app': 'cli',
           'anthropic-version': '2023-06-01',
-          'x-stainless-package-version': '0.94.0',
+          'x-stainless-package-version': '0.112.1',
           'x-claude-code-session-id': 'sess-abc',
           'x-client-request-id': 'req-xyz',
           'accept-encoding': 'gzip, deflate, br, zstd',
@@ -203,7 +203,7 @@ describe('callClaudeCodeAnthropicMessages — header surface', () => {
     expect(wireHeaders.get('x-app')).toBe('cli');
     expect(wireHeaders.get('anthropic-version')).toBe('2023-06-01');
     expect(wireHeaders.get('anthropic-beta')).toBe('oauth-2025-04-20,claude-code-20250219');
-    expect(wireHeaders.get('x-stainless-package-version')).toBe('0.94.0');
+    expect(wireHeaders.get('x-stainless-package-version')).toBe('0.112.1');
     expect(wireHeaders.get('x-claude-code-session-id')).toBe('sess-abc');
     expect(wireHeaders.get('x-client-request-id')).toBe('req-xyz');
     expect(wireHeaders.get('accept-encoding')).toBe('gzip, deflate, identity');

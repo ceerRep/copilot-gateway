@@ -22,7 +22,7 @@ describe('CLAUDE_CODE_HEADERS_SONNET_OPUS', () => {
       'anthropic-version': '2023-06-01',
       Accept: 'application/json',
       'X-Stainless-Lang': 'js',
-      'X-Stainless-Package-Version': '0.94.0',
+      'X-Stainless-Package-Version': '0.112.1',
       'X-Stainless-OS': 'Linux',
       'X-Stainless-Arch': 'arm64',
       'X-Stainless-Runtime': 'node',
